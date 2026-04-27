@@ -1,0 +1,17 @@
+<clickhouse>
+    <!-- Allow ClickHouse to reach MinIO over plain HTTP from inside Docker -->
+    <s3>
+        <endpoint-subpath/>
+    </s3>
+    <!-- Named S3 disk pointing at MinIO for Iceberg queries -->
+    <storage_configuration>
+        <disks>
+            <minio>
+                <type>s3</type>
+                <endpoint>http://minio:9000/attest-warm/</endpoint>
+                <access_key_id>minioadmin</access_key_id>
+                <secret_access_key>minioadmin</secret_access_key>
+            </minio>
+        </disks>
+    </storage_configuration>
+</clickhouse>

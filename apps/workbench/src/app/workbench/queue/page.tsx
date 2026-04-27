@@ -1,15 +1,36 @@
 import { AlertQueue } from "@/components/workbench/alert-queue";
 import { StatusBadge } from "@/components/workbench/status-badge";
-import { alerts } from "@/lib/mock-data";
+import { alerts as mockAlerts } from "@/lib/mock-data";
+import { parseEventsResponse } from "@/lib/ocsf-to-alert";
 
-const queueStats = [
-  { label: "Open alerts", value: "40" },
-  { label: "Awaiting review", value: "2" },
-  { label: "In-flight agents", value: "2" },
-  { label: "Auto-closed", value: "12" },
-];
+const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
 
-export default function QueuePage() {
+async function fetchLiveAlerts() {
+  try {
+    const res = await fetch(`${CP_URL}/v1/events/recent`, {
+      next: { revalidate: 5 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const alerts = parseEventsResponse(data);
+    return alerts.length > 0 ? alerts : null;
+  } catch {
+    return null;
+  }
+}
+
+export default async function QueuePage() {
+  const liveAlerts = await fetchLiveAlerts();
+  const alerts = liveAlerts ?? mockAlerts;
+  const isLive = liveAlerts !== null;
+
+  const queueStats = [
+    { label: "Open alerts", value: String(alerts.filter((a) => a.state !== "auto-closed").length) },
+    { label: "Awaiting review", value: String(alerts.filter((a) => a.state === "awaiting-review").length) },
+    { label: "In-flight agents", value: String(alerts.filter((a) => a.state === "in-flight").length) },
+    { label: "Auto-closed", value: String(alerts.filter((a) => a.state === "auto-closed").length) },
+  ];
+
   return (
     <div className="space-y-3 p-3">
       <section className="rounded-lg border border-border bg-card/80 p-3 shadow-sm">
@@ -17,7 +38,9 @@ export default function QueuePage() {
           <div>
             <div className="mb-2 flex items-center gap-2">
               <StatusBadge tone="info">Queue</StatusBadge>
-              <StatusBadge tone="good">WS mock connected</StatusBadge>
+              <StatusBadge tone={isLive ? "good" : "muted"}>
+                {isLive ? "Live — control-plane connected" : "Mock data — control-plane offline"}
+              </StatusBadge>
             </div>
             <h1 className="text-xl font-semibold tracking-tight">Alert Queue</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">

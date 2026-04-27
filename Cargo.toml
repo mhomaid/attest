@@ -5,6 +5,7 @@ members = [
     "apps/ws-gateway",
     "tests/e2e-tests",
 ]
+exclude = ["apps/workbench"]
 resolver = "2"
 
 [workspace.package]
@@ -27,3 +28,9 @@ tokio-postgres = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+# Phase 2 — Iceberg warm tier
+arrow = "58.1"
+parquet = { version = "58.1", features = ["async"] }
+object_store = { version = "0.13", features = ["aws"] }
+iceberg = "0.9"
+iceberg-catalog-rest = "0.9"

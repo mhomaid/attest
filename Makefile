@@ -11,9 +11,16 @@ dev-up: ## Start all core services (Redpanda, RisingWave, ClickHouse, MinIO, Pos
 dev-down: ## Stop and remove all containers
 	docker compose down
 
-dev-up-platform: ## Start core services + collector + control-plane (Phase 1 full stack)
+dev-up-platform: ## Start Phase 2 full stack (core + collector + control-plane + iceberg writer)
 	docker compose up -d redpanda postgres minio clickhouse risingwave
+	docker compose run --rm minio-init
 	docker compose --profile platform up -d
+
+e2e-phase1: ## Run Phase 1 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
+	ATTEST_E2E=1 cargo test --test phase1_streaming -- --nocapture
+
+e2e-phase2: ## Run Phase 2 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
+	ATTEST_E2E=1 cargo test --test phase2_iceberg -- --nocapture
 
 dev-up-llm: ## Start core services + llama.cpp (requires Qwen GGUF in llama-models volume)
 	docker compose --profile llm up -d

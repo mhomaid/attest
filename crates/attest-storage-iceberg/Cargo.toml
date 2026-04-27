@@ -3,7 +3,26 @@ name = "attest-storage-iceberg"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-repository.workspace = true
+
+[[bin]]
+name = "attest-storage-iceberg"
+path = "src/main.rs"
 
 [dependencies]
-
+attest-common = { path = "../attest-common" }
+anyhow.workspace = true
+arrow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+iceberg.workspace = true
+iceberg-catalog-rest.workspace = true
+object_store.workspace = true
+parquet.workspace = true
+rdkafka.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
