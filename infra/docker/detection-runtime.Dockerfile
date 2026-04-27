@@ -24,4 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /build/target/release/attest-detection-runtime /usr/local/bin/attest-detection-runtime
 
+# Bake detection rules into the image so the service works on Railway
+# (no local volume mounts available). Override RULES_DIR at runtime if needed.
+COPY detections/ /rules/
+
+ENV RULES_DIR=/rules
+
 ENTRYPOINT ["/usr/local/bin/attest-detection-runtime"]

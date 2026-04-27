@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -50,3 +50,22 @@ test: ## Run all tests: Rust workspace + JS + Python
 lint: ## Lint all code: clippy + bun lint
 	cargo clippy --workspace --all-targets -- -D warnings
 	bun run lint
+
+# ── Railway deployment ────────────────────────────────────────────────────────
+
+railway-login: ## Log in to Railway CLI
+	railway login
+
+railway-setup: ## Create all Railway services and set env vars (idempotent — reads infra/railway/*.json)
+	@echo "Creating / updating Railway services from infra/railway/*.json"
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	  echo "  → $$svc"; \
+	  railway service create $$svc --json infra/railway/$$svc.json 2>/dev/null || true; \
+	done
+	@echo "Done. Set secret values (S3_ACCESS_KEY, MINIO_ROOT_PASSWORD, etc.) manually in the Railway dashboard."
+
+railway-deploy: ## Trigger a deployment for all application services
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	  echo "Deploying $$svc …"; \
+	  railway service --service $$svc deploy; \
+	done
