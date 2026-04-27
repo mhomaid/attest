@@ -25,11 +25,12 @@ COPY tests/ tests/
 RUN cargo build --release --bin attest-collector
 
 # ── Runtime image ─────────────────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
+    libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/attest-collector /usr/local/bin/attest-collector
