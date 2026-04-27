@@ -1,0 +1,9 @@
+detection: m365_inbox_rule_auto_forward_external
+description: "Detects creation of an inbox rule that forwards all mail to an external address, a classic persistence and exfiltration technique."
+applies_to: ocsf.cloud_activity
+where:
+  - event.api_service = "Exchange"
+  - event.api_operation IN ["New-InboxRule", "Set-InboxRule"]
+severity: high
+mitre: [T1564.008]
+runtime: stream | batch

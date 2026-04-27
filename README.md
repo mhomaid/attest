@@ -123,6 +123,79 @@ Three Next.js proxy API routes were added so the browser never talks directly to
 
 ---
 
+### Phase 3 — HELIQL DSL v0 + Stream Detection
+
+**The problem it solves:** Detection logic written in raw SQL or Kafka consumer code is hard to audit, impossible to backtest, and tied to a single engine. A portable detection DSL lets security engineers write rules once and have them run on the live stream (RisingWave), on historical data (ClickHouse over Iceberg), or federated to external engines — without changing the rule.
+
+#### Pillar 1 — `attest-heliql` (Parser + Compiler)
+
+A Rust library that defines the HELIQL v0 language. It has three layers:
+
+- **Grammar** (`grammar.pest`) — a `pest` PEG grammar covering comparisons, IN/NOT IN with baseline references, unique-count temporal windows, AND/OR boolean expressions, severity, MITRE tags, and runtime targets.
+- **AST** (`ast.rs`) — typed Rust structs representing a parsed `Detection`, `Condition`, `ConditionAtom`, `Duration`, and `BaselineRef`.
+- **Compiler** (`compiler.rs`) — walks the AST and emits a `CREATE MATERIALIZED VIEW IF NOT EXISTS det_<id>` RisingWave DDL. Baseline references compile to correlated subqueries against the `entity_baselines` view built in Phase 1; temporal windows compile to `count(DISTINCT ...)` subqueries with `INTERVAL` predicates.
+
+```
+detection: aws_console_login_from_anomalous_geolocation
+where:
+  - event.auth_status = "Success"
+condition:
+  - event.cloud_region NOT IN baseline(identity.user, 90d)
+severity: medium
+mitre: [T1078.004]
+runtime: stream | batch
+```
+↓ compiles to →
+```sql
+CREATE MATERIALIZED VIEW IF NOT EXISTS det_aws_console_login_from_anomalous_geolocation AS
+SELECT 'aws_console_login_from_anomalous_geolocation' AS detection_id,
+       e.event_id, e.actor_user_name, e.cloud_region, 'medium' AS severity, NOW() AS fired_at
+FROM cloudtrail_events e
+WHERE auth_status = 'Success'
+  AND NOT EXISTS (SELECT 1 FROM entity_baselines eb WHERE ...);
+```
+
+The Sigma compatibility module (`sigma.rs`) converts Sigma YAML rules into the same HELIQL AST so existing Sigma content can be imported directly.
+
+#### Pillar 2 — `attest-detection-runtime` (Deploy + Poll + Emit)
+
+A Rust binary with a three-phase lifecycle:
+
+1. **Load** — scans the `RULES_DIR` (`/rules` by default, populated by the `detections/` folder mounted as a Docker volume) and parses every `*.heliql` file.
+2. **Deploy** — compiles each rule and executes the DDL against RisingWave. Rules that fail to compile are logged and skipped.
+3. **Poll loop** — every 2 seconds, `SELECT` the latest rows from each `det_*` materialized view and produce them as JSON to the `alerts` Redpanda topic.
+
+```
+*.heliql files  (mounted from detections/)
+      ↓  loader: parse all rules
+      ↓  deployer: CREATE MATERIALIZED VIEW det_* in RisingWave
+RisingWave :4566  (continuously evaluates detection views against stream)
+      ↓  poller: SELECT fired rows every 2s
+      ↓  produce JSON alert to Kafka
+Redpanda :9092  (topic: alerts)
+```
+
+#### Pillar 3 — 10 Bundled MVP Detection Rules
+
+Ten HELIQL rules in `detections/` covering the MITRE techniques most common in CloudTrail/Okta/M365 sources:
+
+| Rule file | Technique | Severity |
+|---|---|---|
+| `aws_login_anomalous_geo.heliql` | T1078.004 | medium |
+| `aws_root_account_use.heliql` | T1078 | critical |
+| `okta_brute_force.heliql` | T1110 | high |
+| `okta_mfa_bypass.heliql` | T1556.006 | high |
+| `m365_mass_external_sharing.heliql` | T1567.002 | high |
+| `m365_inbox_auto_forward.heliql` | T1564.008 | high |
+| `aws_s3_bucket_made_public.heliql` | T1567.002 | high |
+| `aws_iam_excessive_privilege.heliql` | T1078.004 | high |
+| `aws_cloudtrail_logging_disabled.heliql` | T1562.001 | critical |
+| `aws_new_iam_user_then_keys.heliql` | T1136 + T1098 | high |
+
+**E2E acceptance gate:** Seed alice with 30 US-region logins (baseline) → inject a login from `ap-southeast-1` → assert an alert appears on the `alerts` Redpanda topic with `detection_id = aws_console_login_from_anomalous_geolocation` within 10 s. Run with `make e2e-phase3`.
+
+---
+
 ## Crates
 
 | Crate | Phase | Purpose |
@@ -131,6 +204,8 @@ Three Next.js proxy API routes were added so the browser never talks directly to
 | `crates/attest-collector` | 1 | Edge collector — CloudTrail JSON → OCSF normalizer → Redpanda + Axum HTTP ingest |
 | `crates/attest-control-plane` | 1 + 2 | Axum 0.8 REST API — RisingWave hot tier + ClickHouse warm tier |
 | `crates/attest-storage-iceberg` | 2 | Kafka consumer → Arrow/Parquet batch writer → MinIO via `object_store` |
+| `crates/attest-heliql` | 3 | HELIQL DSL — pest grammar, AST, RisingWave SQL compiler, Sigma importer |
+| `crates/attest-detection-runtime` | 3 | Loads `.heliql` rules, deploys as RisingWave views, polls and emits alerts to Redpanda |
 
 ---
 
@@ -252,9 +327,14 @@ make e2e-phase1
 # Phase 2 — Iceberg warm tier
 make e2e-phase2
 # Seeds 10 000 events → waits for Iceberg flush to MinIO (≤ 90 s) → asserts ClickHouse count + GROUP BY aggregate (≤ 30 s).
+
+# Phase 3 — HELIQL detection engine
+make e2e-phase3
+# Seeds alice's US-region baseline → injects ap-southeast-1 login → asserts alert on `alerts` Kafka topic within 10 s.
+# Also tests: StopLogging event fires a critical alert for aws_cloudtrail_logging_disabled.
 ```
 
-Both targets require `make dev-up-platform` to be running first.
+All targets require `make dev-up-platform` to be running first.
 
 ---
 
@@ -263,10 +343,13 @@ Both targets require `make dev-up-platform` to be running first.
 ```
 Attest/
 ├── crates/
-│   ├── attest-common/          # OCSF 1.3 types (Phase 1)
-│   ├── attest-collector/       # CloudTrail → Redpanda edge collector (Phase 1)
-│   ├── attest-control-plane/   # Axum 0.8 REST API — hot + warm tier (Phase 1 + 2)
-│   └── attest-storage-iceberg/ # Kafka → Parquet → MinIO writer (Phase 2)
+│   ├── attest-common/            # OCSF 1.3 types (Phase 1)
+│   ├── attest-collector/         # CloudTrail → Redpanda edge collector (Phase 1)
+│   ├── attest-control-plane/     # Axum 0.8 REST API — hot + warm tier (Phase 1 + 2)
+│   ├── attest-storage-iceberg/   # Kafka → Parquet → MinIO writer (Phase 2)
+│   ├── attest-heliql/            # HELIQL DSL parser + RisingWave compiler (Phase 3)
+│   └── attest-detection-runtime/ # Detection deploy + poll + emit to alerts topic (Phase 3)
+├── detections/                   # 10 bundled HELIQL detection rules (Phase 3)
 ├── apps/
 │   └── workbench/              # Next.js 15 marketing site + SOC workbench UI
 ├── infra/
@@ -295,6 +378,7 @@ Attest/
 | `make dev-down` | Stop all containers |
 | `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
+| `make e2e-phase3` | Run Phase 3 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make fmt` | `cargo fmt --all` |
 | `make lint` | `cargo clippy` + `bun run lint` |
 | `make smoke` | Quick smoke check — cargo test + bun test + pytest |

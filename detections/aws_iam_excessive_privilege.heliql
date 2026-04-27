@@ -1,0 +1,9 @@
+detection: aws_iam_user_excessive_privilege
+description: "Detects attachment of AdministratorAccess or PowerUserAccess policies to an IAM user, indicating potential privilege escalation."
+applies_to: ocsf.cloud_activity
+where:
+  - event.api_service = "iam.amazonaws.com"
+  - event.api_operation IN ["AttachUserPolicy", "PutUserPolicy", "AddUserToGroup"]
+severity: high
+mitre: [T1078.004]
+runtime: stream | batch

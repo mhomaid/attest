@@ -1,0 +1,12 @@
+detection: okta_mfa_bypass_attempt
+description: "Detects authentication success after multiple MFA factor failures, which can indicate an MFA fatigue or bypass attack."
+applies_to: ocsf.authentication
+where:
+  - event.api_service = "okta"
+  - event.auth_status = "Success"
+entity: identity.user
+condition:
+  - unique(event.cloud_region, window: 5m) > 0
+severity: high
+mitre: [T1556.006]
+runtime: stream

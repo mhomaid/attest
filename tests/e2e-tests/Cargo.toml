@@ -18,8 +18,14 @@ path = "tests/phase1_streaming.rs"
 name = "phase2_iceberg"
 path = "tests/phase2_iceberg.rs"
 
+[[test]]
+name = "phase3_detection"
+path = "tests/phase3_detection.rs"
+
 [dev-dependencies]
 chrono = { workspace = true }
+rdkafka = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+uuid = { workspace = true }

@@ -44,9 +44,17 @@ impl FlatEvent {
                 cloud_region: e.cloud.region.clone(),
                 cloud_account_uid: e.cloud.account_uid.clone(),
                 severity: format!("{:?}", e.severity).to_lowercase(),
-                auth_status: Some(format!("{:?}", e.status).to_lowercase()),
-                api_operation: None,
-                api_service: None,
+                // Preserve exact casing so HELIQL rules can match `= "Success"`.
+                auth_status: Some(format!("{:?}", e.status)),
+                // Populate from raw payload so `api_operation = 'ConsoleLogin'` works.
+                api_operation: e.raw.as_ref()
+                    .and_then(|r| r.get("eventName"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                api_service: e.raw.as_ref()
+                    .and_then(|r| r.get("eventSource"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 raw: e.raw.clone(),
             },
             OcsfEvent::CloudActivity(e) => Self {

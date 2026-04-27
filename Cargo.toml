@@ -34,3 +34,8 @@ parquet = { version = "58.1", features = ["async"] }
 object_store = { version = "0.13", features = ["aws"] }
 iceberg = "0.9"
 iceberg-catalog-rest = "0.9"
+# Phase 3 — HELIQL DSL + detection runtime
+pest = "2"
+pest_derive = "2"
+serde_yaml = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
