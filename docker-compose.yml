@@ -171,6 +171,25 @@ services:
     profiles:
       - platform
 
+  detection-runtime:
+    build:
+      context: .
+      dockerfile: infra/docker/detection-runtime.Dockerfile
+    environment:
+      RULES_DIR: /rules
+      RISINGWAVE_HOST: risingwave
+      RISINGWAVE_PORT: "4566"
+      KAFKA_BROKERS: redpanda:9092
+      ALERTS_TOPIC: alerts
+      POLL_INTERVAL_SECS: "2"
+    volumes:
+      - ./detections:/rules:ro
+    depends_on:
+      - risingwave
+      - redpanda
+    profiles:
+      - platform
+
   ml-sidecar:
     build:
       context: ./ml/sidecar

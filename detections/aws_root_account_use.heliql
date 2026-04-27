@@ -1,0 +1,9 @@
+detection: aws_root_account_use
+description: "Detects any use of the AWS root account, which should never occur in normal operations."
+applies_to: ocsf.authentication
+where:
+  - actor_user_name = "root"
+  - event.api_operation = "ConsoleLogin"
+severity: critical
+mitre: [T1078]
+runtime: stream | batch

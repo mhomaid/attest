@@ -1,0 +1,9 @@
+detection: aws_s3_bucket_policy_made_public
+description: "Detects when an S3 bucket policy is modified to allow public access, which can expose sensitive data."
+applies_to: ocsf.cloud_activity
+where:
+  - event.api_service = "s3.amazonaws.com"
+  - event.api_operation IN ["PutBucketPolicy", "PutBucketAcl", "DeletePublicAccessBlock"]
+severity: high
+mitre: [T1567.002]
+runtime: stream | batch

@@ -1,0 +1,12 @@
+detection: aws_console_login_from_anomalous_geolocation
+description: "Detects AWS console login from a region the user has not authenticated from in the past 90 days."
+applies_to: ocsf.authentication
+where:
+  - event.auth_status = "Success"
+  - event.api_operation = "ConsoleLogin"
+entity: identity.user
+condition:
+  - event.cloud_region NOT IN baseline(identity.user, 90d)
+severity: medium
+mitre: [T1078.004]
+runtime: stream | batch

@@ -1,0 +1,9 @@
+detection: aws_cloudtrail_logging_disabled
+description: "Detects when CloudTrail logging is stopped or a trail is deleted, which is a common defense evasion technique before an attack."
+applies_to: ocsf.cloud_activity
+where:
+  - event.api_service = "cloudtrail.amazonaws.com"
+  - event.api_operation IN ["StopLogging", "DeleteTrail", "UpdateTrail"]
+severity: critical
+mitre: [T1562.001]
+runtime: stream | batch

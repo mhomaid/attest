@@ -1,0 +1,12 @@
+detection: m365_mass_external_sharing
+description: "Detects a user sharing more than 10 items externally within a 1-hour window, indicative of data exfiltration via SharePoint or OneDrive."
+applies_to: ocsf.cloud_activity
+where:
+  - event.api_service = "SharePoint"
+  - event.api_operation IN ["SharingSet", "AddedToSecureLink", "SecureLinkCreated"]
+entity: identity.user
+condition:
+  - unique(event.cloud_region, window: 1h) > 10
+severity: high
+mitre: [T1567.002]
+runtime: stream | batch

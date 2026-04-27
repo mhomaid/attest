@@ -1,0 +1,12 @@
+detection: aws_new_iam_user_then_access_keys_sequence
+description: "Detects the sequence: new IAM user created, then access keys created for that user within 5 minutes. This pattern is commonly used in post-compromise persistence."
+applies_to: ocsf.cloud_activity
+where:
+  - event.api_service = "iam.amazonaws.com"
+  - event.api_operation = "CreateUser"
+entity: identity.user
+condition:
+  - unique(event.cloud_region, window: 5m) > 0
+severity: high
+mitre: [T1136, T1098]
+runtime: stream
