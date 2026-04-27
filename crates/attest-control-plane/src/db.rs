@@ -25,8 +25,11 @@ pub async fn connect(host: &str, port: u16) -> anyhow::Result<Db> {
 }
 
 /// Apply Phase 1 DDL idempotently.  RisingWave accepts IF NOT EXISTS.
-pub async fn apply_phase1_ddl(db: &Client) -> anyhow::Result<()> {
-    let ddl = include_str!("../../../infra/risingwave/phase1_baseline.sql");
+/// `kafka_brokers` is substituted at runtime so the same SQL file works both
+/// locally (redpanda:9092) and on Railway (redpanda.railway.internal:9092).
+pub async fn apply_phase1_ddl(db: &Client, kafka_brokers: &str) -> anyhow::Result<()> {
+    let ddl = include_str!("../../../infra/risingwave/phase1_baseline.sql")
+        .replace("redpanda:9092", kafka_brokers);
 
     // Split on `;` and execute each non-empty statement individually.
     // We strip leading comment lines only for the emptiness check — the full
