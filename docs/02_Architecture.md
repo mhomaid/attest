@@ -65,7 +65,7 @@ The platform is organized into **six planes**, each independently scalable and r
 +------------------------------------------------------------------+
 |                        CONTROL PLANE                             |
 |  Identity · Multi-tenancy · Billing · Audit · Policy · GitOps    |
-|  Railway (MVP) · Pulumi + EKS/GKE/AKS (BYOC)                     |
+|  Railway (MVP) · Terraform + EKS/GKE/AKS (BYOC)                     |
 +------------------------------------------------------------------+
 ```
 
@@ -397,7 +397,7 @@ No existing SIEM does this because none has the agent telemetry schema.
 - **GitOps:** All configuration (detections, pipelines, policies, agent definitions) is Git-backed. Configuration changes flow through PR review, signed at build, immutable at runtime.
 - **Infrastructure:**
   - **Railway** for MVP and early design partners — fast iteration, low ops, sufficient for pre-Series A.
-  - **Pulumi** modules for BYOC deployments on AWS (EKS), GCP (GKE), Azure (AKS). Same container artifacts deploy to either Railway or K8s.
+  - **Terraform** modules for BYOC deployments on AWS (EKS), GCP (GKE), Azure (AKS). Same container artifacts deploy to either Railway or K8s.
   - **Helm** charts for self-hosted and air-gapped reference deployments.
 - **Observability:** Prometheus + Grafana. Per-tenant SLO dashboards. Customer-facing status page.
 - **Audit:** Append-only audit log of every config change, query, agent action, integration event. 7-year retention by default for regulated customers.
@@ -487,7 +487,7 @@ For BYOC and post-Series A SaaS deployments, the topology scales horizontally on
 | Prompt-injection classifier | **Buy** (pretrained DeBERTa) | Mature, cheap. |
 | Embeddings | **Buy** (BGE family pretrained) | Mature, cheap. |
 | SOAR | **Integrate** (Torq/Tines/XSOAR) | Don't fight the SOAR vendors. |
-| GitOps + IaC | **Buy** (Pulumi for BYOC; Railway native for MVP) | Standard tooling. |
+| GitOps + IaC | **Buy** (Terraform for BYOC; Railway native for MVP) | Standard tooling. |
 
 ## 15. Risks and mitigations
 

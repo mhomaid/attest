@@ -22,7 +22,7 @@ Attest/
 ├── detections/                 # HELIQL detection rules (versioned content)
 ├── schemas/                    # OCSF, attestation envelopes, HELIQL grammar
 ├── eval/                       # Golden cases, red-team corpora, evaluation harness inputs
-├── infra/                      # IaC, Railway templates, Pulumi modules, K8s manifests
+├── infra/                      # IaC, Railway templates, Terraform modules, K8s manifests
 ├── tools/                      # Build scripts, codegen, dev tooling
 ├── docs/                       # All product/architecture/strategy markdown (this set)
 ├── tests/                      # Cross-cutting integration and chaos tests
@@ -175,10 +175,9 @@ eval/
 ```
 infra/
 ├── railway/                    # Railway service definitions and env templates
-├── pulumi/                     # BYOC modules: AWS / GCP / Azure
+├── terraform/                  # BYOC modules: AWS / GCP / Azure
 ├── helm/                       # K8s charts (for self-hosted / air-gapped reference)
-├── docker/                     # Production Dockerfiles (per service)
-└── terraform/                  # (optional) Terraform mirror of Pulumi modules for buyers who prefer it
+└── docker/                     # Production Dockerfiles (per service)
 ```
 
 ## 11. `tools/` — dev tooling
@@ -268,5 +267,5 @@ For clarity:
 - **No customer data.** Per-customer eval sets are encrypted and access-controlled separately.
 - **No model weights.** Anthropic API keys and Qwen GGUF files are pulled at build time from secure caches.
 - **No detection content under proprietary license.** Sigma rules in `detections/` are MIT-licensed; customer-specific extensions live in customer repos.
-- **No secrets.** Every deployment manifest reads from a secrets manager (Railway env vars, AWS Secrets Manager, Pulumi ESC).
+- **No secrets.** Every deployment manifest reads from a secrets manager (Railway env vars, AWS Secrets Manager, Terraform Cloud / HCP Vault).
 - **No `agents/.../classifier/` model artifacts in Git LFS for the production version.** Models are built in CI, signed, and published to a private registry; only the training code lives in Git.

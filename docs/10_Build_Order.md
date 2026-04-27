@@ -20,7 +20,7 @@ The phases sum to the 90-day MVP described in `05_Roadmap.md`. After MVP, the sa
 
 | Item | What |
 |---|---|
-| Monorepo skeleton | Cargo workspace (Rust), `apps/web` (Next.js), `apps/ml-sidecar` (Python), `infra/` (Pulumi + Railway templates), `agents/` (system prompts), `detections/` (HELIQL rules), `eval/` (golden cases) |
+| Monorepo skeleton | Cargo workspace (Rust), `apps/web` (Next.js), `apps/ml-sidecar` (Python), `infra/` (Terraform + Railway templates), `agents/` (system prompts), `detections/` (HELIQL rules), `eval/` (golden cases) |
 | CI | GitHub Actions — fmt, clippy, cargo test, pytest, type checking, integration tests via docker-compose |
 | Local dev | `docker-compose.yml` brings up Redpanda, RisingWave, Arroyo, ClickHouse, MinIO, Postgres, llama.cpp+Qwen, Python ML sidecar |
 | Seed data | `make seed-data` target downloads Tier 1 datasets (per `08_Datasets_and_ML.md` Section 2.1) into MinIO buckets |

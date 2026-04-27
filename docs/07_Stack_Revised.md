@@ -28,7 +28,7 @@
 | Local dev object store | (not specified) | **MinIO** (S3-compatible) | Local-first parity with prod S3 |
 | Deployment — early/MVP | (not specified) | **Railway** for Attest-managed components | Fast iteration, low ops |
 | Deployment — regulated/scale | BYOC on AWS/GCP/Azure | **BYOC on AWS/GCP/Azure** | Unchanged |
-| GitOps + IaC | Pulumi + ArgoCD + Kubernetes | **Pulumi (BYOC) + Railway template (MVP)** | Two paths: Railway for managed, full K8s for BYOC |
+| GitOps + IaC | Terraform + ArgoCD + Kubernetes | **Terraform (BYOC) + Railway template (MVP)** | Two paths: Railway for managed, full K8s for BYOC |
 
 ## 2. Why dropping Flink does not compromise the solution
 
@@ -144,7 +144,7 @@ Local-only (developer laptops, CI):
 - Railway compliance posture (SOC 2 yes; HIPAA/FedRAMP — verify with current state at sign-up) determines whether we can put a regulated customer on Railway. **For HIPAA, financial services, or defense customers, BYOC on AWS/GCP from day one.**
 - Multi-region today is limited; cross-region failover is a manual exercise. Acceptable for MVP; a Q3 problem.
 
-**Migration path to BYOC:** identical container artifacts, identical Iceberg layout. The Pulumi modules from `02_Architecture.md` deploy the same images to a customer's EKS/GKE/AKS. Railway is not a lock-in; it is acceleration.
+**Migration path to BYOC:** identical container artifacts, identical Iceberg layout. The Terraform modules from `02_Architecture.md` deploy the same images to a customer's EKS/GKE/AKS. Railway is not a lock-in; it is acceleration.
 
 ## 7. LLM inference strategy
 
@@ -241,7 +241,7 @@ Same intent as the original; updated for the revised stack.
 | LLM inference | **Buy multi-provider** | Anthropic primary; vLLM + llama.cpp for sovereignty |
 | MCP gateway | **Build** (Rust thin layer) | Need policy enforcement integrated |
 | SOAR connector | **Integrate** (Torq, Tines, XSOAR) | Don't fight SOAR vendors |
-| GitOps | **Buy** (Pulumi for BYOC; Railway native for MVP) | Standard tooling |
+| GitOps | **Buy** (Terraform for BYOC; Railway native for MVP) | Standard tooling |
 
 ## 10. Updated performance budget
 
@@ -264,7 +264,7 @@ A typical mid-market design partner runs Attest on Railway for **$800–$1,500/m
 The same image artifacts deploy to either Railway or a customer's EKS/GKE/AKS. The migration story:
 
 1. Customer signs paid contract; if regulated, BYOC clause in the order form.
-2. Pulumi modules deploy data plane to customer's VPC.
+2. Terraform modules deploy data plane to customer's VPC.
 3. Control plane stays on Railway (Attest-managed) or moves to Attest's AWS account (Year 2 SaaS hardening).
 4. Customer's S3 bucket already exists — Iceberg metadata refers to their bucket from day one when they're on Railway too.
 5. Cutover is a Redpanda mirror + ClickHouse re-ingest job; ~24 hours of dual-write.
