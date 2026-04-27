@@ -14,15 +14,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Attest",
-  description: "Agent-aware security operations workbench",
+  title: "Attest — Verifiable Agentic SIEM",
+  description:
+    "Streaming-first security operations with agent-aware detection, signed agent reasoning, and a self-improving detection mesh. Explore the analyst workbench.",
+  openGraph: {
+    title: "Attest — Verifiable Agentic SIEM",
+    description:
+      "AI agents as first-class entities on both sides of the attack. Portable detections, OCSF + Iceberg, multi-agent SOC you can audit.",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark`}
+      className={`${geistSans.variable} ${geistMono.variable} dark scroll-smooth`}
       suppressHydrationWarning
     >
       <body>
