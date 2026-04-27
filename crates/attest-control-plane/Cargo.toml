@@ -12,13 +12,14 @@ path = "src/main.rs"
 [dependencies]
 attest-common = { path = "../attest-common" }
 anyhow = { workspace = true }
-axum = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-postgres = { workspace = true }
+tower-http = { version = "0.6", features = ["cors"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
