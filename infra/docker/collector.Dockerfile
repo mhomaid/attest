@@ -6,6 +6,7 @@ FROM rust:slim AS builder
 
 # cmake and libssl are needed by rdkafka's cmake-build feature.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     cmake \
     libssl-dev \
     pkg-config \

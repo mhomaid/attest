@@ -3,6 +3,7 @@
 FROM rust:slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     cmake \
     libssl-dev \
     pkg-config \
