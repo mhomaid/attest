@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -56,30 +56,94 @@ lint: ## Lint all code: clippy + bun lint
 railway-login: ## Log in to Railway CLI
 	railway login
 
-railway-setup: ## Create all Railway application services (idempotent — then set env vars from infra/railway/*.json in the dashboard)
-	@echo "Creating Railway services (skipping any that already exist)…"
+railway-setup: ## Create all services AND configure each one's builder (Dockerfile path or Nixpacks) — fully CLI driven
+	@echo "▶ Creating services (skipping if they already exist)…"
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
 	  echo "  → $$svc"; \
-	  railway add --service $$svc 2>/dev/null || true; \
+	  railway add --service $$svc >/dev/null 2>&1 || true; \
 	done
+	@echo "▶ Configuring builders (Rust services → Dockerfile, workbench → Nixpacks)…"
+	@railway environment edit \
+	  --service-config collector         build.builder        DOCKERFILE \
+	  --service-config collector         build.dockerfilePath infra/docker/collector.Dockerfile \
+	  --service-config control-plane     build.builder        DOCKERFILE \
+	  --service-config control-plane     build.dockerfilePath infra/docker/control-plane.Dockerfile \
+	  --service-config storage-iceberg   build.builder        DOCKERFILE \
+	  --service-config storage-iceberg   build.dockerfilePath infra/docker/storage-iceberg.Dockerfile \
+	  --service-config detection-runtime build.builder        DOCKERFILE \
+	  --service-config detection-runtime build.dockerfilePath infra/docker/detection-runtime.Dockerfile \
+	  --service-config workbench         build.builder        NIXPACKS \
+	  -m "configure builders for all application services"
+	@echo "▶ Setting application env vars from infra/railway/*.json…"
+	@./scripts/railway-set-env.sh
 	@echo ""
-	@echo "Services created. Next steps:"
-	@echo "  1. Set each service's Dockerfile path in the Railway dashboard"
-	@echo "     (see infra/railway/README.md for the exact path per service)"
-	@echo "  2. Copy env vars from infra/railway/<service>.json into each service's Variables tab"
-	@echo "  3. Run 'make railway-deploy' to trigger the first build"
+	@echo "✔ Setup complete. Next: 'make railway-deploy'"
+	@echo "  (Infrastructure services — Redpanda, RisingWave, ClickHouse, MinIO —"
+	@echo "   must be added separately: see 'make railway-infra'.)"
 
-railway-deploy: ## Upload and deploy all application services to Railway from local source
-	@echo "NOTE: each Rust service must have its Dockerfile path configured in the Railway"
-	@echo "      dashboard first (Settings → Build → Dockerfile). See infra/railway/README.md"
+railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse, MinIO) as Docker image services
+	@echo "▶ Adding Redpanda…"
+	railway add --service redpanda --image redpandadata/redpanda:latest || true
+	@echo "▶ Adding RisingWave…"
+	railway add --service risingwave --image risingwavelabs/risingwave:latest || true
+	@echo "▶ Adding ClickHouse…"
+	railway add --service clickhouse --image clickhouse/clickhouse-server:latest || true
+	@echo "▶ Adding MinIO…"
+	railway add --service minio --image minio/minio:latest || true
 	@echo ""
+	@echo "✔ Infrastructure services created."
+	@echo "  Run 'make railway-infra-config' to configure ports, start commands, env vars."
+
+railway-infra-config: ## Configure infrastructure services (start commands, env vars, ports)
+	@railway environment edit \
+	  --service-config redpanda    deploy.startCommand "redpanda start --overprovisioned --smp 1 --memory 1G --reserve-memory 0M --node-id 0 --check=false --kafka-addr PLAINTEXT://0.0.0.0:9092 --advertise-kafka-addr PLAINTEXT://redpanda.railway.internal:9092" \
+	  --service-config risingwave  deploy.startCommand "playground" \
+	  --service-config clickhouse  variables.CLICKHOUSE_USER.value default \
+	  --service-config clickhouse  variables.CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT.value 1 \
+	  --service-config minio       deploy.startCommand "server /data --console-address :9001" \
+	  --service-config minio       variables.MINIO_ROOT_USER.value minioadmin \
+	  --service-config minio       variables.MINIO_ROOT_PASSWORD.value minioadmin \
+	  -m "configure infrastructure services"
+	@echo "✔ Infrastructure configured."
+
+railway-deploy: ## Upload local source and deploy all application services to Railway (first deploy)
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
-	  echo "Deploying $$svc …"; \
+	  echo "▶ Deploying $$svc …"; \
 	  railway up --service $$svc --detach --ci; \
 	done
 
-railway-redeploy: ## Trigger redeploy of the latest deployment for all services (use after first deploy)
+railway-redeploy: ## Trigger redeploy of the latest deployment for all services (after first deploy)
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
-	  echo "Redeploying $$svc …"; \
+	  echo "▶ Redeploying $$svc …"; \
 	  railway service redeploy --service $$svc --yes; \
 	done
+
+railway-domain: ## Generate a public domain for control-plane and workbench
+	@echo "▶ Generating public domain for control-plane (needed for WebSocket)…"
+	railway domain --service control-plane
+	@echo "▶ Generating public domain for workbench…"
+	railway domain --service workbench
+
+railway-status: ## Show deployment status for all Railway services
+	@echo ""
+	@railway environment config
+	@echo ""
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench redpanda risingwave clickhouse minio; do \
+	  echo "── $$svc ──"; \
+	  railway service status --service $$svc 2>&1 | grep -E "Status|status|ACTIVE|FAILED|CRASHED|SLEEPING|DEPLOYING|queued" | head -3 || true; \
+	done
+
+railway-logs-%: ## Stream runtime logs for a Railway service  (e.g. make railway-logs-collector)
+	railway logs --service $*
+
+railway-build-logs-%: ## Stream build logs for a Railway service  (e.g. make railway-build-logs-workbench)
+	railway logs --service $* --build
+
+railway-logs: ## Tail runtime logs for all application services (runs in parallel, Ctrl-C to stop)
+	@echo "Tailing logs for all app services (Ctrl-C to stop)…"
+	@railway logs --service collector &
+	@railway logs --service control-plane &
+	@railway logs --service storage-iceberg &
+	@railway logs --service detection-runtime &
+	@railway logs --service workbench &
+	@wait
