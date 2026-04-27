@@ -1,0 +1,24 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "infra/docker/storage-iceberg.Dockerfile"
+  },
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE"
+  },
+  "environmentVariables": {
+    "KAFKA_BROKERS": "${{Redpanda.RAILWAY_PRIVATE_DOMAIN}}:9092",
+    "KAFKA_TOPIC": "cloudtrail",
+    "KAFKA_GROUP_ID": "attest-iceberg-writer",
+    "S3_ENDPOINT": "http://${{Minio.RAILWAY_PRIVATE_DOMAIN}}:9000",
+    "S3_BUCKET": "attest-warm",
+    "S3_ACCESS_KEY": "${{Minio.MINIO_ROOT_USER}}",
+    "S3_SECRET_KEY": "${{Minio.MINIO_ROOT_PASSWORD}}",
+    "S3_REGION": "us-east-1",
+    "TABLE_PREFIX": "cloudtrail",
+    "BATCH_SIZE": "1000",
+    "FLUSH_INTERVAL_SECS": "30",
+    "RUST_LOG": "info"
+  }
+}
