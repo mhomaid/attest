@@ -13,10 +13,10 @@ export function MarketingFooter() {
             Attest
           </div>
           <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-            Attest: The Verifiable Agentic SIEM for the post-human threat landscape.
+            The Verifiable Agentic SIEM for the post-human threat landscape.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-10">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               Product
@@ -44,30 +44,14 @@ export function MarketingFooter() {
           </div>
           <div>
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Blueprint
+              Stack
             </p>
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-              <li>PRD, architecture, build order, and workbench spec live in the repo</li>
+              <li>Rust 1.95 · axum 0.8</li>
+              <li>Redpanda · RisingWave</li>
+              <li>OCSF 1.3 · ClickHouse</li>
+              <li>Next.js 15 · Bun · shadcn</li>
             </ul>
-          </div>
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              UI
-            </p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Marketing motion and component patterns inspired by{" "}
-              <a
-                href="https://ui.aceternity.com/"
-                className="text-foreground underline-offset-2 hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Aceternity UI
-              </a>{" "}
-              (Framer Motion + Tailwind). The SOC console under{" "}
-              <code className="rounded bg-secondary px-1 font-mono text-xs">/workbench</code>{" "}
-              stays information-dense per product spec.
-            </p>
           </div>
         </div>
       </div>

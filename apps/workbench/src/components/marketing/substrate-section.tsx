@@ -4,12 +4,36 @@ import { motion } from "framer-motion";
 import { Cpu, Database, Globe, Lock, Server, Workflow } from "lucide-react";
 
 const stack = [
-  { icon: Workflow, label: "Redpanda + stream runtime", detail: "Kafka-compatible spine" },
-  { icon: Database, label: "Apache Iceberg + OCSF", detail: "Customer-owned lakehouse" },
-  { icon: Cpu, label: "Rust hot path", detail: "Collectors, orchestrator, policy" },
-  { icon: Server, label: "ClickHouse analytics", detail: "Warm query + Iceberg reads" },
-  { icon: Globe, label: "BYOC & air-gapped", detail: "Regulated deployment patterns" },
-  { icon: Lock, label: "Attestation & policy", detail: "Ed25519 envelopes, PACl" },
+  {
+    icon: Cpu,
+    label: "attest-collector — Rust 1.95",
+    detail: "CloudTrail → OCSF 1.3 normalizer; single static binary < 50 MB",
+  },
+  {
+    icon: Workflow,
+    label: "Redpanda (Kafka-compatible)",
+    detail: "Topic: cloudtrail · partitioned by tenant_id · dual-listener setup",
+  },
+  {
+    icon: Database,
+    label: "RisingWave streaming SQL",
+    detail: "entity_baselines + recent_events materialized views; Postgres wire",
+  },
+  {
+    icon: Server,
+    label: "attest-control-plane — axum 0.8",
+    detail: "/healthz · /v1/events/recent · /v1/baselines/user/:name",
+  },
+  {
+    icon: Lock,
+    label: "OCSF 1.3 schema",
+    detail: "Class 3002 Authentication · Class 6003 Cloud API Activity",
+  },
+  {
+    icon: Globe,
+    label: "Next.js 15 + Bun + shadcn",
+    detail: "Workbench UI · Tailwind CSS · Geist Mono · deployed on Railway",
+  },
 ];
 
 export function SubstrateSection() {
@@ -17,15 +41,15 @@ export function SubstrateSection() {
     <section id="substrate" className="border-b border-border/60 py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary">
-          Architectural foundations
+          Phase 1 — What&apos;s running
         </p>
         <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-          Streaming-first, composable, open by contract
+          Streaming substrate, fully operational
         </h2>
         <p className="mt-4 max-w-3xl text-muted-foreground">
-          The same substrate patterns the market has proven — collection that shapes data at the
-          edge, portable detections, and polyglot runtimes — with Attest&apos;s agent and
-          attestation layer on top.
+          Every component below is built, containerised, and passing end-to-end
+          tests. CloudTrail events flow from collector to Redpanda to RisingWave
+          to the control-plane API in under one second.
         </p>
 
         <motion.ul
