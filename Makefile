@@ -11,6 +11,10 @@ dev-up: ## Start all core services (Redpanda, RisingWave, ClickHouse, MinIO, Pos
 dev-down: ## Stop and remove all containers
 	docker compose down
 
+dev-up-platform: ## Start core services + collector + control-plane (Phase 1 full stack)
+	docker compose up -d redpanda postgres minio clickhouse risingwave
+	docker compose --profile platform up -d
+
 dev-up-llm: ## Start core services + llama.cpp (requires Qwen GGUF in llama-models volume)
 	docker compose --profile llm up -d
 

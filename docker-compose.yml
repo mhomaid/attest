@@ -15,11 +15,12 @@ services:
       - "0"
       - --check=false
       - --kafka-addr
-      - PLAINTEXT://0.0.0.0:9092
+      - PLAINTEXT://0.0.0.0:9092,HOST://0.0.0.0:19092
       - --advertise-kafka-addr
-      - PLAINTEXT://localhost:9092
+      - PLAINTEXT://redpanda:9092,HOST://localhost:19092
     ports:
       - "9092:9092"
+      - "19092:19092"
 
   postgres:
     image: postgres:16-alpine
@@ -82,6 +83,37 @@ services:
       --ctx-size 4096
     profiles:
       - llm
+
+  collector:
+    build:
+      context: .
+      dockerfile: infra/docker/collector.Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      TENANT_ID: local-dev
+      PORT: "4000"
+    depends_on:
+      - redpanda
+    profiles:
+      - platform
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: infra/docker/control-plane.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      RISINGWAVE_HOST: risingwave
+      RISINGWAVE_PORT: "4566"
+      PORT: "8080"
+    depends_on:
+      - risingwave
+      - redpanda
+    profiles:
+      - platform
 
   ml-sidecar:
     build:
