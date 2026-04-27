@@ -6,84 +6,91 @@ import Link from "next/link";
 import { GridBackground } from "@/components/marketing/grid-background";
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 24 },
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: 0.08 * i, duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+    transition: { delay: 0.09 * i, duration: 0.55, ease: [0.22, 1, 0.36, 1] as const },
   }),
 };
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-[min(100vh,56rem)] overflow-hidden border-b border-border/60 pt-24 pb-20">
+    <section className="relative min-h-[min(100vh,60rem)] overflow-hidden border-b border-border/60 pt-28 pb-24">
       <GridBackground />
-      <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
+      <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6">
+
+        {/* Eyebrow badge */}
         <motion.p
           custom={0}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mb-4 inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/50 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
+          className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/40 px-3.5 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground backdrop-blur-sm"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-signal-good shadow-[0_0_8px] shadow-signal-good/60" />
           Verifiable agentic SIEM · Post-human threat landscape
         </motion.p>
 
+        {/* Headline */}
         <motion.h1
           custom={1}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="max-w-4xl text-4xl font-semibold tracking-tight sm:text-5xl sm:leading-[1.08]"
+          className="font-sans text-[clamp(2.25rem,5.5vw,4rem)] font-bold leading-[1.06] tracking-tight"
         >
           The security platform where{" "}
-          <span className="bg-gradient-to-r from-foreground via-primary to-lime-300/85 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-br from-primary via-lime-300/90 to-emerald-400/70 bg-clip-text text-transparent">
             AI agents are first-class
-          </span>{" "}
-          — on both sides of the attack.
+          </span>
+          {" "}— on both sides of the attack.
         </motion.h1>
 
+        {/* Sub-copy */}
         <motion.p
           custom={2}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+          className="mt-6 max-w-2xl text-[1.0625rem] leading-[1.75] text-muted-foreground"
         >
-          Streaming-first operations, portable detections, and a multi-agent SOC that
-          every auditor can trust: signed traces, calibrated confidence, and policy gates
-          no model can bypass — built for regulated teams adopting AI at full speed.
+          Streaming-first operations, portable detections, and a multi-agent SOC
+          that every auditor can trust: signed traces, calibrated confidence, and
+          policy gates no model can bypass — built for regulated teams adopting AI
+          at full speed.
         </motion.p>
 
+        {/* CTAs */}
         <motion.div
           custom={3}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-8 flex flex-wrap items-center gap-3"
+          className="mt-9 flex flex-wrap items-center gap-3"
         >
           <Link
             href="/workbench/queue"
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-95"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_-4px] shadow-primary/50 transition-opacity hover:opacity-90"
           >
             Explore the workbench
             <ArrowRight className="h-4 w-4" />
           </Link>
           <a
             href="#pillars"
-            className="inline-flex items-center gap-2 rounded-md border border-border bg-card/60 px-4 py-2.5 text-sm font-medium text-foreground"
+            className="inline-flex items-center gap-2 rounded-md border border-border/80 bg-card/50 px-5 py-2.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:bg-card"
           >
             How Attest is different
           </a>
         </motion.div>
 
+        {/* Feature cards */}
         <motion.dl
           custom={4}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-16 grid gap-4 sm:grid-cols-3"
+          className="mt-18 grid gap-3 sm:grid-cols-3"
         >
           {[
             {
@@ -104,13 +111,15 @@ export function HeroSection() {
           ].map((item) => (
             <div
               key={item.label}
-              className="rounded-xl border border-border/80 bg-card/50 p-4 shadow-sm backdrop-blur-sm"
+              className="rounded-xl border border-border/70 bg-card/40 p-5 shadow-sm backdrop-blur-sm"
             >
-              <dt className="flex items-center gap-2 text-sm font-medium">
-                <item.icon className="h-4 w-4 text-primary" />
+              <dt className="flex items-center gap-2 text-sm font-semibold">
+                <item.icon className="h-4 w-4 shrink-0 text-primary" />
                 {item.label}
               </dt>
-              <dd className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.copy}</dd>
+              <dd className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {item.copy}
+              </dd>
             </div>
           ))}
         </motion.dl>
