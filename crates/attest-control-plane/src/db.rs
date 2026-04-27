@@ -28,13 +28,13 @@ pub async fn connect(host: &str, port: u16) -> anyhow::Result<Db> {
 pub async fn apply_phase1_ddl(db: &Client) -> anyhow::Result<()> {
     let ddl = include_str!("../../../infra/risingwave/phase1_baseline.sql");
 
-    // Split on `;` and execute each statement individually (tokio-postgres
-    // does not support multi-statement batch execution via simple_query here).
-    for stmt in ddl
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty() && !s.starts_with("--"))
-    {
+    // Split on `;` and execute each non-empty statement individually.
+    // We strip leading comment lines only for the emptiness check — the full
+    // chunk (including comments) is sent to the server, which handles them fine.
+    for stmt in ddl.split(';').map(str::trim).filter(|s| {
+        s.lines()
+            .any(|l| !l.trim_start().starts_with("--") && !l.trim().is_empty())
+    }) {
         tracing::debug!("applying DDL: {}…", &stmt[..stmt.len().min(60)]);
         db.simple_query(stmt)
             .await

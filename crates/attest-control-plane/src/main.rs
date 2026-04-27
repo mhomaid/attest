@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/events/recent", get(get_recent_event))
-        .route("/v1/baselines/user/{name}", get(get_user_baseline))
+        .route("/v1/baselines/user/:name", get(get_user_baseline))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
