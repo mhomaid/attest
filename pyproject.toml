@@ -1,0 +1,15 @@
+[project]
+name = "attest-ml"
+version = "0.1.0"
+description = "Python ML training, calibration, evaluation, and sidecar code for Attest."
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["ml"]
+python_files = ["test_*.py", "*_test.py"]

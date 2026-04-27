@@ -1,0 +1,17 @@
+{
+  "name": "attest",
+  "private": true,
+  "packageManager": "bun@1.3.13",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tools/*"
+  ],
+  "scripts": {
+    "dev": "bun --filter @attest/workbench dev",
+    "build": "bun --filter @attest/workbench build",
+    "lint": "bun --filter @attest/workbench lint",
+    "test": "bun --filter @attest/workbench test",
+    "typecheck": "bun --filter @attest/workbench typecheck"
+  }
+}

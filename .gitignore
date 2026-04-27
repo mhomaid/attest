@@ -1,0 +1,43 @@
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Node
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+
+# Rust
+/target/
+# Cargo.lock is intentionally committed — this workspace contains binary crates.
+
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+*.egg-info/
+
+# Local runtime data
+.env
+.env.*
+!.env.example
+data/
+tmp/
+
+# Eval data and generated reports
+eval/per_customer/*
+!eval/per_customer/.gitkeep
+eval/reports/*
+!eval/reports/.gitkeep
+
+# Model artifacts
+*.onnx
+*.gguf
+*.pt
+*.safetensors

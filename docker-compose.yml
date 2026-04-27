@@ -1,0 +1,101 @@
+services:
+  redpanda:
+    image: redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://localhost:9092
+    ports:
+      - "9092:9092"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: attest
+      POSTGRES_USER: attest
+      POSTGRES_PASSWORD: attest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: attest
+      MINIO_ROOT_PASSWORD: attest-local-password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
+  risingwave:
+    image: risingwavelabs/risingwave:latest
+    command: playground
+    ports:
+      - "4566:4566"
+
+  arroyo:
+    image: ghcr.io/arroyosystems/arroyo:latest
+    ports:
+      - "5115:5115"
+    environment:
+      DATABASE_URL: postgres://attest:attest@postgres:5432/attest
+    depends_on:
+      - postgres
+
+  # llama.cpp HTTP server — model GGUF must be volume-mounted at runtime.
+  # Pull a Qwen 3 ~7B GGUF and set LLAMA_MODEL_PATH on first run.
+  llama-cpp:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    ports:
+      - "8088:8080"
+    volumes:
+      - llama-models:/models
+    command: >
+      --model /models/qwen3-7b.gguf
+      --host 0.0.0.0
+      --port 8080
+      --ctx-size 4096
+    profiles:
+      - llm
+
+  ml-sidecar:
+    build:
+      context: ./ml/sidecar
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    profiles:
+      - ml
+
+volumes:
+  postgres-data:
+  minio-data:
+  clickhouse-data:
+  llama-models:
