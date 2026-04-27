@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -69,8 +69,17 @@ railway-setup: ## Create all Railway application services (idempotent — then s
 	@echo "  2. Copy env vars from infra/railway/<service>.json into each service's Variables tab"
 	@echo "  3. Run 'make railway-deploy' to trigger the first build"
 
-railway-deploy: ## Deploy (redeploy) all application services on Railway
+railway-deploy: ## Upload and deploy all application services to Railway from local source
+	@echo "NOTE: each Rust service must have its Dockerfile path configured in the Railway"
+	@echo "      dashboard first (Settings → Build → Dockerfile). See infra/railway/README.md"
+	@echo ""
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
 	  echo "Deploying $$svc …"; \
+	  railway up --service $$svc --detach --ci; \
+	done
+
+railway-redeploy: ## Trigger redeploy of the latest deployment for all services (use after first deploy)
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	  echo "Redeploying $$svc …"; \
 	  railway service redeploy --service $$svc --yes; \
 	done

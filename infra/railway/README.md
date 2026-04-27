@@ -195,19 +195,44 @@ automatically within the same project. The key references are:
 
 ---
 
-## Step 5 — Deploy
+## Step 5 — Configure Dockerfile paths (dashboard only)
 
-After all services and variables are configured:
+For each Rust application service, open the Railway dashboard and navigate
+to **Settings → Build → Builder**. Change from "Nixpacks" to "Dockerfile"
+and enter the path shown below:
+
+| Service | Dockerfile path |
+|---------|----------------|
+| `collector` | `infra/docker/collector.Dockerfile` |
+| `control-plane` | `infra/docker/control-plane.Dockerfile` |
+| `storage-iceberg` | `infra/docker/storage-iceberg.Dockerfile` |
+| `detection-runtime` | `infra/docker/detection-runtime.Dockerfile` |
+| `workbench` | *(leave as Nixpacks — uses repo-root `railway.json`)* |
+
+Leave the **Root Directory** as `/` (repo root) for all services.
+
+---
+
+## Step 6 — First deploy
+
+After Dockerfile paths and env vars are set:
 
 ```bash
-# Redeploy all application services (triggers Railway to rebuild from latest commit)
+# Upload local source and trigger builds for all services
 make railway-deploy
+
+# Or deploy a single service
+railway up --service control-plane --detach --ci
+```
+
+For all subsequent deploys (e.g. after a `git push`):
+
+```bash
+# Trigger redeploy from the latest commit already in Railway
+make railway-redeploy
 
 # Or redeploy a single service
 railway service redeploy --service control-plane --yes
-
-# To deploy from local source directly (bypasses GitHub integration)
-railway up --service control-plane --detach
 ```
 
 ---
@@ -224,7 +249,8 @@ views, so the exact startup order does not matter.
 ## Makefile reference
 
 ```
-make railway-login    # Log in to Railway CLI
-make railway-setup    # Create all services with railway add (idempotent)
-make railway-deploy   # railway service redeploy for all application services
+make railway-login      # Log in to Railway CLI
+make railway-setup      # Create all services with railway add (run once)
+make railway-deploy     # railway up --service for all services (first deploy)
+make railway-redeploy   # railway service redeploy for all services (after first deploy)
 ```
