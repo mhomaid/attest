@@ -4,19 +4,41 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "echo \"workbench tests pending\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@base-ui-components/react": "^1.0.0-rc.0",
+    "@sentry/nextjs": "^10.50.0",
+    "@tailwindcss/postcss": "^4.2.4",
+    "@tanstack/react-query": "^5.100.5",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.24",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "lucide-react": "^1.11.0",
+    "next": "^16.2.4",
+    "next-themes": "^0.4.6",
+    "posthog-js": "^1.372.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "recharts": "^3.8.1",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.4",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "typescript": "latest"
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^16.2.4",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3"
   }
 }

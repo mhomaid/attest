@@ -26,11 +26,13 @@ export function initSentry() {
         /customer/i,
       ];
 
-      if (event.breadcrumbs?.values) {
-        event.breadcrumbs.values = event.breadcrumbs.values.filter(
-          (b) =>
+      if (event.breadcrumbs) {
+        event.breadcrumbs = event.breadcrumbs.filter(
+          (breadcrumb) =>
             !BLOCKED_PATTERNS.some(
-              (re) => re.test(b.message ?? "") || re.test(b.category ?? ""),
+              (pattern) =>
+                pattern.test(breadcrumb.message ?? "") ||
+                pattern.test(breadcrumb.category ?? ""),
             ),
         );
       }

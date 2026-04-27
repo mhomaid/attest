@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+
+  --color-background: oklch(0.12 0.016 255);
+  --color-foreground: oklch(0.94 0.015 255);
+  --color-card: oklch(0.16 0.018 255);
+  --color-card-foreground: oklch(0.94 0.015 255);
+  --color-popover: oklch(0.15 0.018 255);
+  --color-popover-foreground: oklch(0.94 0.015 255);
+  --color-primary: oklch(0.66 0.16 246);
+  --color-primary-foreground: oklch(0.1 0.016 255);
+  --color-secondary: oklch(0.22 0.02 255);
+  --color-secondary-foreground: oklch(0.9 0.015 255);
+  --color-muted: oklch(0.21 0.018 255);
+  --color-muted-foreground: oklch(0.68 0.02 255);
+  --color-accent: oklch(0.26 0.04 250);
+  --color-accent-foreground: oklch(0.94 0.015 255);
+  --color-destructive: oklch(0.6 0.2 25);
+  --color-destructive-foreground: oklch(0.98 0.01 25);
+  --color-border: oklch(0.27 0.02 255);
+  --color-input: oklch(0.24 0.02 255);
+  --color-ring: oklch(0.66 0.16 246);
+
+  --color-severity-critical: oklch(0.62 0.22 25);
+  --color-severity-high: oklch(0.7 0.18 50);
+  --color-severity-medium: oklch(0.75 0.16 85);
+  --color-severity-low: oklch(0.7 0.12 155);
+  --color-signal-good: oklch(0.72 0.16 154);
+  --color-signal-live: oklch(0.68 0.16 250);
+
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.25);
+  --radius-xl: calc(var(--radius) * 1.5);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  background: var(--color-background);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, oklch(0.22 0.045 250 / 0.45), transparent 32rem),
+    var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  text-rendering: geometricPrecision;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: oklch(0.66 0.16 246 / 0.35);
+}
+
+.metric-tabular {
+  font-variant-numeric: tabular-nums;
+}
