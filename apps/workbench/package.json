@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "start": "next start",
     "lint": "eslint .",
     "test": "echo \"workbench tests pending\"",
     "typecheck": "tsc --noEmit"
