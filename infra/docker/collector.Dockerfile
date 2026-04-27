@@ -17,6 +17,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY apps/ apps/
+COPY tests/ tests/
 
 # Build only the collector binary in release mode.
 RUN cargo build --release --bin attest-collector
