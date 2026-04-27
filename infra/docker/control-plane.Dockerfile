@@ -1,6 +1,6 @@
 # Multi-stage build for attest-control-plane.
 
-FROM rust:1.85-slim AS builder
+FROM rust:slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
