@@ -1,6 +1,6 @@
 # Attest
 
-Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer, into Redpanda, and are continuously aggregated by RisingWave materialized views. A REST control-plane API exposes recent events and 30-day entity baselines in real time.
+Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer, into Redpanda, and are continuously aggregated by RisingWave materialized views. A REST control-plane API exposes recent events and 30-day entity baselines in real time. Parquet files are committed to MinIO via Apache Iceberg and queried at scale by ClickHouse.
 
 ## Documentation
 
@@ -15,7 +15,9 @@ Attest is a streaming-first, agent-aware security operations platform built for 
 
 ---
 
-## What's Built — Phase 1: Streaming Substrate
+## What's Built
+
+### Phase 1: Streaming Substrate
 
 ```
 CloudTrail JSON
@@ -35,13 +37,46 @@ attest-collector :4000   ──── OCSF JSON ───▶  Redpanda  (topic: 
                                            └── GET /v1/baselines/user/:name
 ```
 
+### Phase 2: Iceberg Warm Tier
+
+```
+Redpanda (topic: cloudtrail)
+      │
+      │ Kafka consumer
+      ▼
+attest-storage-iceberg
+      │ Arrow → Parquet (batched every 1 000 events or 30 s)
+      ▼
+MinIO (bucket: attest-warm) — Parquet files partitioned by date + tenant_id
+      │
+      │ s3() table function
+      ▼
+ClickHouse :8123
+      ▲
+attest-control-plane :8080
+      └── POST /v1/warm/query  { "sql": "SELECT ..." }
+```
+
 ### Crates
 
 | Crate | Purpose |
 |---|---|
-| `crates/attest-common` | OCSF 1.3 types: `OcsfEvent`, `AuthenticationEvent` (class 3002), `CloudActivityEvent` (class 6003), `Actor`, `User`, `Cloud`, `Severity` |
-| `crates/attest-collector` | Edge collector binary — CloudTrail JSON → OCSF normalizer → Redpanda producer + axum HTTP ingest server |
-| `crates/attest-control-plane` | Axum 0.8 REST API — queries RisingWave materialized views via Postgres wire protocol; applies DDL on boot |
+| `crates/attest-common` | OCSF 1.3 types: `OcsfEvent`, `AuthenticationEvent` (class 3002), `CloudActivityEvent` (class 6003) |
+| `crates/attest-collector` | Edge collector — CloudTrail JSON → OCSF normalizer → Redpanda + axum HTTP ingest |
+| `crates/attest-control-plane` | Axum 0.8 REST API — RisingWave (hot tier) + ClickHouse (warm tier) |
+| `crates/attest-storage-iceberg` | Kafka consumer → Arrow/Parquet writer → MinIO via `object_store` |
+
+### Web App
+
+The Next.js workbench at `apps/workbench/` is wired to the live backend:
+
+| Route | Behaviour |
+|---|---|
+| `GET /api/events` | Proxies control-plane `/v1/events/recent`; falls back to mock if offline |
+| `GET /api/baselines/user/[name]` | Proxies control-plane `/v1/baselines/user/:name` |
+| `POST /api/warm/query` | Proxies control-plane `/v1/warm/query` (ClickHouse) |
+| `/workbench/queue` | Live alert queue — real OCSF events when backend is up, mock otherwise |
+| `/workbench/cases/[id]` | Case detail enriched with live event + baseline data |
 
 ---
 
@@ -58,31 +93,39 @@ attest-collector :4000   ──── OCSF JSON ───▶  Redpanda  (topic: 
 
 ## Quick Start
 
-### 1. Start infrastructure (Redpanda + RisingWave + Postgres + MinIO)
+### 1. Start infrastructure
 
 ```sh
 make dev-up
 ```
 
-This starts Redpanda (`:9092`, `:9644`), RisingWave (`:4566`), Postgres (`:5432`), MinIO, and ClickHouse in Docker.
+Starts Redpanda (`:9092`, `:19092`), RisingWave (`:4566`), Postgres (`:5432`), MinIO (`:9000`, console `:9001`), and ClickHouse (`:8123`) in Docker. MinIO bucket `attest-warm` is created automatically.
 
-### 2. Start Phase 1 services (collector + control-plane)
+### 2. Start the full platform stack
 
 ```sh
 make dev-up-platform
 ```
 
-This builds and starts `attest-collector` (`:4000`) and `attest-control-plane` (`:8080`) using the multi-stage Dockerfiles in `infra/docker/`.
+Builds and starts `attest-collector` (`:4000`), `attest-control-plane` (`:8080`), and `attest-storage-iceberg` using the multi-stage Dockerfiles in `infra/docker/`.
 
-### 3. Verify both services are healthy
+### 3. Verify services are healthy
 
 ```sh
-curl http://localhost:4000/healthz
-# {"status":"ok"}
-
-curl http://localhost:8080/healthz
-# {"status":"ok"}
+curl http://localhost:4000/healthz    # {"status":"ok"}
+curl http://localhost:8080/healthz    # {"status":"ok"}
 ```
+
+### 4. Start the workbench UI
+
+```sh
+cd apps/workbench
+bun install
+bun run dev
+# Open http://localhost:3000
+```
+
+The queue page badge will show **"Live — control-plane connected"** when the backend is reachable.
 
 ---
 
@@ -90,58 +133,21 @@ curl http://localhost:8080/healthz
 
 ### Unit Tests (no Docker required)
 
-Runs all library tests including OCSF type round-trips and CloudTrail normalizer:
-
 ```sh
 cargo test --workspace --lib
 ```
 
-Expected output: all tests pass, including:
-- `attest_common::ocsf::tests::authentication_event_round_trips`
-- `attest_common::ocsf::tests::ocsf_event_enum_round_trips`
-- `attest_collector::normalizer::tests::normalizes_console_login`
-- `attest_collector::normalizer::tests::normalizes_failed_login`
-- `attest_collector::normalizer::tests::normalizes_cloud_activity`
+Covers OCSF type round-trips, CloudTrail normalizer, and serialization.
 
 ### CLI — Ingest a CloudTrail file
 
-With infrastructure running (`make dev-up-platform`), ingest a local CloudTrail JSON file directly:
-
 ```sh
-# Build the binary first
 cargo build --release --bin attest-collector
 
-# Ingest a CloudTrail file
 ./target/release/attest-collector \
-  --kafka-brokers localhost:9092 \
-  --tenant-id my-tenant \
-  ingest-file path/to/cloudtrail.json
-```
-
-You can use this sample payload to test manually:
-
-```sh
-cat > /tmp/sample_cloudtrail.json << 'EOF'
-{
-  "Records": [{
-    "eventName": "ConsoleLogin",
-    "eventTime": "2024-01-15T10:30:00Z",
-    "awsRegion": "us-west-2",
-    "recipientAccountId": "123456789012",
-    "userIdentity": {
-      "type": "IAMUser",
-      "userName": "alice@example.com",
-      "arn": "arn:aws:iam::123456789012:user/alice",
-      "accountId": "123456789012"
-    }
-  }]
-}
-EOF
-
-./target/release/attest-collector \
-  --kafka-brokers localhost:9092 \
+  --kafka-brokers localhost:19092 \
   --tenant-id local-dev \
-  ingest-file /tmp/sample_cloudtrail.json
+  ingest-file path/to/cloudtrail.json
 ```
 
 ### CLI — HTTP Ingest (curl)
@@ -152,7 +158,7 @@ curl -s -X POST http://localhost:4000/ingest \
   -d '{
     "Records": [{
       "eventName": "ConsoleLogin",
-      "eventTime": "2024-01-15T10:30:00Z",
+      "eventTime": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
       "awsRegion": "us-west-2",
       "recipientAccountId": "123456789012",
       "userIdentity": {
@@ -169,38 +175,32 @@ curl -s -X POST http://localhost:4000/ingest \
 ### CLI — Query the control-plane API
 
 ```sh
-# Look up an event by ID (replace with an ID from the /ingest response)
+# Recent event by ID
 curl "http://localhost:8080/v1/events/recent?id=<event-uuid>"
 
-# Get alice's 30-day baseline (regions seen, event count, last seen)
+# 30-day baseline for a user
 curl "http://localhost:8080/v1/baselines/user/alice@example.com"
-# {"tenant_id":"local-dev","actor_user_name":"alice@example.com","regions_seen_30d":["us-west-2"],"event_count_30d":1,"last_seen":"..."}
+# {"tenant_id":"local-dev","actor_user_name":"alice@example.com","regions_seen_30d":["us-west-2"],...}
+
+# Warm query via ClickHouse (Phase 2)
+curl -s -X POST http://localhost:8080/v1/warm/query \
+  -H 'Content-Type: application/json' \
+  -d '{"sql": "SELECT cloud_region, count(*) FROM s3(\"http://minio:9000/attest-warm/cloudtrail/**/*.parquet\", \"minioadmin\", \"minioadmin\", \"Parquet\") GROUP BY cloud_region"}'
 ```
 
-### E2E Test (requires running stack)
-
-The E2E test posts a ConsoleLogin event, polls for it in `recent_events` (5 s timeout), and polls alice's baseline for `us-west-2` (10 s timeout):
+### E2E Tests (require running stack)
 
 ```sh
-# Start the full stack first
-make dev-up-platform
+# Phase 1 — streaming substrate
+make e2e-phase1
+# Posts a ConsoleLogin, polls recent_events (5 s), polls entity_baselines (30 s).
 
-# Run the E2E test (guarded by ATTEST_E2E=1)
-ATTEST_E2E=1 cargo test --test phase1_streaming -- --nocapture
+# Phase 2 — Iceberg warm tier
+make e2e-phase2
+# Seeds 10 000 events, waits for Iceberg commit (≤ 60 s), asserts ClickHouse count + aggregate (≤ 30 s).
 ```
 
-### UI — Workbench (Next.js)
-
-The marketing home page and workbench shell are available locally:
-
-```sh
-# Install JS dependencies
-bun install
-
-# Start the workbench dev server
-bun run dev --filter @attest/workbench
-# Open http://localhost:3000
-```
+Both targets require `make dev-up-platform` to be running first.
 
 ---
 
@@ -209,18 +209,22 @@ bun run dev --filter @attest/workbench
 ```
 Attest/
 ├── crates/
-│   ├── attest-common/          # OCSF types (Phase 1)
+│   ├── attest-common/          # OCSF 1.3 types (Phase 1)
 │   ├── attest-collector/       # CloudTrail → Redpanda edge collector (Phase 1)
-│   ├── attest-control-plane/   # axum REST API (Phase 1)
-│   └── …                       # future crates per build-order phase
+│   ├── attest-control-plane/   # axum 0.8 REST API — hot + warm tier (Phase 1 + 2)
+│   └── attest-storage-iceberg/ # Kafka → Parquet → MinIO writer (Phase 2)
 ├── apps/
-│   └── workbench/              # Next.js marketing + workbench UI
+│   └── workbench/              # Next.js 15 marketing site + SOC workbench UI
 ├── infra/
-│   ├── docker/                 # Multi-stage Dockerfiles
+│   ├── clickhouse/             # ClickHouse config (S3/MinIO disk)
+│   ├── docker/                 # Multi-stage Dockerfiles (collector, control-plane, storage-iceberg)
 │   ├── risingwave/             # RisingWave DDL (phase1_baseline.sql)
 │   └── terraform/              # IaC (Phase 5+)
 ├── tests/
-│   └── e2e-tests/              # Integration tests (ATTEST_E2E=1 to run)
+│   └── e2e-tests/              # E2E tests (ATTEST_E2E=1 required)
+│       └── tests/
+│           ├── phase1_streaming.rs
+│           └── phase2_iceberg.rs
 ├── docs/                       # Source-of-truth documentation
 ├── docker-compose.yml          # Local dev stack
 └── Makefile                    # Convenience targets
@@ -232,10 +236,12 @@ Attest/
 
 | Target | What it does |
 |---|---|
-| `make dev-up` | Start core infra (Redpanda, RisingWave, Postgres, MinIO, ClickHouse) |
-| `make dev-up-platform` | Start core infra + collector + control-plane (full Phase 1 stack) |
+| `make dev-up` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
+| `make dev-up-platform` | Start core infra + collector + control-plane + storage-iceberg |
 | `make dev-down` | Stop all containers |
-| `make smoke` | Quick smoke check against running services |
-| `make dev-up-llm` | Start core infra + llama.cpp sidecar |
-
-The JavaScript workspace uses Bun, matching `docs/12_Workbench.md`. Python commands run through `uv` so ML tooling does not require globally installed packages.
+| `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
+| `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
+| `make fmt` | `cargo fmt --all` |
+| `make lint` | `cargo clippy` + `bun run lint` |
+| `make smoke` | Quick smoke check — cargo test + bun test + pytest |
+| `make dev-up-llm` | Start core infra + llama.cpp (requires Qwen GGUF volume-mounted) |
