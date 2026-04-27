@@ -1,34 +1,49 @@
-import { AlertQueue } from "@/components/workbench/alert-queue";
+import { AlertQueueLive } from "@/components/workbench/alert-queue";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { alerts as mockAlerts } from "@/lib/mock-data";
-import { parseEventsResponse } from "@/lib/ocsf-to-alert";
+import { parseFiredDetections } from "@/lib/detection-to-alert";
+import type { Alert } from "@/lib/mock-data";
 
-const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
+const API_URL = process.env.NEXT_PUBLIC_APP_URL
+  ? `${process.env.NEXT_PUBLIC_APP_URL}/api/detections`
+  : "http://localhost:3000/api/detections";
 
-async function fetchLiveAlerts() {
+async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; isLive: boolean }> {
   try {
-    const res = await fetch(`${CP_URL}/v1/events/recent`, {
-      next: { revalidate: 5 },
+    const res = await fetch(API_URL, {
+      cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { alerts: mockAlerts, isLive: false };
     const data = await res.json();
-    const alerts = parseEventsResponse(data);
-    return alerts.length > 0 ? alerts : null;
+    const alerts = parseFiredDetections(data);
+    return alerts.length > 0
+      ? { alerts, isLive: true }
+      : { alerts: mockAlerts, isLive: false };
   } catch {
-    return null;
+    return { alerts: mockAlerts, isLive: false };
   }
 }
 
 export default async function QueuePage() {
-  const liveAlerts = await fetchLiveAlerts();
-  const alerts = liveAlerts ?? mockAlerts;
-  const isLive = liveAlerts !== null;
+  const { alerts, isLive } = await fetchLiveAlerts();
 
   const queueStats = [
-    { label: "Open alerts", value: String(alerts.filter((a) => a.state !== "auto-closed").length) },
-    { label: "Awaiting review", value: String(alerts.filter((a) => a.state === "awaiting-review").length) },
-    { label: "In-flight agents", value: String(alerts.filter((a) => a.state === "in-flight").length) },
-    { label: "Auto-closed", value: String(alerts.filter((a) => a.state === "auto-closed").length) },
+    {
+      label: "Open alerts",
+      value: String(alerts.filter((a) => a.state !== "auto-closed").length),
+    },
+    {
+      label: "Awaiting review",
+      value: String(alerts.filter((a) => a.state === "awaiting-review").length),
+    },
+    {
+      label: "In-flight agents",
+      value: String(alerts.filter((a) => a.state === "in-flight").length),
+    },
+    {
+      label: "Auto-closed",
+      value: String(alerts.filter((a) => a.state === "auto-closed").length),
+    },
   ];
 
   return (
@@ -39,20 +54,27 @@ export default async function QueuePage() {
             <div className="mb-2 flex items-center gap-2">
               <StatusBadge tone="info">Queue</StatusBadge>
               <StatusBadge tone={isLive ? "good" : "muted"}>
-                {isLive ? "Live — control-plane connected" : "Mock data — control-plane offline"}
+                {isLive
+                  ? "Live — HELIQL detections connected"
+                  : "Mock data — control-plane offline"}
               </StatusBadge>
             </div>
             <h1 className="text-xl font-semibold tracking-tight">Alert Queue</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Classifier-first triage surface with live agent context. Rows do not auto-scroll
-              when new alerts land; the analyst keeps focus.
+              Real-time alerts fired by HELIQL detection rules. WebSocket pushes
+              new matches as they arrive on the stream.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             {queueStats.map((stat) => (
-              <div key={stat.label} className="rounded-md border border-border bg-background/60 px-3 py-2">
-                <div className="metric-tabular font-mono text-lg font-semibold">{stat.value}</div>
+              <div
+                key={stat.label}
+                className="rounded-md border border-border bg-background/60 px-3 py-2"
+              >
+                <div className="metric-tabular font-mono text-lg font-semibold">
+                  {stat.value}
+                </div>
                 <div className="mt-1 text-[11px] text-muted-foreground">{stat.label}</div>
               </div>
             ))}
@@ -60,7 +82,8 @@ export default async function QueuePage() {
         </div>
       </section>
 
-      <AlertQueue alerts={alerts} />
+      {/* AlertQueueLive is a client component that opens the WebSocket */}
+      <AlertQueueLive initialAlerts={alerts} />
     </div>
   );
 }
