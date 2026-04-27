@@ -14,6 +14,9 @@ mod state;
 
 use anyhow::Context;
 use axum::{Router, routing::{get, post}};
+use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+use rdkafka::client::DefaultClientContext;
+use rdkafka::config::ClientConfig;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -53,6 +56,8 @@ async fn main() -> anyhow::Result<()> {
     let ch_url: ChUrl = Arc::new(
         std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".into()),
     );
+    let kafka_brokers =
+        std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "redpanda:9092".into());
     let poll_secs: u64 = std::env::var("ALERT_POLL_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -61,8 +66,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("connecting to RisingWave at {rw_host}:{rw_port}");
     let db = connect(&rw_host, rw_port).await?;
 
-    tracing::info!("applying Phase 1 DDL");
-    apply_phase1_ddl(&db)
+    tracing::info!("ensuring Kafka topic 'cloudtrail' exists");
+    ensure_kafka_topic(&kafka_brokers, "cloudtrail").await;
+
+    tracing::info!("applying Phase 1 DDL (kafka_brokers={kafka_brokers})");
+    apply_phase1_ddl(&db, &kafka_brokers)
         .await
         .context("DDL migration failed")?;
 
@@ -130,4 +138,38 @@ async fn main() -> anyhow::Result<()> {
         .context("server error")?;
 
     Ok(())
+}
+
+/// Idempotently create the Kafka topic if it doesn't exist.
+/// Logs and continues on error so a pre-existing topic or transient failure
+/// doesn't abort startup.
+async fn ensure_kafka_topic(brokers: &str, topic: &str) {
+    let admin: AdminClient<DefaultClientContext> = match ClientConfig::new()
+        .set("bootstrap.servers", brokers)
+        .set("socket.timeout.ms", "10000")
+        .create()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("kafka admin client creation failed: {e}");
+            return;
+        }
+    };
+
+    let new_topic = NewTopic::new(topic, 1, TopicReplication::Fixed(1));
+    let opts = AdminOptions::new().operation_timeout(Some(Duration::from_secs(10)));
+    match admin.create_topics(&[new_topic], &opts).await {
+        Ok(results) => {
+            for res in results {
+                match res {
+                    Ok(name) => tracing::info!("kafka topic '{name}' created"),
+                    Err((name, rdkafka::error::RDKafkaErrorCode::TopicAlreadyExists)) => {
+                        tracing::info!("kafka topic '{name}' already exists");
+                    }
+                    Err((name, e)) => tracing::warn!("kafka topic '{name}' create error: {e}"),
+                }
+            }
+        }
+        Err(e) => tracing::warn!("kafka admin create_topics failed: {e}"),
+    }
 }

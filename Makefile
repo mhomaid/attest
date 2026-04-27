@@ -62,18 +62,22 @@ railway-setup: ## Create all services AND configure each one's builder (Dockerfi
 	  echo "  → $$svc"; \
 	  railway add --service $$svc >/dev/null 2>&1 || true; \
 	done
-	@echo "▶ Configuring builders (Rust services → Dockerfile, workbench → Nixpacks)…"
+	@echo "▶ Configuring builders and start commands (will prompt for confirmation)…"
 	@railway environment edit \
 	  --service-config collector         build.builder        DOCKERFILE \
 	  --service-config collector         build.dockerfilePath infra/docker/collector.Dockerfile \
+	  --service-config collector         deploy.startCommand  "attest-collector serve" \
 	  --service-config control-plane     build.builder        DOCKERFILE \
 	  --service-config control-plane     build.dockerfilePath infra/docker/control-plane.Dockerfile \
+	  --service-config control-plane     deploy.startCommand  "attest-control-plane" \
 	  --service-config storage-iceberg   build.builder        DOCKERFILE \
 	  --service-config storage-iceberg   build.dockerfilePath infra/docker/storage-iceberg.Dockerfile \
+	  --service-config storage-iceberg   deploy.startCommand  "/usr/local/bin/attest-storage-iceberg" \
 	  --service-config detection-runtime build.builder        DOCKERFILE \
 	  --service-config detection-runtime build.dockerfilePath infra/docker/detection-runtime.Dockerfile \
+	  --service-config detection-runtime deploy.startCommand  "/usr/local/bin/attest-detection-runtime" \
 	  --service-config workbench         build.builder        NIXPACKS \
-	  -m "configure builders for all application services"
+	  -m "configure builders and start commands for all application services"
 	@echo "▶ Setting application env vars from infra/railway/*.json…"
 	@./scripts/railway-set-env.sh
 	@echo ""
@@ -83,7 +87,7 @@ railway-setup: ## Create all services AND configure each one's builder (Dockerfi
 
 railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse, MinIO) as Docker image services
 	@echo "▶ Adding Redpanda…"
-	railway add --service redpanda --image redpandadata/redpanda:latest || true
+	railway add --service redpanda --image redpandadata/redpanda:v26.1.6 || true
 	@echo "▶ Adding RisingWave…"
 	railway add --service risingwave --image risingwavelabs/risingwave:latest || true
 	@echo "▶ Adding ClickHouse…"
@@ -96,13 +100,13 @@ railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse,
 
 railway-infra-config: ## Configure infrastructure services (start commands, env vars, ports)
 	@railway environment edit \
-	  --service-config redpanda    deploy.startCommand "redpanda start --overprovisioned --smp 1 --memory 1G --reserve-memory 0M --node-id 0 --check=false --kafka-addr PLAINTEXT://0.0.0.0:9092 --advertise-kafka-addr PLAINTEXT://redpanda.railway.internal:9092" \
-	  --service-config risingwave  deploy.startCommand "playground" \
-	  --service-config clickhouse  variables.CLICKHOUSE_USER.value default \
-	  --service-config clickhouse  variables.CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT.value 1 \
-	  --service-config minio       deploy.startCommand "server /data --console-address :9001" \
-	  --service-config minio       variables.MINIO_ROOT_USER.value minioadmin \
-	  --service-config minio       variables.MINIO_ROOT_PASSWORD.value minioadmin \
+	  --service-config redpanda   deploy.startCommand  "redpanda start --mode dev-container --smp 1 --memory 1G --kafka-addr PLAINTEXT://0.0.0.0:9092 --advertise-kafka-addr PLAINTEXT://redpanda.railway.internal:9092" \
+	  --service-config risingwave deploy.startCommand  "playground" \
+	  --service-config clickhouse variables.CLICKHOUSE_USER.value default \
+	  --service-config clickhouse variables.CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT.value 1 \
+	  --service-config minio      deploy.startCommand  "server /data --console-address :9001" \
+	  --service-config minio      variables.MINIO_ROOT_USER.value minioadmin \
+	  --service-config minio      variables.MINIO_ROOT_PASSWORD.value minioadmin \
 	  -m "configure infrastructure services"
 	@echo "✔ Infrastructure configured."
 

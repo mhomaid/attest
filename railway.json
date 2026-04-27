@@ -4,8 +4,6 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "cd apps/workbench && bun run start",
-    "healthcheckPath": "/",
     "restartPolicyType": "ON_FAILURE"
   }
 }

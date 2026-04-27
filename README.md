@@ -383,3 +383,136 @@ Attest/
 | `make lint` | `cargo clippy` + `bun run lint` |
 | `make smoke` | Quick smoke check — cargo test + bun test + pytest |
 | `make dev-up-llm` | Start core infra + llama.cpp (requires Qwen GGUF volume-mounted) |
+
+---
+
+## Railway Deployment
+
+### Service Map
+
+| Railway service | Image / Builder | Internal hostname |
+|---|---|---|
+| `redpanda` | `confluentinc/cp-kafka:7.9.0` | `redpanda.railway.internal:9092` |
+| `risingwave` | `risingwavelabs/risingwave:latest` | `risingwave.railway.internal:4566` |
+| `clickhouse` | `clickhouse/clickhouse-server:latest` | `clickhouse.railway.internal:8123` |
+| `minio` | `minio/minio:latest` | `minio.railway.internal:9000` |
+| `collector` | Dockerfile `infra/docker/collector.Dockerfile` | — |
+| `control-plane` | Dockerfile `infra/docker/control-plane.Dockerfile` | `control-plane-production-b6e3.up.railway.app` |
+| `storage-iceberg` | Dockerfile `infra/docker/storage-iceberg.Dockerfile` | — |
+| `detection-runtime` | Dockerfile `infra/docker/detection-runtime.Dockerfile` | — |
+| `workbench` | Nixpacks (`nixpacks.toml`) | `workbench-production-6e86.up.railway.app` |
+
+### First-time setup
+
+```sh
+railway login
+make railway-infra        # create the 4 Docker-image infrastructure services
+make railway-infra-config # set start commands + env vars for infra services
+make railway-setup        # create the 5 app services and configure builders
+make railway-deploy       # upload source + trigger first build for all app services
+make railway-domain       # generate public HTTPS domains for control-plane + workbench
+```
+
+After `make railway-domain`, copy the two domains into workbench's Railway env vars:
+
+```sh
+railway variable set --service workbench \
+  CONTROL_PLANE_URL=https://<control-plane-domain> \
+  NEXT_PUBLIC_APP_URL=https://<workbench-domain> \
+  NEXT_PUBLIC_CP_WS_URL=wss://<control-plane-domain>
+```
+
+### Subsequent deploys
+
+```sh
+# Re-upload source + rebuild (needed when code changes)
+make railway-deploy
+
+# Or just restart the last build (when only env vars / config changed)
+make railway-redeploy
+```
+
+### Monitoring
+
+```sh
+make railway-status            # overview of all services
+make railway-logs              # tail all app services in parallel
+make railway-logs-collector    # tail a single service
+make railway-build-logs-workbench  # tail build output
+```
+
+---
+
+### Hard-won Railway lessons (do not repeat)
+
+#### 1. Redpanda cannot run on Railway
+Redpanda's Seastar I/O engine requires `perf_event_open` syscall and Linux AIO — both blocked in Railway's container sandbox. Redpanda starts, passes the health check, then crashes within ~10 seconds. **Use `confluentinc/cp-kafka:7.9.0` (KRaft mode) instead.** It uses standard Java I/O and runs fine. The service is still named `redpanda` so no app env vars need updating.
+
+KRaft requires a `CLUSTER_ID` (22-char base64 UUID). Generate one with:
+```sh
+python3 -c "import base64, uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))"
+```
+Required env vars for single-node KRaft:
+```
+CLUSTER_ID=<generated>
+KAFKA_NODE_ID=1
+KAFKA_PROCESS_ROLES=broker,controller
+KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://redpanda.railway.internal:9092
+KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+KAFKA_LOG_DIRS=/var/lib/kafka/data
+```
+
+#### 2. `railway.json` at repo root applies to ALL services
+Every service that has its root directory set to `/` reads the same `railway.json`. If that file contains a `deploy.startCommand` (e.g. `"cd apps/workbench && bun run start"`), **every service** will attempt to run it — Rust containers with minimal images will crash with `executable 'cd' not found`. Keep `railway.json` free of any `startCommand`; set start commands per-service via the Railway dashboard or `railway environment edit`.
+
+#### 3. `railway environment edit` is not interactive in CI — use JSON stdin
+The `--service-config <name> <path> <value>` flag works interactively (TTY prompt) but blocks in scripts. The reliable non-interactive method is to pipe a JSON patch to stdin:
+
+```sh
+python3 -c "import json; print(json.dumps({'services': {'<UUID>': {'deploy': {'startCommand': 'attest-collector serve'}}}}))" \
+  | railway environment edit --message "fix start command"
+```
+
+**Critical:** the JSON keys must be **service UUIDs**, not service names. Get UUIDs with:
+```sh
+railway environment config --json | python3 -c "
+import json,sys; data=json.load(sys.stdin)
+for uid,cfg in data['services'].items():
+    print(uid, cfg.get('build',{}).get('dockerfilePath',''), cfg.get('source',{}).get('image',''))
+"
+```
+
+#### 4. `${{ServiceName.VAR}}` interpolation is case-sensitive
+Railway variable references like `${{Risingwave.RAILWAY_PRIVATE_DOMAIN}}` only work if the service name casing matches exactly. Since all services here are lowercase (`risingwave`, `clickhouse`, `minio`, `redpanda`), use **literal hostnames** instead of interpolation:
+- `risingwave.railway.internal`
+- `clickhouse.railway.internal`
+- `minio.railway.internal`
+- `redpanda.railway.internal`
+
+#### 5. `railway service redeploy` re-runs the last deployment snapshot
+For source-built services, `railway service redeploy` re-runs the old build artifact with its original `railway.json` baked in. Config changes in `railway.json` are **not** picked up. You must run `railway up --service <name>` to push a new build that uses the current file. For Docker-image services, config changes (start command, env vars) ARE picked up by redeploy.
+
+#### 6. MinIO requires a persistent volume and the `minio` binary prefix
+MinIO's Docker entrypoint does not forward `CMD` arguments. Set the start command to `minio server /data --console-address :9001` (with the `minio` binary prefix). Without a volume, MinIO formats a new pool on every restart and exits cleanly — add a Railway persistent volume mounted at `/data`:
+```sh
+railway volume -s <minio-uuid> add -m /data
+```
+
+#### 7. Kafka topic pre-creation for RisingWave sources
+RisingWave's `CREATE TABLE ... WITH (connector='kafka')` fetches Kafka metadata but does **not** trigger Kafka's `auto.create.topics.enable`. The topic must already exist before the DDL runs. The `attest-control-plane` now creates the `cloudtrail` topic via the rdkafka admin client on startup (see `ensure_kafka_topic` in `main.rs`). Do not add `properties.allow.auto.create.topics = 'true'` to the RisingWave WITH clause — it is not a valid connector property and will cause `CREATE TABLE` to fail with "Unknown fields".
+
+#### 8. Workbench Node.js version
+Nixpacks `[variables] NODE_VERSION = "20"` in `nixpacks.toml` sets an environment variable but does **not** pin the Node.js version used during the build phase. The `.node-version` file at the repo root (containing `20`) is the correct signal that Nixpacks respects.
+
+#### 9. `bitnami/kafka` has no `latest` tag
+`bitnami/kafka:latest` does not exist — use `bitnami/kafka:3.9` or a specific version. Alternatively, use `confluentinc/cp-kafka:7.9.0` (which is what this project uses) or `apache/kafka:latest` (official image, does have `latest`).
+
+#### 10. Detection rules baked into the Docker image
+Railway does not support local volume mounts from the host. Detection rules (`.heliql` files) are copied into the `detection-runtime` image at build time via `COPY detections/ /rules/` in `infra/docker/detection-runtime.Dockerfile`. The `RULES_DIR=/rules` env var is set in the Dockerfile. This is intentional and correct for Railway deployments.
