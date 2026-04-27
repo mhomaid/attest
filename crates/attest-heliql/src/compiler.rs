@@ -34,6 +34,17 @@ fn field_to_column(field: &str) -> String {
     }
 }
 
+/// Format a Duration as a Postgres INTERVAL literal (e.g. "90 days", "10 minutes").
+fn duration_to_interval(d: &crate::ast::Duration) -> String {
+    use crate::ast::DurationUnit;
+    match d.unit {
+        DurationUnit::Days    => format!("{} days",    d.value),
+        DurationUnit::Hours   => format!("{} hours",   d.value),
+        DurationUnit::Minutes => format!("{} minutes", d.value),
+        DurationUnit::Seconds => format!("{} seconds", d.value),
+    }
+}
+
 fn value_to_sql(v: &Value) -> String {
     match v {
         Value::Str(s)   => format!("'{s}'"),
@@ -58,18 +69,19 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
                     let list = values.iter().map(value_to_sql).collect::<Vec<_>>().join(", ");
                     Ok(format!("{col} IN ({list})"))
                 }
-                // baseline(field, 90d) → EXISTS (SELECT 1 FROM entity_baselines
-                //   WHERE actor_user_name = e.actor_user_name
-                //   AND regions_seen_30d @> ARRAY[e.field]::varchar[])
+                // baseline(entity, window) — use a self-join to avoid entity_baselines
+                // self-masking (the current event would update entity_baselines first).
+                // EXISTS means the current field value WAS seen before.
                 InRhs::Baseline(b) => {
-                    let win_days = b.window.to_seconds() / 86_400;
-                    let baseline_col = field_to_column(&b.field);
+                    let entity_col = field_to_column(&b.field);
+                    let interval   = duration_to_interval(&b.window);
                     Ok(format!(
                         "EXISTS (\
-                            SELECT 1 FROM entity_baselines eb \
-                            WHERE eb.actor_user_name = e.actor_user_name \
-                            AND eb.window_days >= {win_days} \
-                            AND {col} = ANY(eb.{baseline_col})\
+                            SELECT 1 FROM cloudtrail_events prior \
+                            WHERE prior.{entity_col} = e.{entity_col} \
+                            AND prior.{col} = e.{col} \
+                            AND prior.event_id <> e.event_id \
+                            AND prior.\"time\" >= e.\"time\" - INTERVAL '{interval}'\
                         )"
                     ))
                 }
@@ -83,15 +95,17 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
                     let list = values.iter().map(value_to_sql).collect::<Vec<_>>().join(", ");
                     Ok(format!("{col} NOT IN ({list})"))
                 }
+                // NOT IN baseline → region was NOT seen before → anomaly
                 InRhs::Baseline(b) => {
-                    let win_days = b.window.to_seconds() / 86_400;
-                    let baseline_col = field_to_column(&b.field);
+                    let entity_col = field_to_column(&b.field);
+                    let interval   = duration_to_interval(&b.window);
                     Ok(format!(
                         "NOT EXISTS (\
-                            SELECT 1 FROM entity_baselines eb \
-                            WHERE eb.actor_user_name = e.actor_user_name \
-                            AND eb.window_days >= {win_days} \
-                            AND {col} = ANY(eb.{baseline_col})\
+                            SELECT 1 FROM cloudtrail_events prior \
+                            WHERE prior.{entity_col} = e.{entity_col} \
+                            AND prior.{col} = e.{col} \
+                            AND prior.event_id <> e.event_id \
+                            AND prior.\"time\" >= e.\"time\" - INTERVAL '{interval}'\
                         )"
                     ))
                 }
@@ -161,6 +175,8 @@ pub fn compile_to_risingwave(d: &Detection) -> Result<String, HeliqlError> {
 
     let severity_str = d.severity.to_string();
 
+    // RisingWave disallows NOW() in the SELECT list of streaming views.
+    // Use the event timestamp (e.time) as fired_at instead.
     let sql = format!(
         r#"CREATE MATERIALIZED VIEW IF NOT EXISTS {view_name} AS
 SELECT
@@ -169,7 +185,7 @@ SELECT
     e.actor_user_name   AS actor_user_name,
     e.cloud_region      AS cloud_region,
     '{severity_str}'    AS severity,
-    NOW()               AS fired_at
+    CAST(e."time" AS VARCHAR) AS fired_at
 FROM cloudtrail_events e
 WHERE
     {where_sql};"#,

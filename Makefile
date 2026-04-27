@@ -3,7 +3,7 @@
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
-	  /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	  /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 dev-up: ## Start all core services (Redpanda, RisingWave, ClickHouse, MinIO, Postgres)
 	docker compose up -d
@@ -11,18 +11,18 @@ dev-up: ## Start all core services (Redpanda, RisingWave, ClickHouse, MinIO, Pos
 dev-down: ## Stop and remove all containers
 	docker compose down
 
-dev-up-platform: ## Start Phase 2 full stack (core + collector + control-plane + iceberg writer)
+dev-up-platform: ## Start full platform stack (core + collector + control-plane + iceberg writer + detection runtime)
 	docker compose up -d redpanda postgres minio clickhouse risingwave
 	docker compose run --rm minio-init
-	docker compose --profile platform up -d
+	docker compose --profile platform up -d --build
 
-e2e-phase1: ## Run Phase 1 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
+e2e-phase1: ## Run Phase 1 E2E test — event appears in RisingWave within 5s (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase1_streaming -- --nocapture
 
-e2e-phase2: ## Run Phase 2 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
+e2e-phase2: ## Run Phase 2 E2E test — 10K events land in MinIO Parquet + ClickHouse query (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase2_iceberg -- --nocapture
 
-e2e-phase3: ## Run Phase 3 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
+e2e-phase3: ## Run Phase 3 E2E test — HELIQL detections fire alerts on stream (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase3_detection -- --nocapture
 
 dev-up-llm: ## Start core services + llama.cpp (requires Qwen GGUF in llama-models volume)

@@ -92,6 +92,7 @@ async fn main() -> Result<()> {
         .context("Kafka producer creation failed")?;
 
     let detection_ids: Vec<String> = detections.iter().map(|d| d.id.clone()).collect();
+    let seen = poller::new_seen_alerts();
 
     // ── Poll loop ───────────────────────────────────────────────────────────
     let mut interval = tokio::time::interval(Duration::from_secs(cli.poll_interval_secs));
@@ -100,7 +101,7 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                let n = poller::poll_and_emit(&db, &producer, &cli.alerts_topic, &detection_ids).await;
+                let n = poller::poll_and_emit(&db, &producer, &cli.alerts_topic, &detection_ids, &seen).await;
                 if n > 0 {
                     info!("emitted {n} alerts this cycle");
                 }

@@ -150,14 +150,18 @@ async fn detection_fires_on_anomalous_geolocation() {
         .build()
         .unwrap();
 
-    const USER: &str = "alice-e2e@example.com";
+    // Use a UUID-suffix so each run has a fresh baseline with no prior history.
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let user = format!("alice-e2e-{}@example.com", &run_id[..8]);
+    let user = user.as_str();
+
     const BASELINE_REGION: &str = "us-east-1";
     const ANOMALOUS_REGION: &str = "ap-southeast-1";
     const DETECTION_ID: &str = "aws_console_login_from_anomalous_geolocation";
 
-    // ── 1. Build alice's baseline (30 US logins so the mat. view has data) ──
-    println!("Building baseline for {USER} from {BASELINE_REGION} …");
-    seed_baseline(&client, USER, BASELINE_REGION, 30).await;
+    // ── 1. Build user's baseline (30 US logins so the mat. view has data) ──
+    println!("Building baseline for {user} from {BASELINE_REGION} …");
+    seed_baseline(&client, user, BASELINE_REGION, 30).await;
 
     // ── 2. Subscribe to alerts topic BEFORE injecting the anomalous event ───
     let consumer = build_alerts_consumer(&kafka_brokers());
@@ -167,7 +171,7 @@ async fn detection_fires_on_anomalous_geolocation() {
 
     // ── 3. Inject the anomalous login ───────────────────────────────────────
     println!("Injecting anomalous login from {ANOMALOUS_REGION} …");
-    let event_id = post_login(&client, USER, ANOMALOUS_REGION, "Success")
+    let event_id = post_login(&client, user, ANOMALOUS_REGION, "Success")
         .await
         .expect("failed to post anomalous login event");
 
