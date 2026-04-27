@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs train-classifier e2e-phase4a
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -24,6 +24,36 @@ e2e-phase2: ## Run Phase 2 E2E test — 10K events land in MinIO Parquet + Click
 
 e2e-phase3: ## Run Phase 3 E2E test — HELIQL detections fire alerts on stream (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase3_detection -- --nocapture
+
+train-classifier: ## Train XGBoost classifier + novelty detector + calibration (outputs to ml/triager/artifacts/)
+	cd ml && uv run python triager/train.py
+	cd ml && uv run python triager/novelty.py
+	cd ml && uv run python triager/calibrate.py --train
+
+e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans up
+	@echo "==> Starting calibration sidecar (port 5001)..."
+	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
+	@echo "==> Starting orchestrator (port 4300)..."
+	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
+	  ORCHESTRATOR_PORT=4300 \
+	  CALIBRATION_URL=http://localhost:5001 \
+	  ATTEST_LOG_PATH=/tmp/attest-test-attestations.ndjson \
+	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator.log 2>&1 &
+	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
+	@for i in $$(seq 1 60); do \
+	  curl -sf http://localhost:4300/healthz > /dev/null 2>&1 && echo "  ready after $${i}s" && break; \
+	  sleep 1; \
+	done
+	@curl -sf http://localhost:4300/healthz > /dev/null 2>&1 || \
+	  (echo "ERROR: orchestrator did not start. Logs:"; cat /tmp/attest-orchestrator.log; \
+	   pkill -f "calibrate.py" 2>/dev/null || true; exit 1)
+	@echo "==> Running Phase 4a E2E tests..."
+	ATTEST_E2E=1 cargo test --test phase4a_triager -- --nocapture; \
+	  STATUS=$$?; \
+	  echo "==> Stopping services..."; \
+	  pkill -f "target.*attest-orchestrator" 2>/dev/null || true; \
+	  pkill -f "calibrate.py" 2>/dev/null || true; \
+	  exit $$STATUS
 
 dev-up-llm: ## Start core services + llama.cpp (requires Qwen GGUF in llama-models volume)
 	docker compose --profile llm up -d

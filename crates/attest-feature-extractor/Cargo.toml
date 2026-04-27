@@ -1,13 +1,13 @@
 [package]
-name = "attest-policy-engine"
+name = "attest-feature-extractor"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+attest-common = { path = "../attest-common" }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-chrono = { workspace = true }
-

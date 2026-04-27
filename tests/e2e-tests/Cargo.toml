@@ -22,6 +22,10 @@ path = "tests/phase2_iceberg.rs"
 name = "phase3_detection"
 path = "tests/phase3_detection.rs"
 
+[[test]]
+name = "phase4a_triager"
+path = "tests/phase4a_triager.rs"
+
 [dev-dependencies]
 chrono = { workspace = true }
 rdkafka = { workspace = true }

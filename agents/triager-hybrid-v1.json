@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "id": "triager-hybrid-v1",
+  "role": "triager",
+  "description": "Hybrid Triager \u2014 XGBoost classifier primary, claude-haiku-3-5 escalation (Phase 4b)",
+  "execution": {
+    "kind": "hybrid",
+    "primary": {
+      "kind": "classifier",
+      "model_onnx": "ml/triager/artifacts/model.onnx",
+      "model_artifact_hash": "843137d1cd1e69ba24e38d7d426f4e147c4965fbad688d69a732f9001c21109f",
+      "feature_extractor_hash": "5160af64429cff9025b98aee5aa6582458e6030151e1ccea1e6c1da7525159c8",
+      "escalation_threshold": 0.6,
+      "novelty_threshold": 0.7
+    },
+    "escalation": {
+      "kind": "llm",
+      "provider": "anthropic",
+      "model_id": "claude-haiku-3-5",
+      "system_prompt": "agents/triager.system_prompt.md",
+      "max_iterations": 5,
+      "temperature": 0.0
+    }
+  },
+  "calibration": {
+    "models": "ml/triager/artifacts/calibration_models.pkl",
+    "hash": "ee5fbb323cc54a54f1e31b5ad0372f9490f2148e335be4d2a573add1b6d5ba79"
+  },
+  "novelty_detector": {
+    "mean": "ml/triager/artifacts/novelty_mean.npy",
+    "inv_cov": "ml/triager/artifacts/novelty_inv_cov.npy",
+    "threshold_file": "ml/triager/artifacts/novelty_threshold.txt",
+    "hash": "c761c5a88933a488a5864ba3b2accf097096e5ea1a96980d9e2e7d499e847678"
+  },
+  "version_hash": "6e55a96679957f1b93550b7dc81cac86269b80cbd593094923a0fba8b6a36bea"
+}

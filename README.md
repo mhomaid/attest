@@ -2,6 +2,8 @@
 
 Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer into Redpanda, are continuously aggregated by RisingWave materialized views, persisted as Parquet files in MinIO via Apache Iceberg, and queried at scale by ClickHouse — all exposed through a REST control-plane and a live Next.js SOC workbench.
 
+The agent layer runs on top of the data tier. A Hybrid Triager routes every alert through an XGBoost classifier (sub-30 ms) or escalates structurally novel cases to an LLM. Every agent decision produces a cryptographically signed `AttestationEnvelope` — not a black box.
+
 ## Documentation
 
 | File | What it covers |
@@ -196,6 +198,128 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 
 ---
 
+### Phase 4a — Hybrid Triager Agent (Classifier Path)
+
+**The problem it solves:** SIEM alerts arrive faster than humans can triage them. A rule-based classifier handles the 80 % of high-confidence, in-distribution alerts instantly. Low-confidence or structurally novel alerts are flagged for LLM escalation (Phase 4b). Every decision is cryptographically signed and logged — not a black box.
+
+#### Pillar 1 — ML Pipeline (`ml/triager/`)
+
+A Python pipeline (managed with `uv`) that trains the classifier artifacts the Rust runtime loads at startup:
+
+| Script | What it produces |
+|---|---|
+| `train.py` | XGBoost classifier → `model.onnx` + `shap_background.npy` + SHA-256 hashes |
+| `novelty.py` | Mahalanobis covariance parameters → `novelty_mean.npy` + `novelty_inv_cov.npy` + `novelty_threshold.txt` |
+| `calibrate.py` | Isotonic regression calibration → `calibration_models.pkl`; also serves a Flask HTTP sidecar on `:5001` |
+
+```
+ml/triager/golden_cases.json  (210 labelled alerts, 10 OOD)
+      ↓  train.py
+ml/triager/artifacts/model.onnx          (XGBoost, 8-feature binary classifier)
+ml/triager/artifacts/novelty_*.npy       (Mahalanobis covariance)
+ml/triager/artifacts/calibration_models.pkl  (isotonic regression per case class)
+```
+
+Run the full pipeline with:
+```sh
+make train-classifier
+```
+
+#### Pillar 2 — `attest-onnx-runtime` (In-Process Inference)
+
+Pure-Rust inference using `tract-onnx` — no Python or `ort` at runtime:
+
+- **`OnnxClassifier`** — loads `model.onnx`, runs forward pass, approximates per-feature SHAP contributions
+- **`NoveltyDetector`** — loads Mahalanobis parameters, computes distance score, classifies alerts as in-distribution or OOD
+
+#### Pillar 3 — `attest-feature-extractor`
+
+Converts an `OcsfEvent` into the 8-dimensional `AlertFeatures` vector the classifier expects:
+
+| Feature | Source |
+|---|---|
+| `severity_score` | OCSF severity enum → `[0.0, 1.0]` |
+| `source_class_id` | OCSF class ID (mapped) |
+| `entity_reputation_score` | stub → threat intel enrichment in Phase 7 |
+| `baseline_deviation` | stub → RisingWave baselines in Phase 7 |
+| `threat_intel_hit_count` | stub |
+| `hour_of_day` | event timestamp |
+| `asset_criticality` | stub |
+| `prior_disposition_ratio` | stub |
+
+#### Pillar 4 — `attest-attestation` (Signed Evidence Envelopes)
+
+Every agent decision produces a tamper-evident, replayable `AttestationEnvelope` signed with Ed25519:
+
+```
+AttestationEnvelope {
+  agent_action_id,    // unique per decision
+  case_id,
+  execution_path,     // Classifier | Hybrid | Llm
+  verdict,            // true_positive | benign | needs_investigation | escalated_stub
+  evidence: ClassifierEvidence | HybridEvidence | LlmEvidence,
+  timing,             // wall-clock start/end
+  signature,          // Ed25519 over canonical JSON, hex-encoded
+}
+```
+
+Envelopes are appended to `attestations.ndjson` (newline-delimited JSON). The verifying key is published at `GET /agent` so signatures can be verified offline.
+
+#### Pillar 5 — `attest-policy-engine` (Deterministic Auth)
+
+Hard-coded Rust policies that authorize every tool call before it executes. No network round-trip, no database lookup.
+
+```
+authorize(role, tool_id, PolicyContext) → Allow | Deny | Escalate
+```
+
+Roles: `Triager`, `Investigator`, `Responder`, `Auditor`. Read-only tools (`query_hot_tier`, `lookup_threat_intel`) are always allowed. Destructive actions (`idp_revoke_session`, `isolate_host`) require high confidence, non-protected targets, and pass blast-radius checks.
+
+#### Pillar 6 — `attest-mcp-gateway` (Tool Call Intercept)
+
+A standalone Axum service that intercepts every tool call, enforces policy, logs the interaction, and forwards to tool implementations. Built now as a foundation for the LLM escalation path in Phase 4b.
+
+```
+POST /invoke  { agent_role, tool_id, args, ... }
+      ↓  argument hash (SHA-256)
+      ↓  authorize() via attest-policy-engine
+      ↓  dispatch to tool stub (or external backend)
+      ↓  log ToolCallRecord
+      → { result, allowed, latency_ms, args_hash }
+
+GET /tools  → list of registered ToolDescriptors
+```
+
+#### Pillar 7 — `attest-orchestrator` (Hybrid Triage Loop)
+
+The agent runtime. On each `POST /triage` it runs the full Hybrid path:
+
+```
+POST /triage  { alert_json }
+      ↓  FeatureExtractor → AlertFeatures (8 f64 values)
+      ↓  OnnxClassifier → raw_score + shap_values
+      ↓  CalibrationClient → calibrated_score  (HTTP → Python sidecar)
+      ↓  NoveltyDetector → novelty_score
+      ↓  routing decision:
+         calibrated ≥ threshold AND in-distribution → Classifier path
+         otherwise                                  → EscalatedStub (Phase 4b wires LLM here)
+      ↓  build AttestationEnvelope + Ed25519 sign
+      ↓  append to attestations.ndjson
+      → TriageVerdict { verdict, confidence, action_id, latency_ms, ... }
+
+GET /agent  → agent definition + Ed25519 verifying key for offline signature verification
+GET /healthz
+```
+
+**E2E acceptance gate (all passing):**
+- Known brute-force pattern → `classifier` path, calibrated confidence ≥ 0.5, latency < 500 ms
+- OOD structurally novel alert → `hybrid` path, `escalated_stub` verdict, novelty score > 0
+- Classifier path P99 latency over HTTP < 200 ms (measured: **28 ms**)
+
+Run with `make e2e-phase4a` (automatically starts services, runs tests, cleans up).
+
+---
+
 ## Crates
 
 | Crate | Phase | Purpose |
@@ -206,6 +330,12 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 | `crates/attest-storage-iceberg` | 2 | Kafka consumer → Arrow/Parquet batch writer → MinIO via `object_store` |
 | `crates/attest-heliql` | 3 | HELIQL DSL — pest grammar, AST, RisingWave SQL compiler, Sigma importer |
 | `crates/attest-detection-runtime` | 3 | Loads `.heliql` rules, deploys as RisingWave views, polls and emits alerts to Redpanda |
+| `crates/attest-attestation` | 4a | Ed25519-signed envelopes — `ClassifierEvidence`, `LlmEvidence`, `HybridEvidence`, append-only log |
+| `crates/attest-policy-engine` | 4a | Hard-coded per-role tool authorization — `authorize(role, tool_id, ctx) → PolicyDecision` |
+| `crates/attest-mcp-gateway` | 4a | Tool call interception service — policy enforcement, argument hashing, call logging |
+| `crates/attest-feature-extractor` | 4a | `OcsfEvent` → `AlertFeatures` (8 numeric features) for ML classifiers |
+| `crates/attest-onnx-runtime` | 4a | `tract-onnx` inference — `OnnxClassifier` (XGBoost) + `NoveltyDetector` (Mahalanobis) |
+| `crates/attest-orchestrator` | 4a | Hybrid triage loop — feature extraction → classify → calibrate → route → attest |
 
 ---
 
@@ -213,8 +343,10 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 
 | Tool | Version | Install |
 |---|---|---|
-| Rust | 1.95+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Rust | 1.78+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Docker + Compose | 24+ | [docker.com](https://docs.docker.com/get-docker/) |
+| Python | 3.11+ | [python.org](https://www.python.org/downloads/) |
+| uv | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Bun | 1.3+ | `curl -fsSL https://bun.sh/install \| bash` |
 | Make | any | pre-installed on macOS/Linux |
 
@@ -255,6 +387,40 @@ bun run dev
 ```
 
 The queue page badge will show **"Live — control-plane connected"** when the backend is reachable.
+
+### 5. Train the classifier and run the Triager agent (Phase 4a)
+
+```sh
+# Install Python ML dependencies and train all artifacts (~30 s)
+make train-classifier
+
+# Run E2E tests — auto-starts orchestrator + calibration sidecar
+make e2e-phase4a
+
+# Or start services manually for interactive use:
+cd ml && uv run python triager/calibrate.py --serve &     # calibration sidecar :5001
+ARTIFACTS_DIR=ml/triager/artifacts ORCHESTRATOR_PORT=4300 \
+  cargo run -q -p attest-orchestrator &                   # orchestrator :4300
+
+# Triage an alert
+curl -s -X POST http://localhost:4300/triage \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "alert_json": {
+      "class_uid": 3002,
+      "severity_id": 4,
+      "time": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+      "actor": {"user": {"name": "alice@example.com"}},
+      "metadata": {"product": {"vendor_name": "AWS"}}
+    },
+    "case_id": "00000000-0000-0000-0000-000000000001",
+    "tenant_id": "local-dev"
+  }'
+# Returns: { "verdict": "...", "confidence": 0.97, "action_id": "...", "latency_ms": 28 }
+
+# Inspect the agent definition and Ed25519 verifying key
+curl -s http://localhost:4300/agent | jq .
+```
 
 ---
 
@@ -317,24 +483,35 @@ curl -s -X POST http://localhost:8080/v1/warm/query \
   -d '{"sql": "SELECT cloud_region, count(*) FROM s3(\"http://minio:9000/attest-warm/cloudtrail/**/*.parquet\", \"minioadmin\", \"minioadmin\", \"Parquet\") GROUP BY cloud_region"}'
 ```
 
-### E2E Tests (require running stack)
+### E2E Tests
 
 ```sh
-# Phase 1 — streaming substrate
+# Phase 1 — streaming substrate (requires running stack)
 make e2e-phase1
 # Posts a ConsoleLogin event → polls recent_events (≤ 5 s) → polls entity_baselines for user region (≤ 30 s).
 
-# Phase 2 — Iceberg warm tier
+# Phase 2 — Iceberg warm tier (requires running stack)
 make e2e-phase2
 # Seeds 10 000 events → waits for Iceberg flush to MinIO (≤ 90 s) → asserts ClickHouse count + GROUP BY aggregate (≤ 30 s).
 
-# Phase 3 — HELIQL detection engine
+# Phase 3 — HELIQL detection engine (requires running stack)
 make e2e-phase3
 # Seeds alice's US-region baseline → injects ap-southeast-1 login → asserts alert on `alerts` Kafka topic within 10 s.
 # Also tests: StopLogging event fires a critical alert for aws_cloudtrail_logging_disabled.
+
+# Phase 4a — Hybrid Triager (self-contained — starts and stops its own services)
+make e2e-phase4a
+# 1. Starts Python calibration sidecar on :5001
+# 2. Starts attest-orchestrator on :4300 (with ONNX artifacts from ml/triager/artifacts/)
+# 3. triager_classifier_path_produces_attested_verdict — known brute-force alert → classifier path, confidence ≥ 0.5, latency < 500 ms
+# 4. triager_classifier_escalates_when_out_of_distribution — OOD alert → hybrid path, escalated_stub verdict
+# 5. triager_classifier_p99_latency_under_200ms — 10 requests, P99 < 200 ms
+# 6. Stops both services
+#
+# Prerequisite: make train-classifier (only needed once, or when golden_cases.json changes)
 ```
 
-All targets require `make dev-up-platform` to be running first.
+Phases 1–3 require `make dev-up-platform` to be running. Phase 4a is self-contained.
 
 ---
 
@@ -348,23 +525,44 @@ Attest/
 │   ├── attest-control-plane/     # Axum 0.8 REST API — hot + warm tier (Phase 1 + 2)
 │   ├── attest-storage-iceberg/   # Kafka → Parquet → MinIO writer (Phase 2)
 │   ├── attest-heliql/            # HELIQL DSL parser + RisingWave compiler (Phase 3)
-│   └── attest-detection-runtime/ # Detection deploy + poll + emit to alerts topic (Phase 3)
+│   ├── attest-detection-runtime/ # Detection deploy + poll + emit to alerts topic (Phase 3)
+│   ├── attest-attestation/       # Ed25519 envelopes + append-only log (Phase 4a)
+│   ├── attest-policy-engine/     # Per-role tool authorization policies (Phase 4a)
+│   ├── attest-mcp-gateway/       # Tool call intercept service :4242 (Phase 4a)
+│   ├── attest-feature-extractor/ # OcsfEvent → AlertFeatures vector (Phase 4a)
+│   ├── attest-onnx-runtime/      # tract-onnx classifier + Mahalanobis novelty (Phase 4a)
+│   └── attest-orchestrator/      # Hybrid triage loop :4300 (Phase 4a)
+├── ml/
+│   └── triager/                  # Python ML pipeline (uv-managed)
+│       ├── golden_cases.json     # 210 labelled alerts (200 in-dist + 10 OOD)
+│       ├── train.py              # XGBoost → model.onnx + shap_background.npy
+│       ├── novelty.py            # Mahalanobis → novelty_mean/inv_cov.npy + threshold
+│       ├── calibrate.py          # Isotonic regression → calibration_models.pkl + Flask sidecar
+│       ├── Makefile              # train / novelty / calibrate / serve-calibration targets
+│       └── artifacts/            # Generated — gitignored
+├── agents/
+│   ├── triager-hybrid-v1.json    # Versioned agent definition with artifact SHA-256 hashes
+│   └── triager.system_prompt.md  # LLM system prompt (Phase 4b)
+├── eval/
+│   ├── golden_cases/             # Evaluation datasets
+│   └── run_eval.py               # Calls POST /triage for each golden case, asserts metrics
 ├── detections/                   # 10 bundled HELIQL detection rules (Phase 3)
 ├── apps/
-│   └── workbench/              # Next.js 15 marketing site + SOC workbench UI
+│   └── workbench/                # Next.js 15 marketing site + SOC workbench UI
 ├── infra/
-│   ├── clickhouse/             # ClickHouse config (listen + S3/MinIO access)
-│   ├── docker/                 # Multi-stage Dockerfiles (collector, control-plane, storage-iceberg)
-│   ├── risingwave/             # RisingWave DDL (phase1_baseline.sql)
-│   └── terraform/              # IaC (Phase 5+)
+│   ├── clickhouse/               # ClickHouse config (listen + S3/MinIO access)
+│   ├── docker/                   # Multi-stage Dockerfiles
+│   ├── risingwave/               # RisingWave DDL (phase1_baseline.sql)
+│   └── terraform/                # IaC (Phase 5+)
 ├── tests/
-│   └── e2e-tests/              # E2E tests (ATTEST_E2E=1 required)
+│   └── e2e-tests/                # E2E integration tests (ATTEST_E2E=1 required)
 │       └── tests/
 │           ├── phase1_streaming.rs
-│           └── phase2_iceberg.rs
-├── docs/                       # Source-of-truth documentation
-├── docker-compose.yml          # Local dev stack
-└── Makefile                    # Convenience targets
+│           ├── phase2_iceberg.rs
+│           └── phase4a_triager.rs
+├── docs/                         # Source-of-truth documentation
+├── docker-compose.yml            # Local dev stack
+└── Makefile                      # Convenience targets
 ```
 
 ---
@@ -376,9 +574,11 @@ Attest/
 | `make dev-up` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
 | `make dev-up-platform` | Start core infra + collector + control-plane + storage-iceberg |
 | `make dev-down` | Stop all containers |
+| `make train-classifier` | Run full ML pipeline — `train.py` + `novelty.py` + `calibrate.py` via `uv` |
 | `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase3` | Run Phase 3 E2E test (requires `ATTEST_E2E=1` + running stack) |
+| `make e2e-phase4a` | Start calibration sidecar + orchestrator, run Phase 4a E2E tests, stop services |
 | `make fmt` | `cargo fmt --all` |
 | `make lint` | `cargo clippy` + `bun run lint` |
 | `make smoke` | Quick smoke check — cargo test + bun test + pytest |
