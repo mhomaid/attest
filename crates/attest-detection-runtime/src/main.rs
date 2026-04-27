@@ -13,7 +13,7 @@ mod poller;
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio_postgres::NoTls;
 use tracing::info;
 
@@ -39,6 +39,35 @@ struct Cli {
     /// How often (seconds) to poll detection views for new alerts
     #[arg(long, env = "POLL_INTERVAL_SECS", default_value_t = 2)]
     poll_interval_secs: u64,
+}
+
+/// Block until `cloudtrail_events` is visible in RisingWave (created by the
+/// control-plane on first boot).  Gives up after 120 s and proceeds — the
+/// deployer will log individual failures if the table is still absent.
+async fn wait_for_schema(db: &tokio_postgres::Client) {
+    const MAX_WAIT: Duration = Duration::from_secs(120);
+    const POLL: Duration = Duration::from_secs(5);
+    let start = Instant::now();
+    loop {
+        let ready = db
+            .query_opt(
+                "SELECT 1 FROM rw_catalog.rw_tables WHERE name = 'cloudtrail_events'",
+                &[],
+            )
+            .await
+            .map(|r| r.is_some())
+            .unwrap_or(false);
+        if ready {
+            info!("cloudtrail_events ready");
+            return;
+        }
+        if start.elapsed() >= MAX_WAIT {
+            tracing::warn!("cloudtrail_events not ready after 120 s — proceeding anyway");
+            return;
+        }
+        tracing::info!("waiting for control-plane to initialise schema…");
+        tokio::time::sleep(POLL).await;
+    }
 }
 
 #[tokio::main]
@@ -82,6 +111,9 @@ async fn main() -> Result<()> {
             tracing::error!("RisingWave connection error: {e}");
         }
     });
+
+    // ── Wait for control-plane to initialise the schema ─────────────────────
+    wait_for_schema(&db).await;
 
     // ── Deploy detection views ──────────────────────────────────────────────
     let deployed = deployer::deploy_all(&db, &detections).await;
