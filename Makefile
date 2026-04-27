@@ -56,16 +56,21 @@ lint: ## Lint all code: clippy + bun lint
 railway-login: ## Log in to Railway CLI
 	railway login
 
-railway-setup: ## Create all Railway services and set env vars (idempotent — reads infra/railway/*.json)
-	@echo "Creating / updating Railway services from infra/railway/*.json"
+railway-setup: ## Create all Railway application services (idempotent — then set env vars from infra/railway/*.json in the dashboard)
+	@echo "Creating Railway services (skipping any that already exist)…"
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
 	  echo "  → $$svc"; \
-	  railway service create $$svc --json infra/railway/$$svc.json 2>/dev/null || true; \
+	  railway add --service $$svc 2>/dev/null || true; \
 	done
-	@echo "Done. Set secret values (S3_ACCESS_KEY, MINIO_ROOT_PASSWORD, etc.) manually in the Railway dashboard."
+	@echo ""
+	@echo "Services created. Next steps:"
+	@echo "  1. Set each service's Dockerfile path in the Railway dashboard"
+	@echo "     (see infra/railway/README.md for the exact path per service)"
+	@echo "  2. Copy env vars from infra/railway/<service>.json into each service's Variables tab"
+	@echo "  3. Run 'make railway-deploy' to trigger the first build"
 
-railway-deploy: ## Trigger a deployment for all application services
+railway-deploy: ## Deploy (redeploy) all application services on Railway
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
 	  echo "Deploying $$svc …"; \
-	  railway service --service $$svc deploy; \
+	  railway service redeploy --service $$svc --yes; \
 	done

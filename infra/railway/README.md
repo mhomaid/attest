@@ -200,17 +200,14 @@ automatically within the same project. The key references are:
 After all services and variables are configured:
 
 ```bash
-# Deploy all services (Railway auto-triggers on each git push once linked)
-railway up
-
-# Or trigger a one-off deploy for a specific service
-railway service --service control-plane deploy
-```
-
-Or use the `make` helpers (requires Railway CLI to be logged in):
-
-```bash
+# Redeploy all application services (triggers Railway to rebuild from latest commit)
 make railway-deploy
+
+# Or redeploy a single service
+railway service redeploy --service control-plane --yes
+
+# To deploy from local source directly (bypasses GitHub integration)
+railway up --service control-plane --detach
 ```
 
 ---
@@ -228,6 +225,6 @@ views, so the exact startup order does not matter.
 
 ```
 make railway-login    # Log in to Railway CLI
-make railway-setup    # Interactively create all services (idempotent)
-make railway-deploy   # Trigger a deploy for all application services
+make railway-setup    # Create all services with railway add (idempotent)
+make railway-deploy   # railway service redeploy for all application services
 ```
