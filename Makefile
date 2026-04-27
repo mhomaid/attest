@@ -22,6 +22,9 @@ e2e-phase1: ## Run Phase 1 E2E test (requires ATTEST_E2E=1 and make dev-up-platf
 e2e-phase2: ## Run Phase 2 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
 	ATTEST_E2E=1 cargo test --test phase2_iceberg -- --nocapture
 
+e2e-phase3: ## Run Phase 3 E2E test (requires ATTEST_E2E=1 and make dev-up-platform)
+	ATTEST_E2E=1 cargo test --test phase3_detection -- --nocapture
+
 dev-up-llm: ## Start core services + llama.cpp (requires Qwen GGUF in llama-models volume)
 	docker compose --profile llm up -d
 

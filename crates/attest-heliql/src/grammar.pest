@@ -1,0 +1,84 @@
+// HELIQL grammar — Attest detection DSL v0
+// ---------------------------------------------------
+// A rule file is a sequence of one or more detection blocks.
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "#" ~ (!"\n" ~ ANY)* }
+
+// ── Atoms ───────────────────────────────────────────
+ident      = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "." | "-")* }
+string_lit = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" | "'" ~ (!"'" ~ ANY)* ~ "'" }
+integer    = @{ "-"? ~ ASCII_DIGIT+ }
+number     = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+// ── Duration literals  (e.g. 90d, 5m, 1h) ──────────
+duration_unit = { "d" | "h" | "m" | "s" }
+duration      = { integer ~ duration_unit }
+
+// ── Field reference  (e.g. event.cloud_region) ──────
+field_ref  = @{ ident ~ ("." ~ ident)* }
+
+// ── Values ──────────────────────────────────────────
+value      = { string_lit | number | integer | field_ref }
+value_list = { "[" ~ value ~ ("," ~ value)* ~ "]" }
+
+// ── Comparison operators ─────────────────────────────
+cmp_op = { ">=" | "<=" | "!=" | "=" | ">" | "<" }
+
+// ── Baseline expression: baseline(field, window) ────
+baseline_expr = { "baseline" ~ "(" ~ field_ref ~ "," ~ duration ~ ")" }
+
+// ── Condition atoms ─────────────────────────────────
+not_in_expr    = { field_ref ~ "NOT" ~ "IN" ~ (baseline_expr | value_list) }
+in_expr        = { field_ref ~ "IN" ~ (baseline_expr | value_list) }
+unique_expr    = { "unique" ~ "(" ~ field_ref ~ "," ~ "window" ~ ":" ~ duration ~ ")" ~ cmp_op ~ integer }
+cmp_expr       = { field_ref ~ cmp_op ~ value }
+bool_atom      = { not_in_expr | in_expr | unique_expr | cmp_expr }
+
+// ── Boolean condition ────────────────────────────────
+and_cond       = { bool_atom ~ ("AND" ~ bool_atom)+ }
+or_cond        = { bool_atom ~ ("OR"  ~ bool_atom)+ }
+condition_expr = { and_cond | or_cond | bool_atom }
+
+// ── Severity ─────────────────────────────────────────
+severity_val = { "critical" | "high" | "medium" | "low" | "info" }
+
+// ── Runtime list  (stream | batch | federated) ───────
+runtime_val  = { "stream" | "batch" | "federated" }
+runtime_list = { runtime_val ~ ("|" ~ runtime_val)* }
+
+// ── MITRE list  e.g. [T1078.004, T1110] ─────────────
+mitre_id     = @{ "T" ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+mitre_list   = { "[" ~ mitre_id ~ ("," ~ mitre_id)* ~ "]" }
+
+// ── Where clause: list of condition items ────────────
+// WHITESPACE is silent and auto-inserted between tokens (incl. newlines),
+// so no explicit NEWLINE needed after the colon.
+where_item = { "-" ~ condition_expr }
+where_list = { where_item+ }
+
+// ── Full detection block ─────────────────────────────
+detection_id   = { "detection"   ~ ":" ~ ident }
+description    = { "description" ~ ":" ~ string_lit }
+applies_to     = { "applies_to"  ~ ":" ~ ident }
+entity_clause  = { "entity"      ~ ":" ~ field_ref }
+where_clause   = { "where"       ~ ":" ~ where_list }
+condition_kw   = { "condition"   ~ ":" ~ where_list }
+severity_kw    = { "severity"    ~ ":" ~ severity_val }
+mitre_kw       = { "mitre"       ~ ":" ~ mitre_list }
+runtime_kw     = { "runtime"     ~ ":" ~ runtime_list }
+
+detection_block = {
+    detection_id
+    ~ description?
+    ~ applies_to?
+    ~ where_clause?
+    ~ entity_clause?
+    ~ condition_kw?
+    ~ severity_kw
+    ~ mitre_kw?
+    ~ runtime_kw?
+}
+
+// ── Root ────────────────────────────────────────────
+file = { SOI ~ detection_block+ ~ EOI }
