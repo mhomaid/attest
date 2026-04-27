@@ -41,7 +41,7 @@ attest-collector :4000   ──── OCSF JSON ───▶  Redpanda  (topic: 
 |---|---|
 | `crates/attest-common` | OCSF 1.3 types: `OcsfEvent`, `AuthenticationEvent` (class 3002), `CloudActivityEvent` (class 6003), `Actor`, `User`, `Cloud`, `Severity` |
 | `crates/attest-collector` | Edge collector binary — CloudTrail JSON → OCSF normalizer → Redpanda producer + axum HTTP ingest server |
-| `crates/attest-control-plane` | Axum REST API — queries RisingWave materialized views via Postgres wire protocol; applies DDL on boot |
+| `crates/attest-control-plane` | Axum 0.8 REST API — queries RisingWave materialized views via Postgres wire protocol; applies DDL on boot |
 
 ---
 
@@ -49,7 +49,7 @@ attest-collector :4000   ──── OCSF JSON ───▶  Redpanda  (topic: 
 
 | Tool | Version | Install |
 |---|---|---|
-| Rust | 1.82+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Rust | 1.95+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Docker + Compose | 24+ | [docker.com](https://docs.docker.com/get-docker/) |
 | Bun | 1.3+ | `curl -fsSL https://bun.sh/install \| bash` |
 | Make | any | pre-installed on macOS/Linux |
