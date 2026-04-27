@@ -29,7 +29,7 @@ pub async fn deploy_all(db: &Client, detections: &[Detection]) -> usize {
     for d in detections {
         match deploy(db, d).await {
             Ok(_)  => ok += 1,
-            Err(e) => tracing::warn!(detection_id = %d.id, error = %e, "deploy failed"),
+            Err(e) => tracing::warn!(detection_id = %d.id, error = %e, detail = %format!("{e:#}"), "deploy failed"),
         }
     }
     info!("{ok}/{} detections deployed successfully", detections.len());
