@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Allow S3/MinIO queries via the s3() table function.
+         Credentials are passed inline in queries; no named disk needed for dev. -->
+    <remote_url_allow_hosts>
+        <host>minio</host>
+    </remote_url_allow_hosts>
+</clickhouse>
