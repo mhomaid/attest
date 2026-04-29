@@ -659,7 +659,7 @@ Attest/
 
 | Railway service | Image / Builder | Internal hostname |
 |---|---|---|
-| `redpanda` | `confluentinc/cp-kafka:7.9.0` (KRaft mode — named `redpanda` so no app env vars change) | `redpanda.railway.internal:9092` |
+| `redpanda` | `confluentinc/cp-kafka:7.7.8` (KRaft mode — named `redpanda` so no app env vars change) | `redpanda.railway.internal:9092` |
 | `risingwave` | `risingwavelabs/risingwave:latest` | `risingwave.railway.internal:4566` |
 | `clickhouse` | `clickhouse/clickhouse-server:latest` | `clickhouse.railway.internal:8123` |
 | `minio` | `minio/minio:latest` | `minio.railway.internal:9000` |
@@ -715,7 +715,7 @@ make railway-build-logs-workbench  # tail build output
 ### Hard-won Railway lessons (do not repeat)
 
 #### 1. Redpanda cannot run on Railway
-Redpanda's Seastar I/O engine requires `perf_event_open` syscall and Linux AIO — both blocked in Railway's container sandbox. Redpanda starts, passes the health check, then crashes within ~10 seconds. **Use `confluentinc/cp-kafka:7.9.0` (KRaft mode) instead.** It uses standard Java I/O and runs fine. The service is still named `redpanda` so no app env vars need updating.
+Redpanda's Seastar I/O engine requires `perf_event_open` syscall and Linux AIO — both blocked in Railway's container sandbox. Redpanda starts, passes the health check, then crashes within ~10 seconds. **Use `confluentinc/cp-kafka:7.7.8` (KRaft mode) instead.** It uses standard Java I/O and runs fine. The service is still named `redpanda` so no app env vars need updating.
 
 KRaft requires a `CLUSTER_ID` (22-char base64 UUID). Generate one with:
 ```sh
@@ -781,7 +781,7 @@ RisingWave's `CREATE TABLE ... WITH (connector='kafka')` fetches Kafka metadata 
 Nixpacks `[variables] NODE_VERSION = "20"` in `nixpacks.toml` sets an environment variable but does **not** pin the Node.js version used during the build phase. The `.node-version` file at the repo root (containing `20`) is the correct signal that Nixpacks respects.
 
 #### 9. `bitnami/kafka` has no `latest` tag
-`bitnami/kafka:latest` does not exist — use `bitnami/kafka:3.9` or a specific version. Alternatively, use `confluentinc/cp-kafka:7.9.0` (which is what this project uses) or `apache/kafka:latest` (official image, does have `latest`).
+`bitnami/kafka:latest` does not exist — use `bitnami/kafka:3.9` or a specific version. Alternatively, use `confluentinc/cp-kafka:7.7.8` (which is what this project uses) or `apache/kafka:latest` (official image, does have `latest`).
 
 #### 10. Detection rules baked into the Docker image
 Railway does not support local volume mounts from the host. Detection rules (`.heliql` files) are copied into the `detection-runtime` image at build time via `COPY detections/ /rules/` in `infra/docker/detection-runtime.Dockerfile`. The `RULES_DIR=/rules` env var is set in the Dockerfile. This is intentional and correct for Railway deployments.

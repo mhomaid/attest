@@ -180,13 +180,12 @@ railway-infra-config: ## Configure infrastructure services env vars + start comm
 	  AWS_REGION=us-east-1 \
 	  AWS_ALLOW_HTTP=true \
 	  KAFKA_BROKERS="redpanda.railway.internal:9092"
-	@echo "▶ Setting start commands via railway environment edit…"
-	@railway environment edit -e production \
-	  --service-config redpanda   deploy.startCommand "/etc/confluent/docker/run" \
-	  --service-config risingwave deploy.startCommand "playground" \
-	  --service-config minio      deploy.startCommand "minio server /data --console-address :9001" \
-	  -m "set start commands for infra services"
-	@echo "✔ Infrastructure configured. Now run: make railway-infra-start"
+	@echo "✔ Infrastructure configured."
+	@echo "  Redploying infra services to apply new vars…"
+	@for svc in redpanda risingwave clickhouse minio arroyo; do \
+	  railway service redeploy --service $$svc --yes 2>&1 || true; \
+	done
+	@echo "  Done. Wait ~60s then run: make railway-app-start"
 
 railway-deploy: ## Upload local source and deploy all application services to Railway (first deploy)
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
