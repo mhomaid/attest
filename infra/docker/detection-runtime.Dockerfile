@@ -12,6 +12,7 @@ COPY crates/ crates/
 COPY apps/workbench-api apps/workbench-api
 COPY apps/ws-gateway apps/ws-gateway
 COPY tests/ tests/
+COPY tools/ tools/
 
 RUN cargo build --release --bin attest-detection-runtime
 

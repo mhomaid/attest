@@ -20,6 +20,7 @@ COPY crates/attest-storage-iceberg/Cargo.toml crates/attest-storage-iceberg/Carg
 COPY apps/workbench-api/Cargo.toml           apps/workbench-api/Cargo.toml
 COPY apps/ws-gateway/Cargo.toml              apps/ws-gateway/Cargo.toml
 COPY tests/e2e-tests/Cargo.toml              tests/e2e-tests/Cargo.toml
+COPY tools/load-gen/Cargo.toml               tools/load-gen/Cargo.toml
 
 RUN mkdir -p \
     crates/attest-common/src \
@@ -29,12 +30,14 @@ RUN mkdir -p \
     apps/workbench-api/src \
     apps/ws-gateway/src \
     tests/e2e-tests/src \
+    tools/load-gen/src \
     && echo "fn main(){}" > crates/attest-common/src/main.rs \
     && echo "fn main(){}" > crates/attest-collector/src/main.rs \
     && echo "fn main(){}" > crates/attest-control-plane/src/main.rs \
     && echo "fn main(){}" > crates/attest-storage-iceberg/src/main.rs \
     && echo "fn main(){}" > apps/workbench-api/src/main.rs \
     && echo "fn main(){}" > apps/ws-gateway/src/main.rs \
+    && echo "fn main(){}" > tools/load-gen/src/main.rs \
     && touch tests/e2e-tests/src/lib.rs
 
 RUN cargo build --release -p attest-storage-iceberg 2>&1 || true

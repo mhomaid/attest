@@ -15,6 +15,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY apps/ apps/
 COPY tests/ tests/
+COPY tools/ tools/
 
 RUN cargo build --release --bin attest-mcp-gateway
 
