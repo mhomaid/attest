@@ -19,7 +19,7 @@ use std::time::Instant;
 use uuid::Uuid;
 
 /// Inbound triage request (JSON body for `POST /triage`).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TriageRequest {
     pub case_id: Option<Uuid>,
     pub tenant_id: Option<String>,
@@ -28,11 +28,13 @@ pub struct TriageRequest {
 }
 
 /// Verdict returned from the triage execution loop.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TriageVerdict {
     pub action_id: Uuid,
     pub case_id: Uuid,
+    #[schema(value_type = String)]
     pub verdict: Verdict,
+    #[schema(value_type = String)]
     pub execution_path: ExecutionPathKind,
     pub calibrated_confidence: f32,
     pub novelty_score: f32,
@@ -40,8 +42,7 @@ pub struct TriageVerdict {
     pub escalated: bool,
     pub escalation_reason: Option<String>,
     pub latency_ms: u64,
-    /// Classifier evidence including SHAP values — included so the workbench
-    /// can render the evidence panel without a separate attestation log lookup.
+    #[schema(value_type = Object)]
     pub classifier_evidence: Option<ClassifierEvidence>,
 }
 

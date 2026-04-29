@@ -20,6 +20,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Instant;
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable as _};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -27,10 +29,11 @@ pub struct GatewayState {
     pub registry: Arc<ToolRegistry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct InvokeRequest {
     pub agent_id: String,
     pub action_id: Uuid,
+    #[schema(value_type = String)]
     pub agent_role: AgentRole,
     pub tool_id: String,
     pub args: Value,
@@ -39,7 +42,7 @@ pub struct InvokeRequest {
     pub calibrated_confidence: f32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ToolCallLog {
     pub call_id: Uuid,
     pub agent_id: String,
@@ -48,25 +51,76 @@ pub struct ToolCallLog {
     pub args_hash: String,
     pub result_hash: String,
     pub latency_ms: u64,
+    #[schema(value_type = String)]
     pub policy_decision: PolicyDecision,
     pub timestamp: chrono::DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct InvokeResponse {
     pub result: Option<Value>,
     pub call_log: ToolCallLog,
     pub error: Option<String>,
 }
 
-pub fn build_router(registry: ToolRegistry) -> Router {
-    let state = GatewayState { registry: Arc::new(registry) };
-    Router::new()
-        .route("/invoke", post(handle_invoke))
-        .route("/tools", axum::routing::get(handle_list_tools))
-        .with_state(state)
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ToolListResponse {
+    pub tools: Vec<ToolSummary>,
 }
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ToolSummary {
+    pub id: String,
+    pub description: String,
+    pub class: String,
+}
+
+// ── OpenAPI spec ─────────────────────────────────────────────────────────────
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(handle_invoke, handle_list_tools),
+    components(schemas(InvokeRequest, InvokeResponse, ToolCallLog, ToolListResponse, ToolSummary)),
+    info(
+        title = "Attest MCP Gateway",
+        version = "0.1.0",
+        description = "Authenticated tool-call gateway for Attest agents. \
+            Every invocation is policy-checked, hashed, and logged. \
+            POST /invoke to call a tool; GET /tools to list available tools."
+    )
+)]
+struct ApiDoc;
+
+// ── Router ────────────────────────────────────────────────────────────────────
+
+pub fn build_router(registry: ToolRegistry) -> Router {
+    let state = GatewayState { registry: Arc::new(registry) };
+    let api = Router::new()
+        .route("/invoke", post(handle_invoke))
+        .route("/tools", axum::routing::get(handle_list_tools))
+        .with_state(state);
+
+    Router::new()
+        .merge(api)
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
+}
+
+/// Invoke a registered tool with policy enforcement.
+///
+/// The policy engine evaluates the agent role and calibrated confidence before
+/// dispatching. Every call is recorded in the call log regardless of outcome.
+#[utoipa::path(
+    post,
+    path = "/invoke",
+    request_body(content = InvokeRequest, description = "Tool invocation request"),
+    responses(
+        (status = 200, description = "Tool executed", body = InvokeResponse),
+        (status = 403, description = "Policy denied", body = InvokeResponse),
+        (status = 404, description = "Tool not registered", body = InvokeResponse),
+        (status = 500, description = "Tool execution error", body = InvokeResponse),
+    ),
+    tag = "tools"
+)]
 async fn handle_invoke(
     State(state): State<GatewayState>,
     Json(req): Json<InvokeRequest>,
@@ -156,6 +210,15 @@ async fn handle_invoke(
     (status, Json(InvokeResponse { result, call_log: log, error }))
 }
 
+/// List all registered tools (id, description, class).
+#[utoipa::path(
+    get,
+    path = "/tools",
+    responses(
+        (status = 200, description = "Tool catalogue", body = ToolListResponse),
+    ),
+    tag = "tools"
+)]
 async fn handle_list_tools(State(state): State<GatewayState>) -> Json<Value> {
     let tools: Vec<_> = state.registry.list().iter().map(|t| serde_json::json!({
         "id": t.id,

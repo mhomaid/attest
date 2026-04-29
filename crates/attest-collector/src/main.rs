@@ -15,12 +15,27 @@ use anyhow::Context;
 use axum::{Router, routing::{get, post}};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{fmt, EnvFilter};
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable as _};
 
 use crate::{
-    http::{AppState, healthz, ingest},
+    http::{AppState, ErrorResponse, HealthResponse, IngestResponse, healthz, ingest},
     normalizer::normalize_cloudtrail,
     producer::EventProducer,
 };
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(http::healthz, http::ingest),
+    components(schemas(IngestResponse, ErrorResponse, HealthResponse)),
+    info(
+        title = "Attest Collector",
+        version = "0.1.0",
+        description = "CloudTrail → OCSF → Redpanda edge collector. \
+            POST /ingest to send events; they are normalised and produced to the `cloudtrail` Kafka topic."
+    )
+)]
+struct ApiDoc;
 
 #[derive(Parser)]
 #[command(name = "attest-collector", about = "Attest edge collector")]
@@ -87,10 +102,14 @@ async fn serve(
         tenant_id: tenant_id.to_string(),
     };
 
-    let app = Router::new()
+    let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/ingest", post(ingest))
         .with_state(state);
+
+    let app = Router::new()
+        .merge(api)
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()));
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("attest-collector listening on {addr}");

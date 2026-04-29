@@ -8,15 +8,17 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::state::AppState;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct EventQuery {
+    /// Filter by event UUID. Omit to get all recent events.
     pub id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct EventRow {
     pub event_id: String,
     pub class_uid: String,
@@ -28,6 +30,21 @@ pub struct EventRow {
     pub cloud_account_uid: String,
     pub severity: String,
 }
+
+/// Fetch a recent OCSF event by ID from the RisingWave hot tier.
+#[utoipa::path(
+    get,
+    path = "/v1/events/recent",
+    params(
+        ("id" = String, Query, description = "Event UUID to look up"),
+    ),
+    responses(
+        (status = 200, description = "Event found", body = EventRow),
+        (status = 404, description = "Event not found"),
+        (status = 503, description = "DB not ready"),
+    ),
+    tag = "events"
+)]
 
 pub async fn get_recent_event(
     State(state): State<AppState>,

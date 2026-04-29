@@ -25,19 +25,48 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{fmt, EnvFilter};
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable as _};
 
 use crate::{
     db::{apply_phase1_ddl, connect},
     routes::{
-        baselines::get_user_baseline,
-        detections::{fetch_all_fired, get_detections_fired, ws_alerts},
-        events::get_recent_event,
-        healthz::healthz,
+        baselines::{get_user_baseline, UserBaseline},
+        detections::{fetch_all_fired, get_detections_fired, ws_alerts, FiredAlert},
+        events::{get_recent_event, EventRow, EventQuery},
+        healthz::{healthz, HealthResponse},
         metrics::ws_metrics,
-        warm::{post_warm_query, ChUrl},
+        warm::{post_warm_query, ChUrl, WarmQueryRequest, WarmQueryResponse},
     },
     state::AppState,
 };
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        routes::healthz::healthz,
+        routes::events::get_recent_event,
+        routes::baselines::get_user_baseline,
+        routes::detections::get_detections_fired,
+        routes::warm::post_warm_query,
+    ),
+    components(schemas(
+        HealthResponse,
+        EventRow,
+        EventQuery,
+        UserBaseline,
+        FiredAlert,
+        WarmQueryRequest,
+        WarmQueryResponse,
+    )),
+    info(
+        title = "Attest Control Plane",
+        version = "0.1.0",
+        description = "REST + WebSocket API gateway backed by RisingWave (hot tier) and ClickHouse (warm tier). \
+            WebSocket endpoints (`/v1/ws/alerts`, `/v1/metrics/stream`) are not listed here."
+    )
+)]
+struct ApiDoc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -146,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state)
         .route("/v1/warm/query",             post(post_warm_query))
         .with_state(ch_url)
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
         .layer(cors);
 
     let addr = format!("0.0.0.0:{port}");

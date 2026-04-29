@@ -374,6 +374,223 @@ Single event ──► POST /api/simulate ──► Collector :4000 ──► Or
 
 ---
 
+## Workbench UI — Page Guide
+
+The workbench is a Next.js 15 App Router application at `apps/workbench`. Every page is a React Server Component that fetches live data from the backend on each request. No mock data is used — if the backend is offline, pages show explicit offline states. Client components (Load Lab, Simulate Lab) use Zustand stores for cross-navigation state.
+
+### Page Map
+
+| Route | Live backend calls? | Purpose |
+|---|---|---|
+| `/workbench/queue` | `control-plane /v1/detections/fired` + `arroyo /api/v1/pipelines` + WS | Real-time alert queue |
+| `/workbench/cases` | `control-plane /v1/detections/fired` (via `/api/detections`) | All triaged cases |
+| `/workbench/cases/[id]` | event lookup + baseline + triage | Deep case investigation |
+| `/workbench/detections` | `control-plane /v1/detections/fired` (last-fired timestamps) | Detection rule catalogue |
+| `/workbench/simulate` | `/api/simulate` → collector + orchestrator | ML hot-path testing |
+| `/workbench/load` | `/api/load/start` + `control-plane WS /v1/metrics/stream` | Streaming throughput testing |
+| `/workbench/agents` | `orchestrator /metrics` | Agent roster + live latency |
+| `/workbench/hunt` | None — Phase 7 placeholder | Threat hunting query editor |
+| `/workbench/settings` | None — static | Integration & agent configuration status |
+| `/workbench/admin` | 4 health checks + Arroyo pipelines API | Platform health + API docs links |
+
+---
+
+### Queue (`/workbench/queue`) — default landing page
+
+Fetches all fired detections from `control-plane /v1/detections/fired` and the list of running Arroyo pipelines. A status badge shows one of three states:
+
+- **`Offline — control-plane unreachable`** — backend is down
+- **`Connected — no detections yet`** — backend is up but no rules have fired
+- **`Live — HELIQL detections connected`** — at least one detection is present
+
+Below the header, `AlertQueueLive` is a client component that connects to `control-plane /v1/ws/alerts` via WebSocket and pushes new detections in real time. Arroyo pipeline chips (clickable, link to Arroyo UI) show how many streaming pipelines are currently running.
+
+**What to watch during a test:** Run a simulation or load test → alerts appear in the queue within 2–10 seconds → pipeline chips turn green.
+
+---
+
+### Cases (`/workbench/cases`)
+
+Lists all fired alerts bucketed into **Open** and **Auto-Closed**. Calls `/api/detections` (a Next.js proxy to `control-plane /v1/detections/fired`) and maps each `FiredDetection` to an `Alert` via `detection-to-alert.ts`.
+
+Each row shows: severity badge, event title, actor username, region, data source, confidence %, and ML execution path. Clicking a row navigates to the case detail page using the event UUID as the route parameter.
+
+**When empty:** "No cases in this state. Run a load test or send events to generate detections."
+
+---
+
+### Case Detail (`/workbench/cases/[id]`)
+
+The most data-intensive page. Three backend calls run in parallel on every load:
+
+```
+1. control-plane  GET /v1/events/recent?id={id}        → raw OCSF event from RisingWave hot tier
+2. control-plane  GET /v1/baselines/user/{username}    → 30-day behavioural baseline (regions, event count)
+3. orchestrator   POST /triage { alert: <event> }      → live ML verdict + SHAP feature values
+```
+
+The page builds a `CaseRecord` entirely from live data and renders it in `CaseWorkbench`:
+
+- **Timeline** — each step the event traversed: Collector (OCSF normalization) → RisingWave (baseline fetch) → Orchestrator (ML verdict) → Attestation (Ed25519 signing)
+- **Evidence panel** — Event ID, API operation, region, baseline regions seen in 30 days, triage action ID, novelty score
+- **SHAP feature impact bars** — top 8 features that drove the ML classifier's decision
+
+If the event ID is not found in the hot tier (expired or backend offline): "Case not found — event may have expired from the hot tier."
+
+---
+
+### Detections (`/workbench/detections`)
+
+Displays the **10 bundled HELIQL detection rules** compiled into RisingWave as materialized views. The rule metadata (title, description, MITRE ATT&CK ID) is static in the UI. The `Last fired` column is live — it queries `/api/detections` and finds the most-recent `fired_at` timestamp per `detection_id`.
+
+Rows with a recent match glow green. The header shows "N rules fired" based on how many have at least one match in the backend.
+
+| Rule | Technique | Severity |
+|---|---|---|
+| Console Login from Anomalous Region | T1078.004 | medium |
+| CloudTrail Logging Disabled | T1562.001 | critical |
+| AWS Root Account Used | T1078 | critical |
+| Excessive IAM Privilege Granted | T1098 | high |
+| New IAM User + Access Keys Sequence | T1136.003 | high |
+| S3 Bucket Made Public | T1530 | high |
+| Okta Brute-Force Authentication | T1110 | high |
+| Okta MFA Bypass Attempt | T1556 | high |
+| M365 Mass External Sharing | T1567 | high |
+| M365 Inbox Auto-Forward Rule | T1114.003 | critical |
+
+---
+
+### Simulate Lab (`/workbench/simulate`)
+
+A client component. Tests the **ML hot path** with a single injected event and shows per-stage results in real time.
+
+**Left column** — 5 named attack scenarios (each with MITRE ID, severity, description).
+
+**Centre column** — Editable parameters: actor username, source IP, region, severity score slider. "Run Simulation" and "Batch (50× concurrent)" buttons.
+
+**Right column — Hot Path** shows 4 animated stage rows:
+
+| Stage | Service | What it proves |
+|---|---|---|
+| Collector | `attest-collector :4000` | CloudTrail → OCSF normalized + published to Kafka |
+| Orchestrator | `attest-orchestrator :4300` | Hybrid triage loop (XGBoost ONNX + Mahalanobis novelty) |
+| Calibration | `calibration-sidecar :5001` | Isotonic regression — raw score → calibrated probability |
+| Attestation | `attest-attestation` crate | Ed25519 signed envelope appended to `attestations.ndjson` |
+
+After the hot path completes, a **verdict card** shows benign/suspicious/malicious, calibrated confidence bar, and novelty score. The **SHAP panel** renders which features drove the decision.
+
+**Memory section** polls `/api/simulate/verify` every 2.5 seconds (up to 90 s) to confirm all four parallel sinks received the event:
+
+| Sink | What is verified |
+|---|---|
+| RisingWave | `recent_events` MV includes the event ID |
+| Detection + ClickHouse | A detection rule matched and the alert is in ClickHouse |
+| Iceberg / MinIO | Event flushed to warm Parquet (`s3://attest-warm`) |
+| MCP Gateway | Attestation envelope is queryable by external auditors |
+
+**Batch mode** fires 50 concurrent `POST /triage` calls and returns min/p50/p95/p99/max latency — use this to verify the orchestrator's latency envelope under concurrency.
+
+---
+
+### Load Lab (`/workbench/load`)
+
+A client component backed by the `load-store` Zustand store. Tests the **streaming rules path** (Kafka → RisingWave → Detection Runtime) at configurable throughput.
+
+Opens a WebSocket to `control-plane /v1/metrics/stream` on page load. The WS header shows **"WS live"** (green) when connected. Metrics arrive at 1 Hz as `MetricsSnapshot` frames.
+
+**Four preset profiles:**
+
+| Preset | Rate | Duration | Sampled triage | Purpose |
+|---|---|---|---|---|
+| Smoke | 1k/sec | 30s | 5% | Sanity check |
+| Sustained | 10k/sec | 60s | 5% | Normal load |
+| Burst | 100k/sec | 60s | 1% | Stress test |
+| 1M Challenge | 100k/sec | 120s | off | 12M events — proves 1M/10s goal |
+
+**Four live charts:**
+
+| Chart | Source field | What it tells you |
+|---|---|---|
+| Events / sec | `events_per_sec` | Kafka cloudtrail HWM delta |
+| Consumer lag | `consumer_lag` | Messages queued but not yet consumed by RisingWave |
+| Detections / sec | `detections_per_sec` | Kafka alerts HWM delta — rules firing |
+| Storage rows / sec | `clickhouse_rows_per_sec` | ClickHouse warm-tier ingestion rate |
+
+**Session totals panel** shows cumulative events sent, detections fired, actual rate, and consumer lag. If **Sampled triage** (0–20% slider) is enabled, a purple row shows the live ML triage p95 under load.
+
+**Key diagnostic:** if consumer lag grows unboundedly during a Burst run, RisingWave is falling behind. If it stays under ~50k messages, the pipeline is keeping up.
+
+---
+
+### Agents (`/workbench/agents`)
+
+Fetches `orchestrator /metrics` to get `triage_count`, `p50_ms`, `p95_ms`, `p99_ms`. Shows three header counters — Total verdicts, Classifier P99, Envelope coverage.
+
+Four agent cards in a 2×2 grid:
+
+| Agent | Status | Model | When |
+|---|---|---|---|
+| Triager | Live (if orchestrator up) | XGBoost + Claude Sonnet escalation | Phase 4b — deployed now |
+| Investigator | Phase 5 | Claude Opus / Qwen 3 32B (air-gapped) | Not yet built |
+| Hunter | Phase 7 | Claude Sonnet | Not yet built |
+| Detection Engineer | Phase 10 | Claude Sonnet | Not yet built |
+
+The Triager card shows real-time verdict count and p50/p95/p99 latency percentiles, plus an **"Attestation envelopes: Ed25519 signed"** confirmation badge when the orchestrator is online.
+
+---
+
+### Hunt (`/workbench/hunt`) — Phase 7 placeholder
+
+A HELIQL query text area with three buttons (Run against warm tier, Run against live stream, Save hypothesis). The buttons are not wired — this page is the UI shell for the Hunter agent in Phase 7. The warm-tier button will call `control-plane /v1/warm/query` when wired.
+
+---
+
+### Settings (`/workbench/settings`)
+
+Static page — no backend calls. Shows integration status across four sections: Integrations (CloudTrail, Okta, M365, Arroyo, MinIO, ClickHouse), Detection Rules, AI Agents, and Notifications. Status badges show "connected" (green) or "not configured" (muted). These reflect design intent, not live health checks (use the Admin page for live health).
+
+---
+
+### Admin (`/workbench/admin`)
+
+Four parallel health checks on every page load:
+
+```
+control-plane  GET /healthz               → ok | error
+arroyo         GET /api/v1/ping           → ok | error
+arroyo         GET /api/v1/pipelines      → list of running pipeline names
+collector      GET /healthz               → ok | error
+```
+
+**Service health table** — 7 rows, each linking to its API docs at `/docs`:
+
+| Service | Port | Type | Links to |
+|---|---|---|---|
+| control-plane | 8080 | HTTP | `/docs` — Scalar API explorer |
+| arroyo | 5115 | HTTP | Arroyo UI |
+| collector | 4000 | HTTP | `/docs` — Scalar API explorer |
+| orchestrator | 4300 | HTTP | `/docs` — Scalar API explorer |
+| mcp-gateway | 4242 | HTTP | `/docs` — Scalar API explorer |
+| storage-iceberg | — | Worker | No HTTP — background Kafka consumer |
+| detection-runtime | — | Worker | No HTTP — background HELIQL deployer |
+
+**Arroyo pipelines section** — clickable chips with human-readable names (snake_case converted to Title Case) linking to the Arroyo pipeline UI.
+
+---
+
+### OpenAPI Docs (`/docs` on each Rust service)
+
+Every Rust HTTP service serves an interactive [Scalar](https://scalar.com) API explorer at `/docs`. Annotations are generated from `utoipa` macros at compile time — no separate spec file to maintain.
+
+| Service | URL |
+|---|---|
+| `attest-collector` | `http://localhost:4000/docs` |
+| `attest-control-plane` | `http://localhost:8080/docs` |
+| `attest-orchestrator` | `http://localhost:4300/docs` |
+| `attest-mcp-gateway` | `http://localhost:4242/docs` |
+
+---
+
 ## Crates
 
 | Crate | Phase | Purpose |

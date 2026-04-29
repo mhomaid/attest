@@ -8,10 +8,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UserBaseline {
     pub tenant_id: String,
     pub actor_user_name: String,
@@ -19,6 +20,21 @@ pub struct UserBaseline {
     pub event_count_30d: i64,
     pub last_seen: String,
 }
+
+/// Return the 30-day behavioural baseline for a user from the `entity_baselines` materialized view.
+#[utoipa::path(
+    get,
+    path = "/v1/baselines/user/{name}",
+    params(
+        ("name" = String, Path, description = "IAM user name to look up"),
+    ),
+    responses(
+        (status = 200, description = "Baseline found", body = UserBaseline),
+        (status = 404, description = "User not found in baseline"),
+        (status = 503, description = "DB not ready"),
+    ),
+    tag = "baselines"
+)]
 
 pub async fn get_user_baseline(
     State(state): State<AppState>,

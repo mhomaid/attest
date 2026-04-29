@@ -124,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
               <div className="hidden items-center gap-2 rounded-md border border-border bg-background/80 px-2 py-1.5 md:flex">
                 <RadioTower className="h-3.5 w-3.5 text-signal-good" />
-                <span className="font-mono text-[11px] text-muted-foreground">acme-prod</span>
+                <span className="font-mono text-[11px] text-muted-foreground">Attest</span>
               </div>
             </div>
           </header>

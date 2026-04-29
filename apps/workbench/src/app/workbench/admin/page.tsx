@@ -1,22 +1,34 @@
-import { Activity, Database, Layers, Server, Users } from "lucide-react";
+import { Activity, Database, ExternalLink, Layers, Server, Users } from "lucide-react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/workbench/status-badge";
 
-const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
-const ARROYO_URL = process.env.ARROYO_URL ?? "http://localhost:5115";
+const CP_URL          = process.env.CONTROL_PLANE_URL  ?? "http://localhost:8080";
+const ARROYO_URL      = process.env.ARROYO_URL         ?? "http://localhost:5115";
+const ARROYO_UI_URL   = process.env.ARROYO_UI_URL      ?? "http://localhost:5115";
+const COLLECTOR_URL   = process.env.COLLECTOR_URL      ?? "http://localhost:4000";
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL  ?? "http://localhost:4300";
+const MCP_GW_URL      = process.env.MCP_GATEWAY_URL    ?? "http://localhost:4242";
+
+function formatPipelineName(raw: string): string {
+  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 async function fetchHealth(): Promise<{
   controlPlane: "ok" | "error";
   arroyo:       "ok" | "error";
+  collector:    "ok" | "error";
   arroyoPipelines: { name: string; state: string }[];
 }> {
   const results = await Promise.allSettled([
-    fetch(`${CP_URL}/healthz`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
-    fetch(`${ARROYO_URL}/api/v1/ping`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
+    fetch(`${CP_URL}/healthz`,        { cache: "no-store", signal: AbortSignal.timeout(3000) }),
+    fetch(`${ARROYO_URL}/api/v1/ping`,{ cache: "no-store", signal: AbortSignal.timeout(3000) }),
     fetch(`${ARROYO_URL}/api/v1/pipelines`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
+    fetch(`${COLLECTOR_URL}/healthz`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
   ]);
 
   const controlPlane = results[0].status === "fulfilled" && results[0].value.ok ? "ok" : "error";
   const arroyo       = results[1].status === "fulfilled" && results[1].value.ok ? "ok" : "error";
+  const collector    = results[3].status === "fulfilled" && results[3].value.ok ? "ok" : "error";
 
   let arroyoPipelines: { name: string; state: string }[] = [];
   if (results[2].status === "fulfilled" && results[2].value.ok) {
@@ -29,7 +41,7 @@ async function fetchHealth(): Promise<{
     } catch { /* ignore */ }
   }
 
-  return { controlPlane, arroyo, arroyoPipelines };
+  return { controlPlane, arroyo, collector, arroyoPipelines };
 }
 
 const INFO_ROWS = [
@@ -44,17 +56,68 @@ const INFO_ROWS = [
 ];
 
 export default async function AdminPage() {
-  const { controlPlane, arroyo, arroyoPipelines } = await fetchHealth();
+  const { controlPlane, arroyo, collector, arroyoPipelines } = await fetchHealth();
 
   const services = [
-    { name: "control-plane",    status: controlPlane, port: "8080", icon: Server },
-    { name: "arroyo",           status: arroyo,       port: "5115", icon: Activity },
-    { name: "collector",        status: "unknown" as const, port: "4000", icon: Layers },
-    { name: "storage-iceberg",  status: "unknown" as const, port: "—",    icon: Database },
-    { name: "detection-runtime",status: "unknown" as const, port: "—",    icon: Server },
+    {
+      name:   "control-plane",
+      status: controlPlane,
+      port:   "8080",
+      note:   "",
+      href:   `${CP_URL}/docs`,
+      icon:   Server,
+    },
+    {
+      name:   "arroyo",
+      status: arroyo,
+      port:   "5115",
+      note:   "",
+      href:   `${ARROYO_UI_URL}`,
+      icon:   Activity,
+    },
+    {
+      name:   "collector",
+      status: collector,
+      port:   "4000",
+      note:   "",
+      href:   `${COLLECTOR_URL}/docs`,
+      icon:   Layers,
+    },
+    {
+      name:   "orchestrator",
+      status: "unknown" as const,
+      port:   "4300",
+      note:   "",
+      href:   `${ORCHESTRATOR_URL}/docs`,
+      icon:   Server,
+    },
+    {
+      name:   "mcp-gateway",
+      status: "unknown" as const,
+      port:   "4242",
+      note:   "",
+      href:   `${MCP_GW_URL}/docs`,
+      icon:   Users,
+    },
+    {
+      name:   "storage-iceberg",
+      status: "worker" as const,
+      port:   "—",
+      note:   "background worker — no HTTP",
+      href:   null,
+      icon:   Database,
+    },
+    {
+      name:   "detection-runtime",
+      status: "worker" as const,
+      port:   "—",
+      note:   "background worker — no HTTP",
+      href:   null,
+      icon:   Server,
+    },
   ];
 
-  const tonemap = { ok: "good", error: "high", unknown: "muted" } as const;
+  const tonemap = { ok: "good", error: "high", unknown: "muted", worker: "info" } as const;
 
   return (
     <div className="space-y-3 p-3">
@@ -76,16 +139,35 @@ export default async function AdminPage() {
           <span className="font-mono text-[10px] text-muted-foreground">live check</span>
         </header>
         <div className="divide-y divide-border/80">
-          {services.map(({ name, status, port, icon: Icon }) => (
-            <div key={name} className="flex items-center gap-3 px-3 py-2.5">
-              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <code className="flex-1 font-mono text-xs">{name}</code>
-              <span className="font-mono text-[11px] text-muted-foreground">:{port}</span>
-              <StatusBadge tone={tonemap[status as keyof typeof tonemap]}>
-                {status}
-              </StatusBadge>
-            </div>
-          ))}
+          {services.map(({ name, status, port, note, href, icon: Icon }) => {
+            const inner = (
+              <>
+                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <code className="flex-1 font-mono text-xs">{name}</code>
+                {note && <span className="font-mono text-[10px] text-muted-foreground/60">{note}</span>}
+                <span className="font-mono text-[11px] text-muted-foreground">:{port}</span>
+                <StatusBadge tone={tonemap[status as keyof typeof tonemap]}>
+                  {status}
+                </StatusBadge>
+                {href && <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              </>
+            );
+            return href ? (
+              <Link
+                key={name}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/50"
+              >
+                {inner}
+              </Link>
+            ) : (
+              <div key={name} className="flex items-center gap-3 px-3 py-2.5 opacity-60">
+                {inner}
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -104,11 +186,19 @@ export default async function AdminPage() {
             </p>
           ) : (
             arroyoPipelines.map((p) => (
-              <div key={p.name} className="flex items-center gap-3 px-3 py-2.5">
+              <Link
+                key={p.name}
+                href={`${ARROYO_UI_URL}/pipelines`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/50"
+              >
                 <Activity className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <code className="flex-1 font-mono text-xs">{p.name}</code>
+                <span className="flex-1 text-xs font-medium">{formatPipelineName(p.name)}</span>
+                <code className="font-mono text-[10px] text-muted-foreground/60">{p.name}</code>
                 <StatusBadge tone={p.state === "Running" ? "good" : "medium"}>{p.state}</StatusBadge>
-              </div>
+                <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </Link>
             ))
           )}
         </div>

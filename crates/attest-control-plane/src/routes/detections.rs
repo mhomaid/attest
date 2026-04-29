@@ -9,11 +9,12 @@ use axum::{
 };
 use axum::extract::ws::{Message, WebSocket};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::state::AppState;
 
 /// Shape of one fired detection row (mirrors the det_* view SELECT).
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct FiredAlert {
     pub detection_id:   String,
     pub event_id:       String,
@@ -23,7 +24,16 @@ pub struct FiredAlert {
     pub fired_at:       String,
 }
 
-/// Discover all `det_*` materialized views in RisingWave and return their rows.
+/// Return all rows from every `det_*` materialized view in RisingWave.
+#[utoipa::path(
+    get,
+    path = "/v1/detections/fired",
+    responses(
+        (status = 200, description = "List of fired detections", body = Vec<FiredAlert>),
+        (status = 500, description = "Internal error"),
+    ),
+    tag = "detections"
+)]
 pub async fn get_detections_fired(
     State(state): State<AppState>,
 ) -> impl IntoResponse {

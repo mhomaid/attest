@@ -1,11 +1,20 @@
-import { Activity } from "lucide-react";
+import { Activity, ExternalLink } from "lucide-react";
+import Link from "next/link";
 import { AlertQueueLive } from "@/components/workbench/alert-queue";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { parseFiredDetections } from "@/lib/detection-to-alert";
 import type { Alert } from "@/lib/mock-data";
 
-const CP_URL     = process.env.CONTROL_PLANE_URL  ?? "http://localhost:8080";
-const ARROYO_URL = process.env.ARROYO_URL         ?? "http://localhost:5115";
+const CP_URL          = process.env.CONTROL_PLANE_URL  ?? "http://localhost:8080";
+const ARROYO_URL      = process.env.ARROYO_URL         ?? "http://localhost:5115";
+const ARROYO_UI_URL   = process.env.ARROYO_UI_URL      ?? "http://localhost:5115";
+
+/** "cloudtrail_to_parquet" → "Cloudtrail to Parquet" */
+function formatPipelineName(raw: string): string {
+  return raw
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 type LiveStatus = "live" | "connected" | "offline";
 
@@ -113,14 +122,18 @@ export default async function QueuePage() {
         {arroyoPipelines.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
             {arroyoPipelines.map((p) => (
-              <div
+              <Link
                 key={p.name}
-                className="inline-flex items-center gap-1.5 rounded-md border border-signal-good/30 bg-signal-good/10 px-2 py-1 text-[11px]"
+                href={`${ARROYO_UI_URL}/pipelines`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-signal-good/30 bg-signal-good/10 px-2 py-1 text-[11px] transition-colors hover:bg-signal-good/20"
               >
                 <Activity className="h-3 w-3 text-signal-good" />
-                <code className="font-mono text-signal-good">{p.name}</code>
+                <span className="font-medium text-signal-good">{formatPipelineName(p.name)}</span>
                 <span className="text-muted-foreground">{p.state}</span>
-              </div>
+                <ExternalLink className="h-2.5 w-2.5 text-muted-foreground" />
+              </Link>
             ))}
           </div>
         )}
