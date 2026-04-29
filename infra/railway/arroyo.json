@@ -1,0 +1,18 @@
+{
+  "environmentVariables": {
+    "DATABASE_URL": "postgres://attest:${{Postgres.POSTGRES_PASSWORD}}@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:5432/attest",
+    "AWS_ACCESS_KEY_ID": "${{Minio.MINIO_ROOT_USER}}",
+    "AWS_SECRET_ACCESS_KEY": "${{Minio.MINIO_ROOT_PASSWORD}}",
+    "AWS_ENDPOINT_URL": "http://${{Minio.RAILWAY_PRIVATE_DOMAIN}}:9000",
+    "AWS_ENDPOINT": "http://${{Minio.RAILWAY_PRIVATE_DOMAIN}}:9000",
+    "AWS_REGION": "us-east-1",
+    "AWS_ALLOW_HTTP": "true",
+    "KAFKA_BROKERS": "${{Redpanda.RAILWAY_PRIVATE_DOMAIN}}:9092"
+  },
+  "notes": [
+    "Arroyo uses Postgres for pipeline state; wire it to the same Postgres instance as other services.",
+    "AWS_ENDPOINT_URL / AWS_ENDPOINT point to MinIO's internal Railway hostname.",
+    "KAFKA_BROKERS is consumed by arroyo-pipeline-deployer (not Arroyo itself) to substitute into SQL files.",
+    "arroyo-pipeline-deployer runs as a separate one-shot service — see arroyo-deployer.json."
+  ]
+}

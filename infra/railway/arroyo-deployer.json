@@ -1,0 +1,15 @@
+{
+  "environmentVariables": {
+    "ARROYO_API": "http://${{Arroyo.RAILWAY_PRIVATE_DOMAIN}}:5115",
+    "PIPELINES_DIR": "/pipelines",
+    "KAFKA_BROKERS": "${{Redpanda.RAILWAY_PRIVATE_DOMAIN}}:9092",
+    "S3_ENDPOINT": "http://${{Minio.RAILWAY_PRIVATE_DOMAIN}}:9000"
+  },
+  "notes": [
+    "One-shot service: runs deploy-pipelines.sh then exits.",
+    "KAFKA_BROKERS and S3_ENDPOINT are substituted into SQL pipeline files at deploy time.",
+    "Dockerfile: infra/docker/arroyo-deployer.Dockerfile",
+    "Must depend_on arroyo being healthy — Railway does not support depends_on natively;",
+    "the script polls Arroyo's /api/v1/ping until healthy before deploying."
+  ]
+}

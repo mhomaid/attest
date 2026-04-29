@@ -526,6 +526,54 @@ Phases 1–3 require `make dev-up-platform` to be running. Phase 4a is self-cont
 
 ---
 
+### Hard-won testing lessons (do not repeat)
+
+#### 1. rdkafka `subscribe()` does not assign partitions — the first `recv()` does
+
+**Context:** Any E2E test that creates a `StreamConsumer`, calls `subscribe(&["topic"])`, sleeps for a fixed duration, and then produces events it expects to read back.
+
+**Root cause:** In rdkafka (and the underlying librdkafka), `subscribe()` only registers *intent*. The actual partition assignment — including the commitment of the "latest" offset as the starting position — happens lazily on the first internal poll cycle, which is triggered by the first `recv()` call. A fixed `sleep(2s)` before producing events is not a reliable signal that assignment has completed. If the first `recv()` call happens *after* the message was already written to the broker, that message is silently skipped.
+
+This manifested in `arroyo_cep_pipeline_fires_sequence_alert`: the Arroyo CEP pipeline was working correctly and producing alerts to `alerts` within ~3 seconds, but the test consumer received zero messages for the full 30 s wait window because it was never assigned to any partition before the alert was produced.
+
+**Fix:** After `subscribe()`, call `recv()` with a short timeout to force partition assignment *before* producing the test events. This blocks until the rebalance completes and the consumer is fully seated at the latest offset:
+
+```rust
+consumer.subscribe(&["alerts"]).expect("subscribe failed");
+
+// Force eager partition assignment. subscribe() only registers intent;
+// the first recv() triggers the rebalance and commits the starting offset.
+let _ = tokio::time::timeout(Duration::from_secs(3), consumer.recv()).await;
+```
+
+**Broader rule:** Never rely on a fixed sleep after `subscribe()`. Always trigger at least one `recv()` (or `poll()`) before producing events the consumer is meant to read.
+
+#### 2. Arroyo streaming JOINs need continuous watermark advancement, not a one-shot burst
+
+**Context:** `arroyo_cep_pipeline_fires_sequence_alert` — CEP pipeline detecting `ConsoleLogin → GetObject` sequences.
+
+**Root cause:** Arroyo's interval JOIN emits results once the watermark advances past the join window boundary. Sending 5 watermark-advance events in a 500 ms burst and then waiting 30 s is fragile — if Arroyo's internal processing lags or the watermark does not advance enough from those 5 events, the join never emits inside the test window.
+
+**Fix:** Pump one watermark-advance event every 500 ms *throughout the entire polling loop*, not just before it. This guarantees the watermark keeps advancing regardless of pipeline lag:
+
+```rust
+let deadline = Instant::now() + Duration::from_secs(60);
+let mut pump_tick = Instant::now();
+let mut pump_idx: u32 = 0;
+
+while Instant::now() < deadline && !found {
+    if pump_tick.elapsed() >= Duration::from_millis(500) {
+        post_cloudtrail(&client, "ConsoleLogin",
+            &format!("watermark-advance-{}@example.com", pump_idx), "eu-west-1").await;
+        pump_idx += 1;
+        pump_tick = Instant::now();
+    }
+    // ... poll consumer.recv() with 200ms timeout ...
+}
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -611,11 +659,12 @@ Attest/
 
 | Railway service | Image / Builder | Internal hostname |
 |---|---|---|
-| `redpanda` | `confluentinc/cp-kafka:7.9.0` | `redpanda.railway.internal:9092` |
+| `redpanda` | `confluentinc/cp-kafka:7.9.0` (KRaft mode — named `redpanda` so no app env vars change) | `redpanda.railway.internal:9092` |
 | `risingwave` | `risingwavelabs/risingwave:latest` | `risingwave.railway.internal:4566` |
 | `clickhouse` | `clickhouse/clickhouse-server:latest` | `clickhouse.railway.internal:8123` |
 | `minio` | `minio/minio:latest` | `minio.railway.internal:9000` |
 | `arroyo` | `ghcr.io/arroyosystems/arroyo:latest` | `arroyo.railway.internal:5115` |
+| `arroyo-deployer` | Dockerfile `infra/docker/arroyo-deployer.Dockerfile` | one-shot (exits after deploying pipelines) |
 | `collector` | Dockerfile `infra/docker/collector.Dockerfile` | — |
 | `control-plane` | Dockerfile `infra/docker/control-plane.Dockerfile` | `control-plane-production-b6e3.up.railway.app` |
 | `storage-iceberg` | Dockerfile `infra/docker/storage-iceberg.Dockerfile` | — |

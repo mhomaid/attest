@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo railway-logs-collector railway-logs-control-plane railway-logs-workbench railway-logs-arroyo
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -99,7 +99,7 @@ railway-login: ## Log in to Railway CLI
 
 railway-setup: ## Create all services AND configure each one's builder (Dockerfile path or Nixpacks) — fully CLI driven
 	@echo "▶ Creating services (skipping if they already exist)…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
 	  echo "  → $$svc"; \
 	  railway add --service $$svc >/dev/null 2>&1 || true; \
 	done
@@ -117,18 +117,20 @@ railway-setup: ## Create all services AND configure each one's builder (Dockerfi
 	  --service-config detection-runtime build.builder        DOCKERFILE \
 	  --service-config detection-runtime build.dockerfilePath infra/docker/detection-runtime.Dockerfile \
 	  --service-config detection-runtime deploy.startCommand  "/usr/local/bin/attest-detection-runtime" \
+	  --service-config arroyo-deployer   build.builder        DOCKERFILE \
+	  --service-config arroyo-deployer   build.dockerfilePath infra/docker/arroyo-deployer.Dockerfile \
 	  --service-config workbench         build.builder        NIXPACKS \
 	  -m "configure builders and start commands for all application services"
 	@echo "▶ Setting application env vars from infra/railway/*.json…"
 	@./scripts/railway-set-env.sh
 	@echo ""
 	@echo "✔ Setup complete. Next: 'make railway-deploy'"
-	@echo "  (Infrastructure services — Redpanda, RisingWave, ClickHouse, MinIO —"
+	@echo "  (Infrastructure services — Kafka, RisingWave, ClickHouse, MinIO, Arroyo —"
 	@echo "   must be added separately: see 'make railway-infra'.)"
 
-railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse, MinIO, Arroyo) as Docker image services
-	@echo "▶ Adding Redpanda…"
-	railway add --service redpanda --image redpandadata/redpanda:v26.1.6 || true
+railway-infra: ## Add infrastructure services (Kafka/KRaft, RisingWave, ClickHouse, MinIO, Arroyo) as Docker image services
+	@echo "▶ Adding Kafka (Confluent KRaft — named 'redpanda' so app env vars stay unchanged)…"
+	railway add --service redpanda --image confluentinc/cp-kafka:7.9.0 || true
 	@echo "▶ Adding RisingWave…"
 	railway add --service risingwave --image risingwavelabs/risingwave:latest || true
 	@echo "▶ Adding ClickHouse…"
@@ -140,33 +142,54 @@ railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse,
 	@echo ""
 	@echo "✔ Infrastructure services created."
 	@echo "  Run 'make railway-infra-config' to configure ports, start commands, env vars."
+	@echo "  NOTE: Kafka requires a CLUSTER_ID — generate one with:"
+	@echo "    python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\""
 
 railway-infra-config: ## Configure infrastructure services (start commands, env vars, ports)
+	@echo "▶ Configuring Kafka (Confluent KRaft) start command and env vars…"
+	@echo "  Requires CLUSTER_ID env var — generate with:"
+	@echo "    export CLUSTER_ID=\$$(python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\")"
+	@[ -n "$$CLUSTER_ID" ] || (echo "ERROR: CLUSTER_ID not set"; exit 1)
 	@railway environment edit \
-	  --service-config redpanda   deploy.startCommand  "redpanda start --mode dev-container --smp 1 --memory 1G --kafka-addr PLAINTEXT://0.0.0.0:9092 --advertise-kafka-addr PLAINTEXT://redpanda.railway.internal:9092" \
+	  --service-config redpanda   deploy.startCommand  "/etc/confluent/docker/run" \
+	  --service-config redpanda   variables.CLUSTER_ID.value "$$CLUSTER_ID" \
+	  --service-config redpanda   variables.KAFKA_NODE_ID.value "1" \
+	  --service-config redpanda   variables.KAFKA_PROCESS_ROLES.value "broker,controller" \
+	  --service-config redpanda   variables.KAFKA_CONTROLLER_QUORUM_VOTERS.value "1@localhost:9093" \
+	  --service-config redpanda   variables.KAFKA_LISTENERS.value "PLAINTEXT://:9092,CONTROLLER://:9093" \
+	  --service-config redpanda   variables.KAFKA_ADVERTISED_LISTENERS.value "PLAINTEXT://redpanda.railway.internal:9092" \
+	  --service-config redpanda   variables.KAFKA_CONTROLLER_LISTENER_NAMES.value "CONTROLLER" \
+	  --service-config redpanda   variables.KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.value "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" \
+	  --service-config redpanda   variables.KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR.value "1" \
+	  --service-config redpanda   variables.KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR.value "1" \
+	  --service-config redpanda   variables.KAFKA_TRANSACTION_STATE_LOG_MIN_ISR.value "1" \
+	  --service-config redpanda   variables.KAFKA_AUTO_CREATE_TOPICS_ENABLE.value "true" \
+	  --service-config redpanda   variables.KAFKA_LOG_DIRS.value "/var/lib/kafka/data" \
 	  --service-config risingwave deploy.startCommand  "playground" \
 	  --service-config clickhouse variables.CLICKHOUSE_USER.value default \
 	  --service-config clickhouse variables.CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT.value 1 \
-	  --service-config minio      deploy.startCommand  "server /data --console-address :9001" \
+	  --service-config minio      deploy.startCommand  "minio server /data --console-address :9001" \
 	  --service-config minio      variables.MINIO_ROOT_USER.value minioadmin \
 	  --service-config minio      variables.MINIO_ROOT_PASSWORD.value minioadmin \
-	  --service-config arroyo     variables.DATABASE_URL.value "$$ARROYO_DATABASE_URL" \
-	  --service-config arroyo     variables.AWS_ACCESS_KEY_ID.value "$$MINIO_ACCESS_KEY" \
-	  --service-config arroyo     variables.AWS_SECRET_ACCESS_KEY.value "$$MINIO_SECRET_KEY" \
-	  --service-config arroyo     variables.AWS_ENDPOINT.value "$$MINIO_ENDPOINT" \
+	  --service-config arroyo     variables.AWS_ACCESS_KEY_ID.value minioadmin \
+	  --service-config arroyo     variables.AWS_SECRET_ACCESS_KEY.value minioadmin \
+	  --service-config arroyo     variables.AWS_ENDPOINT_URL.value "http://minio.railway.internal:9000" \
+	  --service-config arroyo     variables.AWS_ENDPOINT.value "http://minio.railway.internal:9000" \
 	  --service-config arroyo     variables.AWS_REGION.value us-east-1 \
+	  --service-config arroyo     variables.AWS_ALLOW_HTTP.value "true" \
 	  --service-config arroyo     variables.KAFKA_BROKERS.value "redpanda.railway.internal:9092" \
-	  -m "configure infrastructure services"
+	  -m "configure infrastructure services (Confluent KRaft + MinIO + Arroyo)"
 	@echo "✔ Infrastructure configured."
+	@echo "  Next: attach a Railway volume to minio at /data, then run 'make railway-setup'."
 
 railway-deploy: ## Upload local source and deploy all application services to Railway (first deploy)
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
 	  echo "▶ Deploying $$svc …"; \
 	  railway up --service $$svc --detach --ci; \
 	done
 
 railway-redeploy: ## Trigger redeploy of the latest deployment for all services (after first deploy)
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
 	  echo "▶ Redeploying $$svc …"; \
 	  railway service redeploy --service $$svc --yes; \
 	done
@@ -181,7 +204,7 @@ railway-status: ## Show deployment status for all Railway services
 	@echo ""
 	@railway environment config
 	@echo ""
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench redpanda risingwave clickhouse minio arroyo; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer redpanda risingwave clickhouse minio arroyo; do \
 	  echo "── $$svc ──"; \
 	  railway service status --service $$svc 2>&1 | grep -E "Status|status|ACTIVE|FAILED|CRASHED|SLEEPING|DEPLOYING|queued" | head -3 || true; \
 	done
@@ -199,20 +222,21 @@ railway-logs: ## Tail runtime logs for all application services (runs in paralle
 	@railway logs --service storage-iceberg &
 	@railway logs --service detection-runtime &
 	@railway logs --service workbench &
+	@railway logs --service arroyo-deployer &
 	@wait
 
 railway-stop: ## Stop all source-built app services (removes active deployments)
 	@echo "▶ Stopping app services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
 	  echo "  → stopping $$svc"; \
 	  railway down --service $$svc --yes 2>&1 | grep -v "^$$" || true; \
 	done
 	@echo "✔ App services stopped."
-	@echo "  To stop infra (risingwave, redpanda, clickhouse, minio) run: make railway-infra-stop"
+	@echo "  To stop infra (risingwave, redpanda, clickhouse, minio, arroyo) run: make railway-infra-stop"
 
 railway-start: ## Redeploy all source-built app services (assumes infra is already running)
 	@echo "▶ Starting app services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
 	  echo "  → starting $$svc"; \
 	  railway redeploy --service $$svc --yes; \
 	done

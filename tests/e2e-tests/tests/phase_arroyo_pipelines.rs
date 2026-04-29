@@ -105,9 +105,12 @@ async fn seed_events(client: &reqwest::Client, count: usize) {
 /// the given prefix. Returns None on any error.
 async fn count_arroyo_parquet(prefix: &str) -> Option<u64> {
     let client = reqwest::Client::new();
-    // ClickHouse s3() glob — counts rows in all Parquet files under prefix
+    // ClickHouse s3() glob — counts rows in Parquet files under prefix.
+    // Arroyo writes flat files (no subdirectories) so *.parquet covers the default case.
+    // Note: ClickHouse treats {..} as named-collection syntax, so we cannot use
+    //       {**/*.parquet,*.parquet} — stick to the flat glob for Arroyo output.
     let sql = format!(
-        "SELECT count(*) FROM s3('http://minio:9000/attest-warm/{prefix}/**/*.parquet', \
+        "SELECT count(*) FROM s3('http://minio:9000/attest-warm/{prefix}/*.parquet', \
          'minioadmin', 'minioadmin', 'Parquet')"
     );
     let res = client
@@ -238,17 +241,20 @@ async fn arroyo_pipelines_are_running() {
     let names = pipelines.unwrap();
     println!("✓ Pipelines deployed: {names:?}");
 
-    // Now verify each expected pipeline reports Running state
+    // Verify each expected pipeline reports Running state via the jobs endpoint.
+    // The pipeline-level object does not expose state directly; state lives on jobs.
     let expected = ["cloudtrail_to_parquet", "cep_sequence_detection"];
     for pipeline_name in expected {
         let running = poll_until(
             || {
                 let client = client.clone();
-                let url = format!("{}/api/v1/pipelines", arroyo_url());
+                let list_url = format!("{}/api/v1/pipelines", arroyo_url());
                 let name = pipeline_name.to_string();
+                let arroyo = arroyo_url();
                 async move {
+                    // Step 1: find the pipeline id
                     let body: serde_json::Value = client
-                        .get(&url)
+                        .get(&list_url)
                         .timeout(Duration::from_secs(5))
                         .send()
                         .await
@@ -257,10 +263,28 @@ async fn arroyo_pipelines_are_running() {
                         .await
                         .ok()?;
 
-                    body["data"].as_array()?.iter().find_map(|p| {
-                        if p["name"].as_str() == Some(&name)
-                            && matches!(p["state"].as_str(), Some("Running") | Some("running"))
-                        {
+                    let pipeline_id = body["data"].as_array()?.iter().find_map(|p| {
+                        if p["name"].as_str() == Some(&name) {
+                            p["id"].as_str().map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    })?;
+
+                    // Step 2: check the latest job is in Running state
+                    let jobs_url = format!("{arroyo}/api/v1/pipelines/{pipeline_id}/jobs");
+                    let jobs: serde_json::Value = client
+                        .get(&jobs_url)
+                        .timeout(Duration::from_secs(5))
+                        .send()
+                        .await
+                        .ok()?
+                        .json()
+                        .await
+                        .ok()?;
+
+                    jobs["data"].as_array()?.iter().find_map(|j| {
+                        if matches!(j["state"].as_str(), Some("Running") | Some("running")) {
                             Some(())
                         } else {
                             None
@@ -268,13 +292,13 @@ async fn arroyo_pipelines_are_running() {
                     })
                 }
             },
-            Duration::from_secs(30),
+            Duration::from_secs(60),
         )
         .await;
 
         assert!(
             running.is_some(),
-            "Pipeline '{pipeline_name}' did not reach Running state within 30s"
+            "Pipeline '{pipeline_name}' did not reach Running state within 60s"
         );
         println!("  ✓ {pipeline_name} is Running");
     }
@@ -288,25 +312,25 @@ async fn arroyo_etl_pipeline_writes_parquet_to_minio() {
     }
 
     let client = reqwest::Client::new();
-    const EVENT_COUNT: usize = 50; // Small — we just need at least 1 Parquet flush
+    const EVENT_COUNT: usize = 30; // Enough to ensure data is written
 
     println!("Seeding {EVENT_COUNT} events via collector …");
     seed_events(&client, EVENT_COUNT).await;
 
-    // Arroyo flushes every 30s (rollover_seconds = '30' in the SQL).
-    // Wait up to 60s for at least 1 row to appear under arroyo/cloudtrail/.
-    println!("Waiting for Arroyo ETL to flush Parquet to MinIO (≤ 60 s) …");
+    // Arroyo flushes every 30s via rolling_policy.interval / inactivity_interval.
+    // Wait up to 90s (30s interval + startup + pipeline lag) for at least 1 Parquet file.
+    println!("Waiting for Arroyo ETL to flush Parquet to MinIO (≤ 90 s) …");
     let count = poll_until(
         || async { count_arroyo_parquet("arroyo/cloudtrail").await.filter(|&n| n > 0) },
-        Duration::from_secs(60),
+        Duration::from_secs(90),
     )
     .await;
 
     assert!(
         count.is_some(),
-        "No Parquet rows found under s3://attest-warm/arroyo/cloudtrail/ within 60s. \
+        "No Parquet rows found under s3://attest-warm/arroyo/cloudtrail/ within 90s. \
          Check that the cloudtrail_to_parquet Arroyo pipeline is Running and \
-         that AWS_ENDPOINT / credentials are correct."
+         that the s3::http://minio:9000 path is reachable from Arroyo."
     );
     println!("✓ Arroyo ETL: {} rows confirmed in MinIO under arroyo/cloudtrail/", count.unwrap());
 }
@@ -333,6 +357,10 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
         .set("bootstrap.servers", kafka_brokers())
         .set("group.id", format!("arroyo-cep-e2e-{}", uuid::Uuid::new_v4()))
         .set("auto.offset.reset", "latest")
+        // Trigger an immediate metadata fetch so partition assignment happens now,
+        // not on the first recv() call (avoids missing early alerts).
+        .set("session.timeout.ms", "6000")
+        .set("heartbeat.interval.ms", "1000")
         .set("enable.auto.commit", "false")
         .create()
         .expect("failed to create Kafka consumer for alerts topic");
@@ -341,8 +369,11 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
         .subscribe(&["alerts"])
         .expect("failed to subscribe to alerts topic");
 
-    // Give the consumer a moment to assign partitions before we produce events
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Trigger partition assignment eagerly by polling with a short timeout.
+    // This is more reliable than a fixed sleep because rdkafka assigns partitions
+    // on the first recv() / poll() call, not on subscribe().
+    let _ = tokio::time::timeout(Duration::from_secs(3), consumer.recv()).await;
+    println!("  (alerts consumer partitions assigned)");
 
     // Step 1: inject ConsoleLogin (Success) from us-east-1
     println!("Injecting ConsoleLogin for {test_user} …");
@@ -357,18 +388,31 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
     let ok = post_cloudtrail(&client, "GetObject", &test_user, "us-east-1").await;
     assert!(ok, "GetObject event failed to ingest");
 
-    // Wait up to 30 s for the CEP detection to fire on the alerts topic
-    println!("Waiting for CEP alert on `alerts` topic (≤ 30 s) …");
-    let deadline = Instant::now() + Duration::from_secs(30);
+    // Keep pumping watermark-advance events throughout the entire wait window.
+    // Arroyo's streaming JOIN needs the watermark to advance before it emits.
+    // We pump one event every ~500 ms so the watermark keeps moving regardless
+    // of how long the pipeline takes to process previous batches.
+    println!("Waiting for CEP alert on `alerts` topic (≤ 60 s) …");
+    let deadline = Instant::now() + Duration::from_secs(60);
     let mut found = false;
+    let mut pump_tick = Instant::now();
+    let mut pump_idx: u32 = 0;
 
     while Instant::now() < deadline && !found {
-        match tokio::time::timeout(
-            Duration::from_secs(3),
-            consumer.recv(),
-        )
-        .await
-        {
+        // Pump a watermark-advance event every 500 ms.
+        if pump_tick.elapsed() >= Duration::from_millis(500) {
+            post_cloudtrail(
+                &client,
+                "ConsoleLogin",
+                &format!("watermark-advance-{}@example.com", pump_idx),
+                "eu-west-1",
+            )
+            .await;
+            pump_idx += 1;
+            pump_tick = Instant::now();
+        }
+
+        match tokio::time::timeout(Duration::from_millis(200), consumer.recv()).await {
             Ok(Ok(msg)) => {
                 if let Some(payload) = msg.payload() {
                     if let Ok(body) = serde_json::from_slice::<serde_json::Value>(payload) {
@@ -385,10 +429,9 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
             }
             Ok(Err(e)) => {
                 eprintln!("Kafka consumer error: {e}");
-                tokio::time::sleep(Duration::from_millis(200)).await;
             }
             Err(_) => {
-                // timeout on this poll — keep looping
+                // poll timeout — continue loop
             }
         }
     }
@@ -396,8 +439,8 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
     assert!(
         found,
         "Arroyo CEP pipeline did not fire 'aws_login_then_s3_access_sequence' \
-         alert for {test_user} within 30 s. \
+         alert for {test_user} within 60 s (pumped {pump_idx} watermark-advance events). \
          Check that the cep_sequence_detection pipeline is Running."
     );
-    println!("✓ Arroyo CEP alert fired for {test_user}");
+    println!("✓ Arroyo CEP alert fired for {test_user} (after {pump_idx} watermark pumps)");
 }

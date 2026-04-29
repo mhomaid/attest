@@ -1,108 +1,97 @@
 -- cep_sequence_detection.sql
--- Arroyo CEP pipeline: detect multi-step attack sequences that require
--- stateful event correlation across time windows.
+-- Arroyo CEP pipeline: detect multi-step attack sequences requiring
+-- stateful event correlation that RisingWave cannot express cleanly.
 --
--- Pattern implemented here (template — extend for production):
---   "AWS console login from new region THEN S3 GetObject within 5 minutes"
---
--- Why Arroyo and not RisingWave for this:
---   RisingWave handles threshold and windowed aggregations well but does not
---   support ordered event-sequence matching (A then B then C with time
---   constraints and per-entity state). Arroyo's temporal join + windowed
---   aggregation covers this pattern declaratively.
---
--- Output: alerts topic on Redpanda, same schema as detections fired by
---         attest-detection-runtime. Downstream consumers (orchestrator,
---         workbench) are unaffected.
+-- Pattern: "console login THEN S3 access within 5 minutes by the same user"
+-- Output:  alerts Redpanda topic (same schema as HELIQL detections)
 
--- Source: all normalised OCSF events from the cloudtrail topic
+-- Source: flat OCSF events from the cloudtrail Redpanda topic.
+-- Column names match FlatEvent (attest-collector/src/producer.rs).
 CREATE TABLE ocsf_events (
     event_id          TEXT,
-    actor_user_name   TEXT,
-    cloud_region      TEXT,
-    event_name        TEXT,   -- e.g. "ConsoleLogin", "GetObject", "PutObject"
-    event_type        TEXT,   -- e.g. "Authentication", "CloudActivity"
-    auth_status       TEXT,   -- "Success" | "Failure"
-    source_ip         TEXT,
+    class_uid         TEXT,
+    time              TIMESTAMP,
     tenant_id         TEXT,
-    event_time        TIMESTAMP
+    actor_user_name   TEXT,
+    actor_user_uid    TEXT,
+    cloud_region      TEXT,
+    cloud_account_uid TEXT,
+    severity          TEXT,
+    auth_status       TEXT,
+    api_operation     TEXT,
+    api_service       TEXT
 ) WITH (
     connector = 'kafka',
     format = 'json',
-    'bootstrap.servers' = 'redpanda:9092',
+    bootstrap_servers = 'redpanda:9092',
     topic = 'cloudtrail',
-    type = 'source',
-    'group.id' = 'arroyo-cep-detector'
+    type = 'source'
 );
 
--- Sink: alerts topic consumed by orchestrator + workbench
+-- Sink: alerts topic consumed by orchestrator and workbench
 CREATE TABLE alerts_sink (
-    detection_id   TEXT,
+    detection_id    TEXT,
     actor_user_name TEXT,
-    cloud_region   TEXT,
-    source_ip      TEXT,
-    tenant_id      TEXT,
-    severity       TEXT,
-    mitre_id       TEXT,
-    detail         TEXT,
-    fired_at       TIMESTAMP
+    cloud_region    TEXT,
+    source_ip       TEXT,
+    tenant_id       TEXT,
+    severity        TEXT,
+    mitre_id        TEXT,
+    detail          TEXT,
+    fired_at        TIMESTAMP
 ) WITH (
     connector = 'kafka',
     format = 'json',
-    'bootstrap.servers' = 'redpanda:9092',
+    bootstrap_servers = 'redpanda:9092',
     topic = 'alerts',
     type = 'sink'
 );
 
--- Step 1: successful console logins (anchor event)
+-- Anchor: successful console logins
+-- auth_status = 'Success' is the casing produced by FlatEvent::from_ocsf
 CREATE VIEW console_logins AS
 SELECT
     event_id,
     actor_user_name,
     cloud_region,
-    source_ip,
+    actor_user_uid AS source_ip,
     tenant_id,
-    event_time AS login_time
+    time AS login_time
 FROM ocsf_events
-WHERE event_name = 'ConsoleLogin'
+WHERE api_operation = 'ConsoleLogin'
   AND auth_status = 'Success';
 
--- Step 2: S3 data access events
+-- S3 data access events (any S3 read-like operation)
 CREATE VIEW s3_access AS
 SELECT
     event_id,
     actor_user_name,
     cloud_region,
     tenant_id,
-    event_time AS access_time
+    time AS access_time
 FROM ocsf_events
-WHERE event_name IN ('GetObject', 'ListBuckets', 'GetBucketObject');
+WHERE api_operation IN ('GetObject', 'ListBuckets', 'GetBucketObject', 'GetObject_v2');
 
--- Detection: login THEN S3 access by the same user within 5 minutes.
--- Fires when we haven't seen the user log in from this region in the
--- prior 90 days (the baseline check is intentionally simplified here —
--- the full baseline lives in RisingWave and is queried by the orchestrator
--- for LLM-path investigations).
+-- Detection: login THEN S3 access by the same user within 5 minutes
 INSERT INTO alerts_sink
 SELECT
-    'aws_login_then_s3_access_sequence'        AS detection_id,
+    'aws_login_then_s3_access_sequence'             AS detection_id,
     l.actor_user_name,
     l.cloud_region,
     l.source_ip,
     l.tenant_id,
-    'high'                                     AS severity,
-    'T1078.004'                                AS mitre_id,
+    'high'                                          AS severity,
+    'T1078.004'                                     AS mitre_id,
     CONCAT(
         'User ', l.actor_user_name,
         ' logged in from ', l.cloud_region,
         ' at ', CAST(l.login_time AS TEXT),
         ' then accessed S3 at ', CAST(s.access_time AS TEXT)
-    )                                          AS detail,
-    s.access_time                              AS fired_at
+    )                                               AS detail,
+    s.access_time                                   AS fired_at
 FROM console_logins l
 JOIN s3_access s
   ON  l.actor_user_name = s.actor_user_name
   AND l.tenant_id       = s.tenant_id
-  -- S3 access must happen AFTER login and within 5 minutes
   AND s.access_time > l.login_time
   AND s.access_time <= l.login_time + INTERVAL '5 minutes';

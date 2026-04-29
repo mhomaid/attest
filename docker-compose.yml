@@ -99,8 +99,12 @@ services:
       # S3 / MinIO credentials for filesystem sink (Parquet output)
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
+      # AWS_ENDPOINT_URL is the standard env var for S3-compatible endpoint override
+      AWS_ENDPOINT_URL: http://minio:9000
       AWS_ENDPOINT: http://minio:9000
       AWS_REGION: us-east-1
+      # Allow HTTP (non-HTTPS) for local MinIO
+      AWS_ALLOW_HTTP: "true"
       # Redpanda bootstrap — referenced by pipeline SQL as 'redpanda:9092'
       KAFKA_BROKERS: redpanda:9092
     volumes:
@@ -111,7 +115,7 @@ services:
       - minio-init
       - redpanda
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5115/api/v1/ping"]
+      test: ["CMD", "curl", "-sf", "http://localhost:5115/api/v1/ping"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -119,15 +123,16 @@ services:
       - platform
 
   # One-shot service: waits for Arroyo to be healthy then deploys all SQL pipelines.
+  # Uses the same Arroyo image — has bash, python3, and curl already available.
   arroyo-pipeline-deployer:
-    image: curlimages/curl:latest
-    entrypoint: ["/bin/sh", "/pipelines/deploy-pipelines.sh"]
+    image: ghcr.io/arroyosystems/arroyo:latest
+    entrypoint: ["/bin/bash", "/usr/local/bin/deploy-pipelines.sh"]
     environment:
       ARROYO_API: http://arroyo:5115
       PIPELINES_DIR: /pipelines
     volumes:
       - ./infra/arroyo/pipelines:/pipelines:ro
-      - ./infra/arroyo/deploy-pipelines.sh:/pipelines/deploy-pipelines.sh:ro
+      - ./infra/arroyo/deploy-pipelines.sh:/usr/local/bin/deploy-pipelines.sh:ro
     depends_on:
       arroyo:
         condition: service_healthy
