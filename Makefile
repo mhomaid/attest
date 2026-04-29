@@ -150,7 +150,7 @@ railway-infra-config: ## Configure infrastructure services (start commands, env 
 	@echo "  Requires CLUSTER_ID env var — generate with:"
 	@echo "    export CLUSTER_ID=\$$(python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\")"
 	@[ -n "$$CLUSTER_ID" ] || (echo "ERROR: CLUSTER_ID not set"; exit 1)
-	@railway environment edit \
+	@railway environment edit -e production \
 	  --service-config redpanda   deploy.startCommand  "/etc/confluent/docker/run" \
 	  --service-config redpanda   variables.CLUSTER_ID.value "$$CLUSTER_ID" \
 	  --service-config redpanda   variables.KAFKA_NODE_ID.value "1" \
