@@ -24,6 +24,12 @@ export interface LoadConfig {
   scenario: 'mixed' | 'attack' | 'benign';
   tenants: number;
   seed_baselines: boolean;
+  /**
+   * Percentage of load events also sent to the orchestrator for ML triage (0–100).
+   * 0 = streaming rules only (fastest, no triage latency data).
+   * 5 = 5% sampled — real triage p95 without overwhelming the orchestrator.
+   */
+  sampled_triage_pct: number;
 }
 
 export type LoadStatus =
@@ -38,7 +44,7 @@ export interface LoadState {
   status: LoadStatus;
   config: LoadConfig;
   startedAt: number | null;
-  /** Ring buffer — last 300 snapshots (= 5 min at 1 Hz). */
+  /** Ring buffer — last 300 snapshots (5 min at 1 Hz). Never mutated in-place. */
   history: MetricsSnapshot[];
   current: MetricsSnapshot | null;
   errorMsg: string | null;
@@ -58,6 +64,7 @@ const DEFAULT_CONFIG: LoadConfig = {
   scenario: 'mixed',
   tenants: 3,
   seed_baselines: true,
+  sampled_triage_pct: 0,
 };
 
 const HISTORY_MAX = 300;
@@ -78,7 +85,7 @@ export const useLoadStore = create<LoadState>()(
     },
 
     async startRun() {
-      set({ status: 'starting', errorMsg: null, startedAt: Date.now(), history: [] });
+      set({ status: 'starting', errorMsg: null, startedAt: Date.now(), history: [], current: null });
       try {
         const res = await fetch('/api/load/start', {
           method: 'POST',
@@ -86,8 +93,8 @@ export const useLoadStore = create<LoadState>()(
           body: JSON.stringify(get().config),
         });
         if (!res.ok) {
-          const { error } = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-          throw new Error(error ?? `HTTP ${res.status}`);
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
         }
         set({ status: 'running' });
       } catch (e) {
@@ -98,7 +105,12 @@ export const useLoadStore = create<LoadState>()(
     async stopRun() {
       set({ status: 'stopping' });
       try {
-        await fetch('/api/load/stop', { method: 'POST' });
+        const res = await fetch('/api/load/stop', { method: 'POST' });
+        // 404 means load-gen already stopped on its own — treat as completed.
+        if (!res.ok && res.status !== 404) {
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
         set({ status: 'completed' });
       } catch (e) {
         set({ status: 'error', errorMsg: e instanceof Error ? e.message : String(e) });
@@ -107,16 +119,20 @@ export const useLoadStore = create<LoadState>()(
 
     ingestSnapshot(s) {
       set(state => {
-        const next = [...state.history, s];
-        if (next.length > HISTORY_MAX) next.shift();
+        // Immutable ring buffer — no in-place mutation.
+        const prev = state.history;
+        const history =
+          prev.length >= HISTORY_MAX
+            ? [...prev.slice(-(HISTORY_MAX - 1)), s]
+            : [...prev, s];
 
-        // Auto-transition to completed when the run finishes
+        // Auto-transition: run finished when load-gen goes inactive after a few ticks.
         const status =
-          state.status === 'running' && !s.active_load_gen && state.history.length > 5
+          state.status === 'running' && !s.active_load_gen && prev.length > 5
             ? 'completed'
             : state.status;
 
-        return { current: s, history: next, status };
+        return { current: s, history, status };
       });
     },
 

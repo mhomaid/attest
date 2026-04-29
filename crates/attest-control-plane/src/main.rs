@@ -66,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
     let load_gen_url = std::env::var("LOAD_GEN_URL").ok();
+    let orchestrator_url = std::env::var("ORCHESTRATOR_URL").ok();
 
     // ── Broadcast channels ──────────────────────────────────────────────────
     let (alert_tx, _) = broadcast::channel::<String>(1024);
@@ -124,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
         let ch = (*ch_url).clone();
         let tx = metrics_tx.clone();
         tokio::spawn(async move {
-            metrics::sampler::run_sampler(brokers, ch, load_gen_url, tx).await;
+            metrics::sampler::run_sampler(brokers, ch, load_gen_url, orchestrator_url, tx).await;
         });
     }
 

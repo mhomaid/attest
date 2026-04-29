@@ -168,6 +168,13 @@ export default function SimulatePage() {
 
   const pushRun = useSimulateStore(s => s.pushRun);
 
+  // ── Batch mode state ──────────────────────────────────────────────────────
+  type BatchState = "idle" | "running" | "done";
+  const [batchState, setBatchState] = useState<BatchState>("idle");
+  const [batchResult, setBatchResult] = useState<{
+    n: number; min: number; p50: number; p95: number; p99: number; max: number; errors: number;
+  } | null>(null);
+
   // ── Stop polling on unmount ───────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -250,9 +257,40 @@ export default function SimulatePage() {
         setPollState("finished");
       }
     } catch (err) {
-      setError(String(err));
+      setError(err instanceof Error ? err.message : String(err));
       setRunState("error");
     }
+  }, [selected, params, pushRun]);
+
+  // ── Batch mode — 50 concurrent triage calls ──────────────────────────────
+  const BATCH_N = 50;
+  const runBatch = useCallback(async () => {
+    setBatchState("running");
+    setBatchResult(null);
+    const jobs = Array.from({ length: BATCH_N }, () =>
+      fetch("/api/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario_id: selected.id, params }),
+      }).then(async (r) => {
+        const d = await r.json() as { total_latency_ms?: number };
+        return d.total_latency_ms ?? 0;
+      }).catch(() => -1),
+    );
+    const latencies = await Promise.all(jobs);
+    const ok = latencies.filter(v => v >= 0).sort((a, b) => a - b);
+    const errors = latencies.filter(v => v < 0).length;
+    const pct = (p: number) => ok[Math.round((p / 100) * (ok.length - 1)) | 0] ?? 0;
+    setBatchResult({
+      n: BATCH_N,
+      min: ok[0] ?? 0,
+      p50: pct(50),
+      p95: pct(95),
+      p99: pct(99),
+      max: ok.at(-1) ?? 0,
+      errors,
+    });
+    setBatchState("done");
   }, [selected, params]);
 
   const featureImpacts: FeatureImpact[] | null =
@@ -275,6 +313,7 @@ export default function SimulatePage() {
     if (runState === "idle" || !hot) return "pending";
     if (!memory) return "running";
     const r = memory[key];
+    if (!r) return "running"; // guard against partial API response
     if (r.ok) return "ok";
     // Polling still active → keep spinning. Polling finished → flip to "fail" so user knows it's not coming.
     return pollState === "polling" ? "running" : "fail";
@@ -383,6 +422,37 @@ export default function SimulatePage() {
               </>
             )}
           </button>
+          <button
+            onClick={runBatch}
+            disabled={runState === "running" || batchState === "running"}
+            className={cn(
+              "flex w-full items-center justify-center gap-2 rounded-md py-2 text-xs font-semibold border transition-all",
+              batchState === "running"
+                ? "cursor-not-allowed border-border bg-secondary/50 text-muted-foreground"
+                : "border-border bg-secondary text-foreground hover:bg-secondary/80 active:scale-[0.98]",
+            )}
+          >
+            {batchState === "running" ? (
+              <><span className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> Running 50×…</>
+            ) : (
+              <><Zap className="size-3" /> Batch (50× concurrent)</>
+            )}
+          </button>
+          {batchResult && (
+            <div className="rounded-md border border-border/80 bg-card/60 p-3 text-xs space-y-2">
+              <p className="font-semibold text-muted-foreground uppercase tracking-[0.1em] text-[10px]">
+                Batch latency · {batchResult.n - batchResult.errors}/{batchResult.n} ok
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
+                <span className="text-muted-foreground">min</span><span>{batchResult.min} ms</span>
+                <span className="text-muted-foreground">p50</span><span>{batchResult.p50} ms</span>
+                <span className="text-emerald-400 font-semibold">p95</span><span className="font-semibold">{batchResult.p95} ms</span>
+                <span className="text-orange-400 font-semibold">p99</span><span className="font-semibold">{batchResult.p99} ms</span>
+                <span className="text-muted-foreground">max</span><span>{batchResult.max} ms</span>
+                {batchResult.errors > 0 && <><span className="text-red-400">errors</span><span className="text-red-400">{batchResult.errors}</span></>}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Right: Pipeline + Results ── */}

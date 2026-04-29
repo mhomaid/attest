@@ -183,7 +183,10 @@ services:
       RISINGWAVE_HOST: risingwave
       RISINGWAVE_PORT: "4566"
       CLICKHOUSE_URL: http://clickhouse:8123
+      KAFKA_BROKERS: redpanda:9092
       PORT: "8080"
+      LOAD_GEN_URL: http://load-gen:9100
+      ORCHESTRATOR_URL: http://orchestrator:4300
     depends_on:
       - risingwave
       - redpanda

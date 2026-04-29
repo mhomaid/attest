@@ -24,3 +24,4 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }
 hdrhistogram = "7"
+reqwest = { workspace = true }

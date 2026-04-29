@@ -699,6 +699,7 @@ dependencies = [
  "hdrhistogram",
  "rand 0.8.6",
  "rdkafka",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

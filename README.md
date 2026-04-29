@@ -322,6 +322,58 @@ Run with `make e2e-phase4a` (automatically starts services, runs tests, cleans u
 
 ---
 
+### Phase 4b — Load Lab + Simulate Lab (Observability & Testing Tools)
+
+**The problem they solve:** It's not enough to build a streaming detection platform — you need to *see* it work at scale and verify every component independently. Phase 4b adds two complementary tools:
+
+#### Load Lab (`/workbench/load`)
+
+Exercises the **streaming rules path** (Kafka → RisingWave → Detection Runtime → alerts) at configurable throughput. Real-time metrics stream via WebSocket at 1 Hz.
+
+```
+Load Gen ──► Kafka cloudtrail ──► RisingWave (SQL rules) ──► Detection Runtime ──► Kafka alerts
+  :9100                                                                                    │
+                                                            also N% ──► Orchestrator :4300 │
+                                                            (sampled triage)               │
+Control Plane :8080  ◄── 1 Hz MetricsSnapshot (WS) ──────────────────────────────────────┘
+  │  events_per_sec     — Kafka cloudtrail HWM delta
+  │  consumer_lag       — RisingWave consumer group offset gap
+  │  detections_per_sec — Kafka alerts HWM delta (rules fired)
+  │  storage_rows_per_sec — ClickHouse warm-tier ingestion rate
+  └  triage_p95_ms      — ML orchestrator latency (only when sampled_triage_pct > 0)
+```
+
+**Presets:**
+
+| Preset | Rate | Duration | Triage sampling |
+|---|---|---|---|
+| Smoke | 1k/sec | 30s | 5% |
+| Sustained | 10k/sec | 60s | 5% |
+| Burst | 100k/sec | 60s | 1% |
+| 1M Challenge | 100k/sec | 120s | off |
+
+The **Sampled Triage** slider (0–20%) controls what percentage of load events are also sent to the ML orchestrator concurrently. This gives you real triage p95 latency under load without overwhelming the orchestrator. Set it to 0 for maximum streaming throughput.
+
+#### Simulate Lab (`/workbench/simulate`)
+
+Exercises the **ML hot-path** (Collector → Orchestrator ONNX → Calibration → Attestation) with a single event and shows every stage's result. Also includes **Batch Mode** (50 concurrent triage calls) to measure ML latency distribution under concurrency.
+
+```
+Single event ──► POST /api/simulate ──► Collector :4000 ──► Orchestrator :4300
+                                                                     │
+                                              FeatureExtractor → AlertFeatures
+                                              OnnxClassifier → raw_score + SHAP
+                                              CalibrationClient → calibrated_score
+                                              NoveltyDetector → novelty_score
+                                              AttestationEnvelope (Ed25519 signed)
+                                                     │
+                                         TriageVerdict → UI (verdict, confidence, SHAP panel)
+```
+
+**Batch Mode** fires 50 concurrent POST /triage calls and returns min/p50/p95/p99/max latency — tells you exactly where the orchestrator's latency envelope sits under real concurrency.
+
+---
+
 ## Crates
 
 | Crate | Phase | Purpose |
@@ -437,13 +489,137 @@ curl -s http://localhost:4300/agent | jq .
 
 ## Testing
 
+### Strategy — per-phase E2E, not one giant test
+
+Each phase has its own E2E acceptance gate. This is deliberate:
+- **Faster feedback** — a Phase 1 failure doesn't run Phase 4 tests
+- **Clearer blame** — a failing test tells you exactly which layer broke
+- **Incremental CI** — add phases to CI as they stabilise
+
+Phase 4b (Load Lab, Simulate Lab) is tested manually via the UI. Automated E2E for the load path is covered by Phase 3's detection test. The Simulate Lab's ML path is covered by Phase 4a's orchestrator tests.
+
+---
+
+### Step-by-Step Platform Test (do this after every significant change)
+
+**Prerequisites:** `make dev-up-platform` is running, `make train-classifier` has been run once.
+
+#### 1. Verify the streaming substrate
+
+```sh
+# Post a single event
+curl -s -X POST http://localhost:4000/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "awsRegion":"us-east-1","recipientAccountId":"111111111111",
+    "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
+    "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+# Expected: {"event_ids":["<uuid>"]}
+
+# Wait 2s, then verify it's in the hot tier
+sleep 2 && curl -s "http://localhost:8080/v1/events/recent?id=<uuid>" | jq .
+# Expected: event JSON with actor_user_name: "alice@example.com"
+
+# Verify alice's baseline was updated
+curl -s "http://localhost:8080/v1/baselines/user/alice@example.com" | jq .
+# Expected: {"regions_seen_30d":["us-east-1"],...}
+```
+
+#### 2. Verify the detection rules fire
+
+```sh
+# Seed alice with 5 us-east-1 logins to build a baseline
+for i in $(seq 5); do
+  curl -s -X POST http://localhost:4000/ingest \
+    -H 'Content-Type: application/json' \
+    -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+      "awsRegion":"us-east-1","recipientAccountId":"111111111111",
+      "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
+      "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+  sleep 1
+done
+
+# Wait 30s for RisingWave to build the materialized view
+sleep 30
+
+# Inject a geo-anomaly login from an unexpected region
+curl -s -X POST http://localhost:4000/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "awsRegion":"ap-southeast-1","recipientAccountId":"111111111111",
+    "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
+    "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+
+# Wait up to 10s for the detection to fire on the alerts topic
+docker exec attest-redpanda-1 rpk topic consume alerts --brokers localhost:9092 -n 1
+# Expected: JSON with detection_id: "aws_console_login_from_anomalous_geolocation"
+```
+
+#### 3. Verify the ML hot-path (Simulate Lab)
+
+```sh
+# Start the orchestrator and calibration sidecar (if not running)
+cd ml && uv run python triager/calibrate.py --serve &
+ARTIFACTS_DIR=ml/triager/artifacts cargo run -p attest-orchestrator &
+sleep 5
+
+# Triage a known brute-force alert
+curl -s -X POST http://localhost:4300/triage \
+  -H 'Content-Type: application/json' \
+  -d '{"alert":{"severity_id":4,"class_uid":3002,"entity_reputation_score":0.8}}'
+# Expected: {"verdict":"true_positive","calibrated_confidence":>0.5,"latency_ms":<200}
+
+# Or use the Simulate Lab UI:
+# 1. Open http://localhost:3000/workbench/simulate
+# 2. Select "Brute Force Login" scenario
+# 3. Click "Run Simulation" — hot path should complete in < 5s
+# 4. Click "Batch (50× concurrent)" — observe p95 latency
+```
+
+#### 4. Load Lab — streaming rules at scale
+
+```sh
+# Open http://localhost:3000/workbench/load
+# Verify: WS live badge is green (control-plane WebSocket connected)
+
+# Click "Smoke" preset (1k/sec, 30s, 5% sampled triage) then Run
+# Expected within 5s:
+#   - Events/sec chart: ~1000/s
+#   - Consumer lag: spikes then drains as RisingWave keeps up
+#   - Detections/sec: non-zero after ~10s (geo-anomaly rules fire)
+#   - Storage rows/sec: non-zero after first Iceberg flush (~30s)
+#   - Triage p95: non-zero after a few seconds (5% sampled to orchestrator)
+
+# For a high-throughput test:
+# Click "Burst" preset (100k/sec, 60s, 1% sampled triage) then Run
+# Key question: does consumer lag grow unboundedly (RisingWave overloaded)?
+# or does it stay < ~50k messages (pipeline keeps up)?
+
+# CLI equivalent — runs without UI:
+make load-cli-smoke     # 10k/sec, 30s
+make load-cli-burst     # 100k/sec, 60s
+make load-cli-attack    # 100k/sec, 60s, attack scenario only
+```
+
+#### 5. Verify the full pipeline end-to-end
+
+```sh
+# Run all automated E2E tests in sequence
+make e2e-phase1    # Streaming substrate
+make e2e-phase2    # Iceberg warm tier
+make e2e-phase3    # HELIQL detection rules
+make e2e-phase4a   # ML triager (self-contained)
+```
+
+---
+
 ### Unit Tests (no Docker required)
 
 ```sh
 cargo test --workspace --lib
 ```
 
-Covers OCSF type round-trips, CloudTrail normalizer, and serialization.
+Covers OCSF type round-trips, CloudTrail normalizer, HELIQL parser/compiler, and serialization.
 
 ### CLI — Ingest a CloudTrail file
 
@@ -494,7 +670,7 @@ curl -s -X POST http://localhost:8080/v1/warm/query \
   -d '{"sql": "SELECT cloud_region, count(*) FROM s3(\"http://minio:9000/attest-warm/cloudtrail/**/*.parquet\", \"minioadmin\", \"minioadmin\", \"Parquet\") GROUP BY cloud_region"}'
 ```
 
-### E2E Tests
+### Automated E2E Tests
 
 ```sh
 # Phase 1 — streaming substrate (requires running stack)
@@ -646,6 +822,12 @@ Attest/
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase3` | Run Phase 3 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase4a` | Start calibration sidecar + orchestrator, run Phase 4a E2E tests, stop services |
+| `make load-gen-up` | Start load-gen container (bench profile) |
+| `make load-cli-smoke` | CLI benchmark: 10k/sec · 30s · mixed · seed baselines |
+| `make load-cli-burst` | CLI benchmark: 100k/sec · 60s · mixed |
+| `make load-cli-attack` | CLI benchmark: 100k/sec · 60s · attack scenario |
+| `make load-status` | GET load-gen /status (running metrics) |
+| `make load-stop` | POST load-gen /stop |
 | `make fmt` | `cargo fmt --all` |
 | `make lint` | `cargo clippy` + `bun run lint` |
 | `make smoke` | Quick smoke check — cargo test + bun test + pytest |

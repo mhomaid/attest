@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo, memo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine,
+  ResponsiveContainer,
 } from "recharts";
 import {
   Activity, Gauge, Play, Square, RefreshCw, Zap, AlertTriangle,
@@ -14,11 +14,12 @@ import { useLoadStore, type LoadConfig, type MetricsSnapshot } from "@/lib/store
 
 // ── ENV ──────────────────────────────────────────────────────────────────────
 // Browsers connect directly to control-plane WS (no Next.js proxy needed).
-const CP_WS_URL =
+const _cpBase =
   process.env.NEXT_PUBLIC_CP_WS_URL ??
   (typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8080/v1/metrics/stream`
-    : "ws://localhost:8080/v1/metrics/stream");
+    ? `ws://${window.location.hostname}:8080`
+    : "ws://localhost:8080");
+const CP_WS_URL = _cpBase.replace(/\/$/, "") + "/v1/metrics/stream";
 
 // ── Profile presets ────────────────────────────────────────────────────────
 
@@ -34,25 +35,25 @@ const PRESETS: Preset[] = [
     label: "Smoke",
     description: "1k/sec · 30s",
     color: "text-emerald-400",
-    config: { rate: 1_000, duration_secs: 30, scenario: "mixed", tenants: 2, seed_baselines: true },
+    config: { rate: 1_000, duration_secs: 30, scenario: "mixed", tenants: 2, seed_baselines: true, sampled_triage_pct: 5 },
   },
   {
     label: "Sustained",
     description: "10k/sec · 60s",
     color: "text-blue-400",
-    config: { rate: 10_000, duration_secs: 60, scenario: "mixed", tenants: 3, seed_baselines: true },
+    config: { rate: 10_000, duration_secs: 60, scenario: "mixed", tenants: 3, seed_baselines: true, sampled_triage_pct: 5 },
   },
   {
     label: "Burst",
     description: "100k/sec · 60s",
     color: "text-orange-400",
-    config: { rate: 100_000, duration_secs: 60, scenario: "mixed", tenants: 5, seed_baselines: true },
+    config: { rate: 100_000, duration_secs: 60, scenario: "mixed", tenants: 5, seed_baselines: true, sampled_triage_pct: 1 },
   },
   {
     label: "1M Challenge",
     description: "100k/sec · 120s",
     color: "text-red-400",
-    config: { rate: 100_000, duration_secs: 120, scenario: "mixed", tenants: 10, seed_baselines: true },
+    config: { rate: 100_000, duration_secs: 120, scenario: "mixed", tenants: 10, seed_baselines: true, sampled_triage_pct: 0 },
   },
 ];
 
@@ -64,38 +65,61 @@ function fmt(n: number): string {
   return String(n);
 }
 
-function fmtMs(n: number): string {
-  return n > 0 ? `${n.toFixed(1)} ms` : "—";
-}
+// ── Status badge ─────────────────────────────────────────────────────────────
 
-// ── Chart ────────────────────────────────────────────────────────────────────
+const STATUS_STYLES: Record<string, string> = {
+  idle:      "bg-secondary text-muted-foreground",
+  starting:  "bg-blue-500/20 text-blue-400 animate-pulse",
+  running:   "bg-emerald-500/20 text-emerald-400",
+  stopping:  "bg-yellow-500/20 text-yellow-400",
+  completed: "bg-primary/20 text-primary",
+  error:     "bg-red-500/20 text-red-400",
+};
 
-interface ChartProps {
+const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={cn(
+      "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+      STATUS_STYLES[status] ?? STATUS_STYLES.idle,
+    )}>
+      {status}
+    </span>
+  );
+});
+
+// ── Metric chart ─────────────────────────────────────────────────────────────
+
+interface MetricChartProps {
   title: string;
   data: MetricsSnapshot[];
   dataKey: keyof MetricsSnapshot;
-  color: string;
+  strokeColor: string;
+  icon: React.ReactNode;
+  latest: number;
   unit?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  refLine?: number;
 }
 
-function MetricChart({ title, data, dataKey, color, unit = "", icon: Icon, refLine }: ChartProps) {
-  const chartData = data.map((s, i) => ({ t: i, v: s[dataKey] as number }));
-  const latest = chartData.at(-1)?.v ?? 0;
+const MetricChart = memo(function MetricChart({
+  title, data, dataKey, strokeColor, icon, latest, unit = "",
+}: MetricChartProps) {
+  const chartData = useMemo(
+    () => data.map((s, i) => ({ t: i, v: s[dataKey] as number })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, dataKey],
+  );
 
   return (
     <div className="rounded-lg border border-border/80 bg-card/80 p-3">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Icon className={cn("size-3.5", color)} />
+          {icon}
           <span className="text-xs font-medium">{title}</span>
         </div>
-        <span className={cn("font-mono text-sm font-semibold", color)}>
+        <span className="font-mono text-sm font-semibold" style={{ color: strokeColor }}>
           {fmt(latest)}{unit}
         </span>
       </div>
-      <ResponsiveContainer width="100%" height={80}>
+      <ResponsiveContainer width="100%" height={90}>
         <LineChart data={chartData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
           <XAxis dataKey="t" hide />
@@ -103,17 +127,19 @@ function MetricChart({ title, data, dataKey, color, unit = "", icon: Icon, refLi
           <Tooltip
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             formatter={(v: any) => [`${fmt(Number(v ?? 0))}${unit}`, title]}
-            contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
+            contentStyle={{
+              background: "hsl(var(--card))",
+              border: "1px solid hsl(var(--border))",
+              borderRadius: 6,
+              fontSize: 11,
+            }}
             labelStyle={{ display: "none" }}
           />
-          {refLine !== undefined && (
-            <ReferenceLine y={refLine} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
-          )}
           <Line
             type="monotone"
             dataKey="v"
-            stroke={color.replace("text-", "").replace("-400", "")}
-            strokeWidth={1.5}
+            stroke={strokeColor}
+            strokeWidth={2}
             dot={false}
             isAnimationActive={false}
           />
@@ -121,75 +147,130 @@ function MetricChart({ title, data, dataKey, color, unit = "", icon: Icon, refLi
       </ResponsiveContainer>
     </div>
   );
-}
+});
 
-// ── Status badge ─────────────────────────────────────────────────────────────
+// ── Config field ──────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    idle:      "bg-secondary text-muted-foreground",
-    starting:  "bg-blue-500/20 text-blue-400 animate-pulse",
-    running:   "bg-emerald-500/20 text-emerald-400",
-    stopping:  "bg-yellow-500/20 text-yellow-400",
-    completed: "bg-primary/20 text-primary",
-    error:     "bg-red-500/20 text-red-400",
-  };
+const ConfigField = memo(function ConfigField({
+  label, type = "text", value, onChange, disabled,
+}: {
+  label: string;
+  type?: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
   return (
-    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", map[status] ?? map.idle)}>
-      {status}
-    </span>
+    <div>
+      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+      <input
+        type={type}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-border bg-card/60 px-2.5 py-1.5 font-mono text-xs text-foreground focus:border-primary/60 focus:outline-none disabled:opacity-50"
+      />
+    </div>
   );
-}
+});
+
+// ── Total stat ────────────────────────────────────────────────────────────────
+
+const TotalStat = memo(function TotalStat({
+  label, value, icon,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-1 font-mono text-lg font-semibold">{value}</p>
+    </div>
+  );
+});
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function LoadPage() {
-  const { status, config, history, current, errorMsg, setConfig, startRun, stopRun, reset } =
-    useLoadStore();
+  // Fine-grained selectors — each slice re-renders only the relevant subtree.
+  const status    = useLoadStore(s => s.status);
+  const config    = useLoadStore(s => s.config);
+  const history   = useLoadStore(s => s.history);
+  const current   = useLoadStore(s => s.current);
+  const errorMsg  = useLoadStore(s => s.errorMsg);
+  const setConfig = useLoadStore(s => s.setConfig);
+  const startRun  = useLoadStore(s => s.startRun);
+  const stopRun   = useLoadStore(s => s.stopRun);
+  const reset     = useLoadStore(s => s.reset);
+  // Stable ref — Zustand actions never change identity across renders.
+  const ingestSnapshot = useLoadStore(s => s.ingestSnapshot);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef             = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ingestSnapshot = useLoadStore.getState().ingestSnapshot;
+  const backoffRef        = useRef(1000);
+  const mountedRef        = useRef(true);
+  const [wsConnected, setWsConnected] = useState(false);
 
-  // ── WebSocket connection with exponential back-off ──────────────────────
+  // Track mount status so the WS close handler never schedules reconnects after unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // ── WebSocket with exponential back-off ───────────────────────────────────
   const connectWs = useCallback(() => {
+    if (!mountedRef.current) return;
     if (wsRef.current && wsRef.current.readyState < 2) return; // already open/connecting
 
     try {
       const ws = new WebSocket(CP_WS_URL);
       wsRef.current = ws;
 
-      ws.onmessage = (e) => {
-        try {
-          const snap: MetricsSnapshot = JSON.parse(e.data);
-          ingestSnapshot(snap);
-        } catch {/* ignore malformed */}
+      ws.onopen = () => {
+        if (!mountedRef.current) { ws.close(); return; }
+        setWsConnected(true);
+        backoffRef.current = 1000;
       };
 
-      let backoff = 1000;
-      ws.onclose = () => {
-        reconnectTimerRef.current = setTimeout(() => {
-          backoff = Math.min(backoff * 1.5, 30_000);
-          connectWs();
-        }, backoff);
+      ws.onmessage = (e) => {
+        try {
+          const snap = JSON.parse(e.data as string) as MetricsSnapshot;
+          ingestSnapshot(snap);
+        } catch {/* ignore malformed frames */}
       };
-    } catch {/* WebSocket not available (SSR) */}
+
+      ws.onclose = () => {
+        if (!mountedRef.current) return;
+        setWsConnected(false);
+        reconnectTimerRef.current = setTimeout(() => {
+          backoffRef.current = Math.min(backoffRef.current * 1.5, 30_000);
+          connectWs();
+        }, backoffRef.current);
+      };
+
+      ws.onerror = () => {
+        if (mountedRef.current) setWsConnected(false);
+        ws.close();
+      };
+    } catch {/* WebSocket unavailable during SSR — safe to ignore */}
   }, [ingestSnapshot]);
 
   useEffect(() => {
     connectWs();
     return () => {
-      wsRef.current?.close();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      wsRef.current?.close();
     };
   }, [connectWs]);
 
-  // ── Elapsed timer display ───────────────────────────────────────────────
-  const elapsed = current
-    ? `${current.total_events ? fmt(current.total_events) : "0"} events`
-    : null;
-
-  const wsConnected = wsRef.current?.readyState === 1;
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const elapsed = current ? fmt(current.total_events) + " events" : null;
+  const busy = status === "starting" || status === "stopping";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-0">
@@ -211,7 +292,10 @@ export default function LoadPage() {
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
               : "border-border bg-secondary text-muted-foreground"
           )}>
-            <span className={cn("size-1.5 rounded-full", wsConnected ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground")} />
+            <span className={cn(
+              "size-1.5 rounded-full",
+              wsConnected ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground",
+            )} />
             {wsConnected ? "WS live" : "WS offline"}
           </div>
 
@@ -224,7 +308,6 @@ export default function LoadPage() {
             </div>
           )}
 
-          {/* Action buttons */}
           {(status === "idle" || status === "completed" || status === "error") && (
             <button
               onClick={reset}
@@ -236,14 +319,14 @@ export default function LoadPage() {
           )}
 
           <button
-            disabled={status === "starting" || status === "stopping"}
+            disabled={busy}
             onClick={status === "running" ? stopRun : startRun}
             className={cn(
               "flex items-center gap-2 rounded-md px-4 py-1.5 text-xs font-semibold transition-all",
               status === "running"
-                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                ? "border border-red-500/30 bg-red-500/20 text-red-400 hover:bg-red-500/30"
                 : "bg-primary text-primary-foreground hover:bg-primary/90",
-              (status === "starting" || status === "stopping") && "cursor-not-allowed opacity-60",
+              busy && "cursor-not-allowed opacity-60",
             )}
           >
             {status === "running" ? (
@@ -260,7 +343,6 @@ export default function LoadPage() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* ── Left: Config panel ── */}
         <aside className="w-64 shrink-0 overflow-y-auto border-r border-border/80 p-4 space-y-5">
-          {/* Profile presets */}
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Presets</p>
             <div className="space-y-1.5">
@@ -268,13 +350,13 @@ export default function LoadPage() {
                 <button
                   key={p.label}
                   disabled={status === "running" || status === "starting"}
-                  onClick={() => { setConfig(p.config); }}
+                  onClick={() => setConfig(p.config)}
                   className={cn(
                     "w-full rounded-md border px-3 py-2 text-left transition-colors",
                     config.rate === p.config.rate && config.duration_secs === p.config.duration_secs
                       ? "border-primary/40 bg-primary/10"
                       : "border-transparent bg-card/60 hover:border-border hover:bg-card",
-                    (status === "running" || status === "starting") && "opacity-50 cursor-not-allowed",
+                    (status === "running" || status === "starting") && "cursor-not-allowed opacity-50",
                   )}
                 >
                   <div className="flex items-baseline justify-between">
@@ -286,7 +368,6 @@ export default function LoadPage() {
             </div>
           </div>
 
-          {/* Custom config */}
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Custom</p>
             <div className="space-y-3">
@@ -334,13 +415,31 @@ export default function LoadPage() {
                 />
                 Seed baselines (pre-warms geo-anomaly detections)
               </label>
+              <div>
+                <label className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Sampled triage</span>
+                  <span className="font-mono text-foreground">
+                    {config.sampled_triage_pct === 0 ? "off" : `${config.sampled_triage_pct}%`}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min={0} max={20} step={1}
+                  value={config.sampled_triage_pct}
+                  disabled={status === "running"}
+                  onChange={(e) => setConfig({ sampled_triage_pct: parseInt(e.target.value) })}
+                  className="w-full accent-purple-500"
+                />
+                <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                  Routes N% of events through the ML orchestrator — gives real triage p95 under load.
+                </p>
+              </div>
             </div>
           </div>
         </aside>
 
         {/* ── Right: Charts + totals ── */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Error banner */}
           {errorMsg && (
             <div className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -351,7 +450,6 @@ export default function LoadPage() {
             </div>
           )}
 
-          {/* Empty state */}
           {history.length === 0 && !errorMsg && (
             <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground">
               <Gauge className="size-10 opacity-30" />
@@ -362,11 +460,10 @@ export default function LoadPage() {
             </div>
           )}
 
-          {/* Live charts — 4 in 2×2 grid */}
           {history.length > 0 && (
             <>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <MetricChartRaw
+                <MetricChart
                   title="Events / sec"
                   data={history}
                   dataKey="events_per_sec"
@@ -374,7 +471,7 @@ export default function LoadPage() {
                   icon={<Radio className="size-3.5 text-blue-400" />}
                   latest={current?.events_per_sec ?? 0}
                 />
-                <MetricChartRaw
+                <MetricChart
                   title="Consumer lag"
                   data={history}
                   dataKey="consumer_lag"
@@ -383,7 +480,7 @@ export default function LoadPage() {
                   latest={current?.consumer_lag ?? 0}
                   unit=" msg"
                 />
-                <MetricChartRaw
+                <MetricChart
                   title="Detections / sec"
                   data={history}
                   dataKey="detections_per_sec"
@@ -391,119 +488,64 @@ export default function LoadPage() {
                   icon={<TrendingUp className="size-3.5 text-orange-400" />}
                   latest={current?.detections_per_sec ?? 0}
                 />
-                <MetricChartRaw
-                  title="Triage p95"
+                <MetricChart
+                  title="Storage rows / sec"
                   data={history}
-                  dataKey="triage_p95_ms"
+                  dataKey="clickhouse_rows_per_sec"
                   strokeColor="#a855f7"
-                  icon={<Clock className="size-3.5 text-purple-400" />}
-                  latest={current?.triage_p95_ms ?? 0}
-                  unit=" ms"
+                  icon={<Database className="size-3.5 text-purple-400" />}
+                  latest={current?.clickhouse_rows_per_sec ?? 0}
+                  unit=" rows"
                 />
               </div>
 
-              {/* Totals strip */}
               <div className="rounded-lg border border-border/80 bg-card/80 p-4">
-                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Session totals</p>
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                  Session totals
+                </p>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
-                  <TotalStat label="Events sent" value={fmt(current?.total_events ?? 0)} icon={<Database className="size-3.5 text-blue-400" />} />
-                  <TotalStat label="Detections fired" value={fmt(current?.total_detections ?? 0)} icon={<Zap className="size-3.5 text-orange-400" />} />
-                  <TotalStat label="Actual rate" value={`${fmt(current?.current_load_gen_rate ?? 0)}/s`} icon={<Activity className="size-3.5 text-emerald-400" />} />
-                  <TotalStat label="Consumer lag" value={`${fmt(current?.consumer_lag ?? 0)} msg`} icon={<Clock className="size-3.5 text-yellow-400" />} />
+                  <TotalStat
+                    label="Events sent"
+                    value={fmt(current?.total_events ?? 0)}
+                    icon={<Database className="size-3.5 text-blue-400" />}
+                  />
+                  <TotalStat
+                    label="Detections fired"
+                    value={fmt(current?.total_detections ?? 0)}
+                    icon={<Zap className="size-3.5 text-orange-400" />}
+                  />
+                  <TotalStat
+                    label="Actual rate"
+                    value={`${fmt(current?.current_load_gen_rate ?? 0)}/s`}
+                    icon={<Activity className="size-3.5 text-emerald-400" />}
+                  />
+                  <TotalStat
+                    label="Consumer lag"
+                    value={`${fmt(current?.consumer_lag ?? 0)} msg`}
+                    icon={<Clock className="size-3.5 text-yellow-400" />}
+                  />
                 </div>
+                {/* Triage p95 — only shown when sampled triage is active */}
+                {config.sampled_triage_pct > 0 && (current?.triage_p95_ms ?? 0) > 0 && (
+                  <div className="mt-3 flex items-center gap-2 rounded-md border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs">
+                    <Clock className="size-3.5 shrink-0 text-purple-400" />
+                    <span className="text-muted-foreground">ML triage p95 ({config.sampled_triage_pct}% sampled)</span>
+                    <span className="ml-auto font-mono font-semibold text-purple-400">
+                      {(current?.triage_p95_ms ?? 0).toFixed(1)} ms
+                    </span>
+                  </div>
+                )}
+                {config.sampled_triage_pct > 0 && (current?.triage_p95_ms ?? 0) === 0 && status === "running" && (
+                  <div className="mt-3 flex items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-[11px] text-muted-foreground">
+                    <Clock className="size-3.5 shrink-0" />
+                    Triage p95 — accumulating samples ({config.sampled_triage_pct}% of events routed to orchestrator)…
+                  </div>
+                )}
               </div>
             </>
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Sub-components ──────────────────────────────────────────────────────────
-
-function ConfigField({
-  label, type = "text", value, onChange, disabled,
-}: {
-  label: string; type?: string; value: string;
-  onChange: (v: string) => void; disabled?: boolean;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
-      <input
-        type={type}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-border bg-card/60 px-2.5 py-1.5 font-mono text-xs text-foreground focus:border-primary/60 focus:outline-none disabled:opacity-50"
-      />
-    </div>
-  );
-}
-
-function MetricChartRaw({
-  title, data, dataKey, strokeColor, icon, latest, unit = "",
-}: {
-  title: string;
-  data: MetricsSnapshot[];
-  dataKey: keyof MetricsSnapshot;
-  strokeColor: string;
-  icon: React.ReactNode;
-  latest: number;
-  unit?: string;
-}) {
-  const chartData = data.map((s, i) => ({ t: i, v: s[dataKey] as number }));
-
-  return (
-    <div className="rounded-lg border border-border/80 bg-card/80 p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          {icon}
-          <span className="text-xs font-medium">{title}</span>
-        </div>
-        <span className="font-mono text-sm font-semibold" style={{ color: strokeColor }}>
-          {fmt(latest)}{unit}
-        </span>
-      </div>
-      <ResponsiveContainer width="100%" height={90}>
-        <LineChart data={chartData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-          <XAxis dataKey="t" hide />
-          <YAxis width={0} hide />
-          <Tooltip
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            formatter={(v: any) => [`${fmt(Number(v ?? 0))}${unit}`, title]}
-            contentStyle={{
-              background: "hsl(var(--card))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: 6,
-              fontSize: 11,
-            }}
-            labelStyle={{ display: "none" }}
-          />
-          <Line
-            type="monotone"
-            dataKey="v"
-            stroke={strokeColor}
-            strokeWidth={2}
-            dot={false}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function TotalStat({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <p className="mt-1 font-mono text-lg font-semibold">{value}</p>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { CaseWorkbench } from "@/components/workbench/case-workbench";
-import { getCaseById } from "@/lib/mock-data";
 import type { CaseRecord, FeatureImpact } from "@/lib/mock-data";
 import type { OcsfEvent } from "@/lib/ocsf-to-alert";
 
@@ -87,74 +86,98 @@ export default async function CasePage({
 }) {
   const { id } = await params;
 
-  // Base from mock (carries default classifier panel data).
-  const base = getCaseById(id);
-
-  // Attempt to enrich from live backend.
   const liveEvent = await fetchEvent(id);
-  const liveBaseline = liveEvent?.actor_user_name
+
+  // If the event doesn't exist in the backend, show a not-found state.
+  if (!liveEvent) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+        <p className="text-lg font-semibold">Case not found</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Event <code className="rounded bg-secondary px-1 py-0.5 font-mono text-xs">{id}</code> was
+          not found in the recent events stream. It may have expired from the hot tier or the
+          control-plane may be offline.
+        </p>
+      </div>
+    );
+  }
+
+  const liveBaseline = liveEvent.actor_user_name
     ? await fetchBaseline(liveEvent.actor_user_name)
     : null;
 
-  // Run live triage if we have a real event, otherwise use alert from mock.
-  const triagePayload = liveEvent ?? { case_id: id, severity_score: 0.5 };
-  const verdict = await runTriage(triagePayload);
+  const verdict = await runTriage(liveEvent);
 
-  // Build feature impacts from real SHAP values if available.
-  const liveFeatureImpacts: FeatureImpact[] | undefined =
+  const featureImpacts: FeatureImpact[] =
     verdict?.classifier_evidence?.shap_values
       ? shapToFeatureImpacts(
           verdict.classifier_evidence.shap_values,
           verdict.classifier_evidence.input_features ?? {},
         )
-      : undefined;
+      : [];
+
+  const now = new Date().toLocaleTimeString("en-US", { hour12: false });
+
+  const timeline: CaseRecord["timeline"] = [
+    {
+      time: now,
+      actor: "Collector",
+      event: `Normalized CloudTrail ${liveEvent.api_operation ?? "event"} to OCSF.`,
+    },
+    ...(liveBaseline
+      ? [{ time: now, actor: "RisingWave", event: "User baseline fetched from entity_baselines view." }]
+      : []),
+    ...(verdict
+      ? [
+          {
+            time: now,
+            actor: "Orchestrator",
+            event: `${verdict.execution_path} path — ${verdict.verdict} verdict in ${verdict.latency_ms}ms.`,
+          },
+          {
+            time: now,
+            actor: "Attestation",
+            event: `Ed25519 signed envelope. Action ID: ${verdict.action_id}.`,
+          },
+        ]
+      : [{ time: now, actor: "Orchestrator", event: "Triage unavailable — orchestrator offline." }]),
+  ];
+
+  const evidence: CaseRecord["evidence"] = [
+    { label: "Event ID", value: liveEvent.event_id, type: "ocsf" },
+    { label: "API operation", value: liveEvent.api_operation ?? "—", type: "ocsf" },
+    { label: "Service", value: liveEvent.api_service ?? "—", type: "ocsf" },
+    { label: "Region", value: liveEvent.cloud_region ?? "—", type: "ocsf" },
+    ...(liveBaseline?.regions_seen_30d
+      ? [{ label: "Baseline regions (30d)", value: liveBaseline.regions_seen_30d.join(", "), type: "asset" as const }]
+      : []),
+    ...(verdict
+      ? [
+          { label: "Triage action ID", value: verdict.action_id, type: "asset" as const },
+          { label: "Novelty score", value: verdict.novelty_score.toFixed(3), type: "asset" as const },
+        ]
+      : []),
+  ];
 
   const caseRecord: CaseRecord = {
-    ...base,
-    // Override fields when we have live data.
-    ...(liveEvent && {
-      id: liveEvent.event_id,
-      title: liveEvent.api_operation
-        ? `${liveEvent.api_operation}${liveEvent.api_service ? ` via ${liveEvent.api_service}` : ""}`
-        : base.title,
-      entity: liveEvent.actor_user_name ?? base.entity,
-      source: "AWS CloudTrail (live)",
-    }),
-    // Override verdict fields from real triage.
-    ...(verdict && {
-      verdict: (verdict.verdict.toLowerCase() as CaseRecord["verdict"]) ?? base.verdict,
-      confidence: verdict.calibrated_confidence,
-      executionPath: (verdict.execution_path as CaseRecord["executionPath"]) ?? base.executionPath,
-    }),
-    // Use live SHAP feature impacts if available, else fall back to mock.
-    featureImpacts: liveFeatureImpacts ?? base.featureImpacts,
-    // Enrich evidence with live baseline regions if available.
-    evidence: [
-      ...base.evidence,
-      ...(liveBaseline?.regions_seen_30d
-        ? [
-            {
-              label: "Baseline regions (30d)",
-              value: liveBaseline.regions_seen_30d.join(", "),
-              type: "asset" as const,
-            },
-          ]
-        : []),
-      ...(verdict
-        ? [
-            {
-              label: "Triage action ID",
-              value: verdict.action_id,
-              type: "asset" as const,
-            },
-            {
-              label: "Novelty score",
-              value: verdict.novelty_score.toFixed(3),
-              type: "asset" as const,
-            },
-          ]
-        : []),
-    ],
+    id: liveEvent.event_id,
+    title: liveEvent.api_operation
+      ? `${liveEvent.api_operation}${liveEvent.api_service ? ` via ${liveEvent.api_service}` : ""}`
+      : "Cloud Activity Event",
+    severity: (liveEvent.severity ?? "medium") as CaseRecord["severity"],
+    state: "awaiting-review",
+    entity: liveEvent.actor_user_name ?? "unknown",
+    source: "AWS CloudTrail (live)",
+    verdict: verdict
+      ? ((verdict.verdict.toLowerCase()) as CaseRecord["verdict"])
+      : "investigating",
+    confidence: verdict?.calibrated_confidence ?? 0,
+    executionPath: verdict
+      ? ((verdict.execution_path) as CaseRecord["executionPath"])
+      : "classifier",
+    timeline,
+    evidence,
+    featureImpacts,
   };
 
   return <CaseWorkbench caseRecord={caseRecord} />;

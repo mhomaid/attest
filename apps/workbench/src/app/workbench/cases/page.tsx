@@ -2,24 +2,21 @@ import { ArrowUpRight, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { parseFiredDetections } from "@/lib/detection-to-alert";
-import { alerts as mockAlerts } from "@/lib/mock-data";
 import type { Alert } from "@/lib/mock-data";
 
 const API_URL = process.env.NEXT_PUBLIC_APP_URL
   ? `${process.env.NEXT_PUBLIC_APP_URL}/api/detections`
   : "http://localhost:3000/api/detections";
 
-async function fetchCases(): Promise<{ cases: Alert[]; isLive: boolean }> {
+async function fetchCases(): Promise<{ cases: Alert[]; isLive: boolean; offline: boolean }> {
   try {
     const res = await fetch(API_URL, { cache: "no-store" });
-    if (!res.ok) return { cases: mockAlerts, isLive: false };
+    if (!res.ok) return { cases: [], isLive: false, offline: true };
     const data = await res.json();
     const alerts = parseFiredDetections(data);
-    return alerts.length > 0
-      ? { cases: alerts, isLive: true }
-      : { cases: mockAlerts, isLive: false };
+    return { cases: alerts, isLive: alerts.length > 0, offline: false };
   } catch {
-    return { cases: mockAlerts, isLive: false };
+    return { cases: [], isLive: false, offline: true };
   }
 }
 
@@ -31,7 +28,7 @@ const severityTone = {
 } as const;
 
 export default async function CasesPage() {
-  const { cases, isLive } = await fetchCases();
+  const { cases, isLive, offline } = await fetchCases();
 
   const open   = cases.filter((c) => c.state !== "auto-closed");
   const closed = cases.filter((c) => c.state === "auto-closed");
@@ -43,8 +40,8 @@ export default async function CasesPage() {
           <div>
             <div className="mb-2 flex items-center gap-2">
               <StatusBadge tone="info">Cases</StatusBadge>
-              <StatusBadge tone={isLive ? "good" : "muted"}>
-                {isLive ? "Live" : "Mock data"}
+              <StatusBadge tone={offline ? "muted" : isLive ? "good" : "info"}>
+                {offline ? "Offline — control-plane unreachable" : isLive ? "Live" : "Connected — no detections yet"}
               </StatusBadge>
             </div>
             <h1 className="text-xl font-semibold tracking-tight">All Cases</h1>
@@ -89,7 +86,11 @@ export default async function CasesPage() {
 
           <div className="divide-y divide-border/80">
             {items.length === 0 ? (
-              <p className="px-3 py-6 text-sm text-muted-foreground">No cases in this state.</p>
+              <p className="px-3 py-6 text-sm text-muted-foreground">
+                {offline
+                  ? "Control-plane is unreachable. Start the backend and reload."
+                  : "No cases in this state. Run a load test or send events to generate detections."}
+              </p>
             ) : (
               items.map((c) => (
                 <Link

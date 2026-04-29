@@ -1,7 +1,6 @@
 import { Activity } from "lucide-react";
 import { AlertQueueLive } from "@/components/workbench/alert-queue";
 import { StatusBadge } from "@/components/workbench/status-badge";
-import { alerts as mockAlerts } from "@/lib/mock-data";
 import { parseFiredDetections } from "@/lib/detection-to-alert";
 import type { Alert } from "@/lib/mock-data";
 
@@ -16,14 +15,12 @@ async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; status: LiveStatus 
       cache: "no-store",
       signal: AbortSignal.timeout(4000),
     });
-    if (!res.ok) return { alerts: mockAlerts, status: "offline" };
+    if (!res.ok) return { alerts: [], status: "offline" };
     const data = await res.json();
     const alerts = parseFiredDetections(data);
-    return alerts.length > 0
-      ? { alerts, status: "live" }
-      : { alerts: mockAlerts, status: "connected" };
+    return { alerts, status: alerts.length > 0 ? "live" : "connected" };
   } catch {
-    return { alerts: mockAlerts, status: "offline" };
+    return { alerts: [], status: "offline" };
   }
 }
 
@@ -80,7 +77,7 @@ export default async function QueuePage() {
                   ? "Live — HELIQL detections connected"
                   : status === "connected"
                   ? "Connected — no detections yet"
-                  : "Mock data — control-plane unreachable"}
+                  : "Offline — control-plane unreachable"}
               </StatusBadge>
               {arroyoPipelines.length > 0 && (
                 <StatusBadge tone="good">

@@ -1,2 +1,3 @@
-//! Re-exports `MetricsSnapshot` from `state` for convenience.
-pub use crate::state::MetricsSnapshot;
+//! `MetricsSnapshot` lives in `crate::state`.  This module is kept as a
+//! placeholder so external tooling that may import `metrics::snapshot` does
+//! not break, but it intentionally re-exports nothing here.

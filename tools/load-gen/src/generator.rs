@@ -1,9 +1,9 @@
-//! Direct-to-Kafka load generator.
+//! Direct-to-Kafka load generator with optional sampled ML triage.
 //!
-//! Spawns `N_PRODUCERS` parallel tokio tasks, each with its own `FutureProducer`.
-//! Rate is divided evenly across producers.  An `Arc<AtomicBool>` (`running`)
-//! is the shared stop signal — producers exit when it becomes false.
-//! A per-task `HdrHistogram` records publish latency; merged on `/status`.
+//! N_PRODUCERS parallel tokio tasks write to the `cloudtrail` Kafka topic.
+//! When `sampled_triage_pct > 0`, an additional sampler task concurrently
+//! sends that percentage of events to the orchestrator `POST /triage` and
+//! tracks latency in a separate HdrHistogram exposed on `/status`.
 
 use anyhow::Result;
 use hdrhistogram::Histogram;
@@ -51,6 +51,11 @@ pub struct RunConfig {
     pub tenants: usize,
     /// Pre-seed baselines before starting — ensures geo-anomaly detections fire.
     pub seed_baselines: bool,
+    /// Percentage of events also sent to the orchestrator for ML triage (0–100).
+    /// 0 = streaming-rules only (no triage latency data, maximum throughput).
+    /// 5 = 5% sampled → gives real triage p95 without overwhelming the orchestrator.
+    #[serde(default)]
+    pub sampled_triage_pct: u8,
 }
 
 impl Default for RunConfig {
@@ -61,6 +66,7 @@ impl Default for RunConfig {
             scenario: Scenario::Mixed,
             tenants: 3,
             seed_baselines: true,
+            sampled_triage_pct: 0,
         }
     }
 }
@@ -73,9 +79,16 @@ pub struct RunStatus {
     pub errors: u64,
     pub elapsed_secs: f64,
     pub rate_actual: f64,
+    /// Kafka publish latency percentiles (µs → ms).
     pub p50_ms: f64,
     pub p95_ms: f64,
     pub p99_ms: f64,
+    /// Orchestrator triage latency percentiles — only non-zero when
+    /// `sampled_triage_pct > 0`.
+    pub triage_p50_ms: f64,
+    pub triage_p95_ms: f64,
+    pub triage_p99_ms: f64,
+    pub triage_samples: u64,
 }
 
 /// Handle for an active (or finished) run.
@@ -84,8 +97,11 @@ pub struct RunHandle {
     pub errors: Arc<AtomicU64>,
     pub running: Arc<AtomicBool>,
     pub started_at: Instant,
-    /// Merged histogram snapshot from all producer tasks.
+    /// Kafka publish latency histogram (µs).
     pub hist: Arc<Mutex<Histogram<u64>>>,
+    /// Triage latency histogram (ms × 1000 for µs precision).
+    pub triage_hist: Arc<Mutex<Histogram<u64>>>,
+    pub triage_samples: Arc<AtomicU64>,
 }
 
 impl RunHandle {
@@ -93,6 +109,8 @@ impl RunHandle {
         let elapsed = self.started_at.elapsed().as_secs_f64();
         let sent = self.sent.load(Ordering::Relaxed);
         let hist = self.hist.lock().unwrap();
+        let th = self.triage_hist.lock().unwrap();
+        let ts = self.triage_samples.load(Ordering::Relaxed);
         RunStatus {
             running: self.running.load(Ordering::Relaxed),
             sent,
@@ -102,6 +120,10 @@ impl RunHandle {
             p50_ms: hist.value_at_quantile(0.50) as f64 / 1000.0,
             p95_ms: hist.value_at_quantile(0.95) as f64 / 1000.0,
             p99_ms: hist.value_at_quantile(0.99) as f64 / 1000.0,
+            triage_p50_ms: if ts > 0 { th.value_at_quantile(0.50) as f64 / 1000.0 } else { 0.0 },
+            triage_p95_ms: if ts > 0 { th.value_at_quantile(0.95) as f64 / 1000.0 } else { 0.0 },
+            triage_p99_ms: if ts > 0 { th.value_at_quantile(0.99) as f64 / 1000.0 } else { 0.0 },
+            triage_samples: ts,
         }
     }
 
@@ -111,21 +133,24 @@ impl RunHandle {
 }
 
 /// Start the load generator and return a handle for monitoring / cancellation.
-pub async fn start_run(brokers: String, cfg: RunConfig) -> Result<RunHandle> {
-    let sent = Arc::new(AtomicU64::new(0));
-    let errors = Arc::new(AtomicU64::new(0));
-    let running = Arc::new(AtomicBool::new(true));
-    let hist: Arc<Mutex<Histogram<u64>>> =
-        Arc::new(Mutex::new(Histogram::new(3).expect("histogram")));
+pub async fn start_run(
+    brokers: String,
+    cfg: RunConfig,
+    orchestrator_url: Option<String>,
+) -> Result<RunHandle> {
+    let sent        = Arc::new(AtomicU64::new(0));
+    let errors      = Arc::new(AtomicU64::new(0));
+    let running     = Arc::new(AtomicBool::new(true));
+    let hist        = Arc::new(Mutex::new(Histogram::new(3).expect("histogram")));
+    let triage_hist = Arc::new(Mutex::new(Histogram::new(3).expect("triage histogram")));
+    let triage_samples = Arc::new(AtomicU64::new(0));
 
     // Build tenant/user pairs
     let tenants: Vec<(String, String)> = (0..cfg.tenants)
-        .map(|i| {
-            (
-                format!("tenant-{:03}", i),
-                format!("user-{:03}@acme.example.com", i),
-            )
-        })
+        .map(|i| (
+            format!("tenant-{:03}", i),
+            format!("user-{:03}@acme.example.com", i),
+        ))
         .collect();
 
     // Pre-seed baselines if requested
@@ -133,7 +158,6 @@ pub async fn start_run(brokers: String, cfg: RunConfig) -> Result<RunHandle> {
         seed_baselines(&brokers, &tenants).await;
     }
 
-    // Per-producer rate
     let per_producer_rate = (cfg.rate as usize).max(N_PRODUCERS) / N_PRODUCERS;
     let interval_us = 1_000_000u64 / per_producer_rate as u64;
 
@@ -145,15 +169,20 @@ pub async fn start_run(brokers: String, cfg: RunConfig) -> Result<RunHandle> {
 
     let started_at = Instant::now();
 
-    // Spawn producer tasks
+    // Spawn Kafka producer tasks
     for producer_id in 0..N_PRODUCERS {
-        let brokers = brokers.clone();
-        let sent = sent.clone();
-        let errors = errors.clone();
-        let running = running.clone();
-        let hist = hist.clone();
-        let tenants = tenants.clone();
-        let scenario = cfg.scenario.clone();
+        let brokers   = brokers.clone();
+        let sent      = sent.clone();
+        let errors    = errors.clone();
+        let running   = running.clone();
+        let hist      = hist.clone();
+        let tenants   = tenants.clone();
+        let scenario  = cfg.scenario.clone();
+        // Triage sampling state shared with the producer tasks
+        let triage_hist    = triage_hist.clone();
+        let triage_samples = triage_samples.clone();
+        let triage_pct     = cfg.sampled_triage_pct;
+        let orch_url       = orchestrator_url.clone();
 
         tokio::spawn(async move {
             if let Err(e) = produce_loop(
@@ -166,6 +195,10 @@ pub async fn start_run(brokers: String, cfg: RunConfig) -> Result<RunHandle> {
                 errors,
                 running,
                 hist,
+                triage_pct,
+                orch_url,
+                triage_hist,
+                triage_samples,
             )
             .await
             {
@@ -174,7 +207,7 @@ pub async fn start_run(brokers: String, cfg: RunConfig) -> Result<RunHandle> {
         });
     }
 
-    // Duration watcher — sets running=false after deadline
+    // Duration watcher
     if let Some(dur) = duration {
         let running_w = running.clone();
         let started = started_at;
@@ -185,15 +218,10 @@ pub async fn start_run(brokers: String, cfg: RunConfig) -> Result<RunHandle> {
         });
     }
 
-    Ok(RunHandle {
-        sent,
-        errors,
-        running,
-        started_at,
-        hist,
-    })
+    Ok(RunHandle { sent, errors, running, started_at, hist, triage_hist, triage_samples })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn produce_loop(
     id: usize,
     brokers: String,
@@ -204,6 +232,10 @@ async fn produce_loop(
     errors: Arc<AtomicU64>,
     running: Arc<AtomicBool>,
     hist: Arc<Mutex<Histogram<u64>>>,
+    triage_pct: u8,
+    orch_url: Option<String>,
+    triage_hist: Arc<Mutex<Histogram<u64>>>,
+    triage_samples: Arc<AtomicU64>,
 ) -> Result<()> {
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", &brokers)
@@ -214,48 +246,42 @@ async fn produce_loop(
         .set("enable.idempotence", "false")
         .create()?;
 
+    // Reusable HTTP client for triage sampling (shared across loop iterations)
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+
     let mut interval = tokio::time::interval(Duration::from_micros(interval_us.max(1)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let n = tenants.len().max(1);
     let mut idx = id % n;
+    let mut seq: u64 = 0;
 
     loop {
-        if !running.load(Ordering::Relaxed) {
-            break;
-        }
+        if !running.load(Ordering::Relaxed) { break; }
         interval.tick().await;
-
-        // Check again after tick (stop may arrive while sleeping)
-        if !running.load(Ordering::Relaxed) {
-            break;
-        }
+        if !running.load(Ordering::Relaxed) { break; }
 
         let (tenant_id, user_name) = &tenants[idx % tenants.len()];
         idx = (idx + 1) % tenants.len();
 
         let event = match scenario {
-            Scenario::Mixed => scenarios::pick_event(tenant_id, user_name),
-            Scenario::Attack => scenarios::geo_anomaly(tenant_id, user_name),
-            Scenario::Benign => scenarios::benign_login(tenant_id, user_name),
+            Scenario::Mixed   => scenarios::pick_event(tenant_id, user_name),
+            Scenario::Attack  => scenarios::geo_anomaly(tenant_id, user_name),
+            Scenario::Benign  => scenarios::benign_login(tenant_id, user_name),
         };
 
-        let key = event.tenant_id.clone();
+        let key     = event.tenant_id.clone();
         let payload = match serde_json::to_string(&event) {
             Ok(p) => p,
-            Err(e) => {
-                warn!("serialize error: {e}");
-                errors.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
+            Err(e) => { warn!("serialize error: {e}"); errors.fetch_add(1, Ordering::Relaxed); continue; }
         };
 
+        // Kafka publish
         let t0 = Instant::now();
         match producer
-            .send(
-                FutureRecord::to(TOPIC).key(&key).payload(&payload),
-                Duration::from_secs(5),
-            )
+            .send(FutureRecord::to(TOPIC).key(&key).payload(&payload), Duration::from_secs(5))
             .await
         {
             Ok(_) => {
@@ -267,6 +293,33 @@ async fn produce_loop(
             Err((e, _)) => {
                 warn!(producer = id, "kafka error: {e}");
                 errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        // Optional sampled triage: send N% of events to the orchestrator
+        seq += 1;
+        if triage_pct > 0 && seq % 100 < triage_pct as u64 {
+            if let Some(ref url) = orch_url {
+                let url     = format!("{url}/triage");
+                let body    = payload.clone();
+                let http    = http.clone();
+                let th      = triage_hist.clone();
+                let ts      = triage_samples.clone();
+                tokio::spawn(async move {
+                    let t0 = Instant::now();
+                    if http.post(&url)
+                        .header("Content-Type", "application/json")
+                        .body(serde_json::json!({ "alert": serde_json::from_str::<serde_json::Value>(&body).unwrap_or_default() }).to_string())
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                    {
+                        let lat_us = t0.elapsed().as_micros() as u64;
+                        ts.fetch_add(1, Ordering::Relaxed);
+                        let _ = th.lock().map(|mut h| { let _ = h.record(lat_us); });
+                    }
+                });
             }
         }
     }
@@ -284,10 +337,7 @@ async fn seed_baselines(brokers: &str, tenants: &[(String, String)]) {
         .create()
     {
         Ok(p) => p,
-        Err(e) => {
-            warn!("seed producer create failed: {e}");
-            return;
-        }
+        Err(e) => { warn!("seed producer create failed: {e}"); return; }
     };
 
     let mut count = 0u64;
@@ -296,12 +346,7 @@ async fn seed_baselines(brokers: &str, tenants: &[(String, String)]) {
             let event = scenarios::benign_login(tenant_id, user_name);
             if let Ok(payload) = serde_json::to_string(&event) {
                 let _ = producer
-                    .send(
-                        FutureRecord::to(TOPIC)
-                            .key(tenant_id.as_str())
-                            .payload(&payload),
-                        Duration::from_secs(5),
-                    )
+                    .send(FutureRecord::to(TOPIC).key(tenant_id.as_str()).payload(&payload), Duration::from_secs(5))
                     .await;
                 count += 1;
             }
