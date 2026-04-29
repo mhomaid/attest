@@ -212,7 +212,8 @@ impl TriageEngine {
             latency_ms,
             classifier_evidence: match &envelope.evidence {
                 EvidenceBlock::Classifier(ev) => Some(ev.clone()),
-                EvidenceBlock::Hybrid { classifier_draft, .. } => Some(classifier_draft.clone()),
+                EvidenceBlock::Hybrid(h) => Some(h.classifier_draft.clone()),
+                EvidenceBlock::EscalatedStub { classifier_draft, .. } => Some(classifier_draft.clone()),
                 _ => None,
             },
         })

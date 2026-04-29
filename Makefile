@@ -1,4 +1,5 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo.DEFAULT_GOAL := help
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo
+.DEFAULT_GOAL := help
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
