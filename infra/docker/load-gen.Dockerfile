@@ -4,6 +4,7 @@ FROM rust:1.85-slim AS builder
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
+    libcurl4-openssl-dev \
     libssl-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
@@ -25,6 +26,7 @@ FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y \
     libssl3 \
+    libcurl4 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
