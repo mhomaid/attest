@@ -130,7 +130,7 @@ railway-setup: ## Create all services AND configure each one's builder (Dockerfi
 
 railway-infra: ## Add infrastructure services (Kafka/KRaft, RisingWave, ClickHouse, MinIO, Arroyo) as Docker image services
 	@echo "▶ Adding Kafka (Confluent KRaft — named 'redpanda' so app env vars stay unchanged)…"
-	railway add --service redpanda --image confluentinc/cp-kafka:7.9.0 || true
+	railway add --service redpanda --image confluentinc/cp-kafka:7.7.8 || true
 	@echo "▶ Adding RisingWave…"
 	railway add --service risingwave --image risingwavelabs/risingwave:latest || true
 	@echo "▶ Adding ClickHouse…"
@@ -145,42 +145,48 @@ railway-infra: ## Add infrastructure services (Kafka/KRaft, RisingWave, ClickHou
 	@echo "  NOTE: Kafka requires a CLUSTER_ID — generate one with:"
 	@echo "    python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\""
 
-railway-infra-config: ## Configure infrastructure services (start commands, env vars, ports)
-	@echo "▶ Configuring Kafka (Confluent KRaft) start command and env vars…"
-	@echo "  Requires CLUSTER_ID env var — generate with:"
-	@echo "    export CLUSTER_ID=\$$(python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\")"
-	@[ -n "$$CLUSTER_ID" ] || (echo "ERROR: CLUSTER_ID not set"; exit 1)
+railway-infra-config: ## Configure infrastructure services env vars + start commands (non-interactive)
+	@[ -n "$$CLUSTER_ID" ] || (echo "ERROR: CLUSTER_ID not set. Run:  export CLUSTER_ID=\$$(python3 -c 'import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip(\"=\"))')"; exit 1)
+	@echo "▶ Setting env vars via railway variable set (non-interactive)…"
+	@echo "  → redpanda (Kafka KRaft)"
+	@railway variable set -e production --service redpanda --skip-deploys \
+	  CLUSTER_ID="$$CLUSTER_ID" \
+	  KAFKA_NODE_ID=1 \
+	  KAFKA_PROCESS_ROLES=broker,controller \
+	  KAFKA_CONTROLLER_QUORUM_VOTERS="1@localhost:9093" \
+	  KAFKA_LISTENERS="PLAINTEXT://:9092,CONTROLLER://:9093" \
+	  KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://redpanda.railway.internal:9092" \
+	  KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+	  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP="CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" \
+	  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+	  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+	  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+	  KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
+	  KAFKA_LOG_DIRS=/var/lib/kafka/data
+	@echo "  → clickhouse"
+	@railway variable set -e production --service clickhouse --skip-deploys \
+	  CLICKHOUSE_USER=default \
+	  CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+	@echo "  → minio"
+	@railway variable set -e production --service minio --skip-deploys \
+	  MINIO_ROOT_USER=minioadmin \
+	  MINIO_ROOT_PASSWORD=minioadmin
+	@echo "  → arroyo"
+	@railway variable set -e production --service arroyo --skip-deploys \
+	  AWS_ACCESS_KEY_ID=minioadmin \
+	  AWS_SECRET_ACCESS_KEY=minioadmin \
+	  AWS_ENDPOINT_URL="http://minio.railway.internal:9000" \
+	  AWS_ENDPOINT="http://minio.railway.internal:9000" \
+	  AWS_REGION=us-east-1 \
+	  AWS_ALLOW_HTTP=true \
+	  KAFKA_BROKERS="redpanda.railway.internal:9092"
+	@echo "▶ Setting start commands via railway environment edit…"
 	@railway environment edit -e production \
-	  --service-config redpanda   deploy.startCommand  "/etc/confluent/docker/run" \
-	  --service-config redpanda   variables.CLUSTER_ID.value "$$CLUSTER_ID" \
-	  --service-config redpanda   variables.KAFKA_NODE_ID.value "1" \
-	  --service-config redpanda   variables.KAFKA_PROCESS_ROLES.value "broker,controller" \
-	  --service-config redpanda   variables.KAFKA_CONTROLLER_QUORUM_VOTERS.value "1@localhost:9093" \
-	  --service-config redpanda   variables.KAFKA_LISTENERS.value "PLAINTEXT://:9092,CONTROLLER://:9093" \
-	  --service-config redpanda   variables.KAFKA_ADVERTISED_LISTENERS.value "PLAINTEXT://redpanda.railway.internal:9092" \
-	  --service-config redpanda   variables.KAFKA_CONTROLLER_LISTENER_NAMES.value "CONTROLLER" \
-	  --service-config redpanda   variables.KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.value "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" \
-	  --service-config redpanda   variables.KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR.value "1" \
-	  --service-config redpanda   variables.KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR.value "1" \
-	  --service-config redpanda   variables.KAFKA_TRANSACTION_STATE_LOG_MIN_ISR.value "1" \
-	  --service-config redpanda   variables.KAFKA_AUTO_CREATE_TOPICS_ENABLE.value "true" \
-	  --service-config redpanda   variables.KAFKA_LOG_DIRS.value "/var/lib/kafka/data" \
-	  --service-config risingwave deploy.startCommand  "playground" \
-	  --service-config clickhouse variables.CLICKHOUSE_USER.value default \
-	  --service-config clickhouse variables.CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT.value 1 \
-	  --service-config minio      deploy.startCommand  "minio server /data --console-address :9001" \
-	  --service-config minio      variables.MINIO_ROOT_USER.value minioadmin \
-	  --service-config minio      variables.MINIO_ROOT_PASSWORD.value minioadmin \
-	  --service-config arroyo     variables.AWS_ACCESS_KEY_ID.value minioadmin \
-	  --service-config arroyo     variables.AWS_SECRET_ACCESS_KEY.value minioadmin \
-	  --service-config arroyo     variables.AWS_ENDPOINT_URL.value "http://minio.railway.internal:9000" \
-	  --service-config arroyo     variables.AWS_ENDPOINT.value "http://minio.railway.internal:9000" \
-	  --service-config arroyo     variables.AWS_REGION.value us-east-1 \
-	  --service-config arroyo     variables.AWS_ALLOW_HTTP.value "true" \
-	  --service-config arroyo     variables.KAFKA_BROKERS.value "redpanda.railway.internal:9092" \
-	  -m "configure infrastructure services (Confluent KRaft + MinIO + Arroyo)"
-	@echo "✔ Infrastructure configured."
-	@echo "  Next: attach a Railway volume to minio at /data, then run 'make railway-setup'."
+	  --service-config redpanda   deploy.startCommand "/etc/confluent/docker/run" \
+	  --service-config risingwave deploy.startCommand "playground" \
+	  --service-config minio      deploy.startCommand "minio server /data --console-address :9001" \
+	  -m "set start commands for infra services"
+	@echo "✔ Infrastructure configured. Now run: make railway-infra-start"
 
 railway-deploy: ## Upload local source and deploy all application services to Railway (first deploy)
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
@@ -257,7 +263,7 @@ railway-infra-first-deploy: ## First-time deploy of ALL infra image services (fu
 	@echo ""
 	@echo "  → redpanda (Confluent KRaft Kafka)"
 	@railway service delete --service redpanda --yes 2>/dev/null || true
-	@railway add --service redpanda --image confluentinc/cp-kafka:7.9.0 --variables "_PLACEHOLDER=1"
+	@railway add --service redpanda --image confluentinc/cp-kafka:7.7.8 --variables "_PLACEHOLDER=1"
 	@echo ""
 	@echo "  → risingwave"
 	@railway service delete --service risingwave --yes 2>/dev/null || true
