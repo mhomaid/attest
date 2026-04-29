@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start railway-infra-first-deploy railway-app-start railway-full-deploy railway-full-redeploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo railway-logs-collector railway-logs-control-plane railway-logs-workbench railway-logs-arroyo
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -124,7 +124,7 @@ railway-setup: ## Create all services AND configure each one's builder (Dockerfi
 	@echo "▶ Setting application env vars from infra/railway/*.json…"
 	@./scripts/railway-set-env.sh
 	@echo ""
-	@echo "✔ Setup complete. Next: 'make railway-deploy'"
+	@echo "✔ Setup complete. Next: 'make railway-infra-deploy && make railway-app-start'"
 	@echo "  (Infrastructure services — Kafka, RisingWave, ClickHouse, MinIO, Arroyo —"
 	@echo "   must be added separately: see 'make railway-infra'.)"
 
@@ -146,10 +146,14 @@ railway-infra: ## Add infrastructure services (Kafka/KRaft, RisingWave, ClickHou
 	@echo "    python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\""
 
 railway-infra-config: ## Configure infrastructure services env vars + start commands (non-interactive)
-	@[ -n "$$CLUSTER_ID" ] || (echo "ERROR: CLUSTER_ID not set. Run:  export CLUSTER_ID=\$$(python3 -c 'import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip(\"=\"))')"; exit 1)
 	@echo "▶ Setting env vars via railway variable set (non-interactive)…"
 	@echo "  → redpanda (Kafka KRaft)"
-	@railway variable set -e production --service redpanda --skip-deploys \
+	@if [ -z "$$CLUSTER_ID" ]; then \
+	  CLUSTER_ID=$$(python3 -c "import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))"); \
+	  echo "  ↳ No CLUSTER_ID set — generated: $$CLUSTER_ID"; \
+	  echo "  ↳ WARNING: if Kafka already has data on disk, pass the original CLUSTER_ID instead."; \
+	fi; \
+	railway variable set -e production --service redpanda --skip-deploys \
 	  CLUSTER_ID="$$CLUSTER_ID" \
 	  KAFKA_NODE_ID=1 \
 	  KAFKA_PROCESS_ROLES=broker,controller \
@@ -181,23 +185,7 @@ railway-infra-config: ## Configure infrastructure services env vars + start comm
 	  AWS_ALLOW_HTTP=true \
 	  KAFKA_BROKERS="redpanda.railway.internal:9092"
 	@echo "✔ Infrastructure configured."
-	@echo "  Redploying infra services to apply new vars…"
-	@for svc in redpanda risingwave clickhouse minio arroyo; do \
-	  railway service redeploy --service $$svc --yes 2>&1 || true; \
-	done
-	@echo "  Done. Wait ~60s then run: make railway-app-start"
-
-railway-deploy: ## Upload local source and deploy all application services to Railway (first deploy)
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
-	  echo "▶ Deploying $$svc …"; \
-	  railway up --service $$svc --detach --ci; \
-	done
-
-railway-redeploy: ## Trigger redeploy of the latest deployment for all services (after first deploy)
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
-	  echo "▶ Redeploying $$svc …"; \
-	  railway service redeploy --service $$svc --yes; \
-	done
+	@echo "  Run 'make railway-infra-deploy' to deploy/redeploy infra services with the new vars."
 
 railway-domain: ## Generate a public domain for control-plane and workbench
 	@echo "▶ Generating public domain for control-plane (needed for WebSocket)…"
@@ -239,14 +227,6 @@ railway-stop: ## Stop all source-built app services (removes active deployments)
 	@echo "✔ App services stopped."
 	@echo "  To stop infra (risingwave, redpanda, clickhouse, minio, arroyo) run: make railway-infra-stop"
 
-railway-start: ## Redeploy all source-built app services (assumes infra is already running)
-	@echo "▶ Starting app services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
-	  echo "  → starting $$svc"; \
-	  railway redeploy --service $$svc --yes; \
-	done
-	@echo "✔ App services started. Run 'make railway-status' to verify."
-
 railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, clickhouse, minio, arroyo)
 	@echo "▶ Stopping infrastructure services…"
 	@for svc in risingwave redpanda clickhouse minio arroyo; do \
@@ -256,48 +236,31 @@ railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, c
 	@echo "✔ Infrastructure services stopped."
 	@echo "  NOTE: The minio-volume will continue to be billed until deleted."
 
-railway-infra-first-deploy: ## First-time deploy of ALL infra image services (fully non-interactive)
-	@echo "▶ First-time infrastructure deploy — deleting stale definitions, re-adding with images…"
-	@echo "  (Non-interactive. Safe to re-run. Railway volumes are preserved.)"
-	@echo ""
-	@echo "  → redpanda (Confluent KRaft Kafka)"
-	@railway service delete --service redpanda --yes 2>/dev/null || true
-	@railway add --service redpanda --image confluentinc/cp-kafka:7.7.8 --variables "_PLACEHOLDER=1"
-	@echo ""
-	@echo "  → risingwave"
-	@railway service delete --service risingwave --yes 2>/dev/null || true
-	@railway add --service risingwave --image risingwavelabs/risingwave:latest --variables "_PLACEHOLDER=1"
-	@echo ""
-	@echo "  → clickhouse"
-	@railway service delete --service clickhouse --yes 2>/dev/null || true
-	@railway add --service clickhouse --image clickhouse/clickhouse-server:latest --variables "_PLACEHOLDER=1"
-	@echo ""
-	@echo "  → minio"
-	@railway service delete --service minio --yes 2>/dev/null || true
-	@railway add --service minio --image minio/minio:latest --variables "_PLACEHOLDER=1"
-	@echo ""
-	@echo "  → arroyo"
-	@railway service delete --service arroyo --yes 2>/dev/null || true
-	@railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest --variables "_PLACEHOLDER=1"
-	@echo ""
-	@echo "✔ All infra services created and auto-deploying."
-	@echo "  Next steps:"
-	@echo "    export CLUSTER_ID=\$$(python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\")"
-	@echo "    make railway-infra-config && make railway-app-start"
-
-railway-infra-start: ## (Re)deploy all infrastructure services — works for both first-deploy and redeploy
+railway-infra-deploy: ## ⭐ Deploy infra services — handles first-deploy and redeployment automatically
 	@echo "▶ Deploying infrastructure services (redpanda → risingwave → clickhouse → minio → arroyo)…"
-	@echo "  This triggers a new deployment for each; safe to run if services are already running."
-	@for svc in redpanda risingwave clickhouse minio arroyo; do \
+	@echo "  Tries redeploy first; falls back to initial deploy if no prior deployment exists."
+	@for pair in \
+	    "redpanda confluentinc/cp-kafka:7.7.8" \
+	    "risingwave risingwavelabs/risingwave:latest" \
+	    "clickhouse clickhouse/clickhouse-server:latest" \
+	    "minio minio/minio:latest" \
+	    "arroyo ghcr.io/arroyosystems/arroyo:latest"; do \
+	  svc=$$(echo $$pair | cut -d' ' -f1); \
+	  img=$$(echo $$pair | cut -d' ' -f2); \
 	  echo "  → $$svc"; \
-	  railway service redeploy --service $$svc --yes 2>&1 || \
-	    echo "    ⚠ $$svc: no existing deployment — open Railway dashboard and click Deploy once, then re-run."; \
+	  if railway service redeploy --service $$svc --yes 2>&1; then \
+	    true; \
+	  else \
+	    echo "    ↳ no prior deploy — recreating service to trigger initial deployment…"; \
+	    railway service delete --service $$svc --yes 2>/dev/null || true; \
+	    railway add --service $$svc --image $$img --variables "_PLACEHOLDER=1"; \
+	  fi; \
 	done
 	@echo ""
 	@echo "✔ Infrastructure deploy triggered."
 	@echo "  Wait ~60s for services to become healthy, then run 'make railway-app-start'."
 
-railway-app-start: ## Deploy all application services (assumes infra is already healthy)
+railway-app-start: ## Deploy all application services — handles first-deploy and redeployment automatically
 	@echo "▶ Deploying application services…"
 	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
 	  echo "  → $$svc"; \
@@ -312,24 +275,13 @@ railway-full-deploy: ## ⭐ Full ordered deploy: infra first, wait 90s, then app
 	@echo "════════════════════════════════════════════════════════"
 	@echo ""
 	@echo "Step 1/3 — Deploy infrastructure services…"
-	@for svc in redpanda risingwave clickhouse minio arroyo; do \
-	  echo "  → $$svc"; \
-	  railway service redeploy --service $$svc --yes 2>&1 || \
-	    echo "    ⚠ $$svc has no prior deployment — open the Railway dashboard and click Deploy, then re-run."; \
-	done
+	@$(MAKE) railway-infra-deploy
 	@echo ""
 	@echo "Step 2/3 — Waiting 90s for infra to become healthy…"
 	@echo "  (Kafka needs ~30s, RisingWave ~45s, ClickHouse ~20s)"
 	@sleep 90
 	@echo ""
 	@echo "Step 3/3 — Deploy application services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
-	  echo "  → $$svc"; \
-	  railway service redeploy --service $$svc --yes 2>&1 || \
-	    railway up --service $$svc --detach --ci; \
-	done
+	@$(MAKE) railway-app-start
 	@echo ""
 	@echo "✔ Full deploy complete. Run 'make railway-status' to verify."
-
-railway-full-redeploy: ## Full ordered redeploy (same as full-deploy, alias for clarity)
-	@$(MAKE) railway-full-deploy
