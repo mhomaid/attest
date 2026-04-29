@@ -251,33 +251,36 @@ railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, c
 	@echo "✔ Infrastructure services stopped."
 	@echo "  NOTE: The minio-volume will continue to be billed until deleted."
 
-railway-infra-first-deploy: ## First-time deploy of ALL infra image services (removes & re-adds each to force a deployment)
-	@echo "▶ First-time infrastructure deploy — removing stale service definitions and re-adding…"
-	@echo "  (Safe to run even if services don't exist yet.)"
+railway-infra-first-deploy: ## First-time deploy of ALL infra image services (deletes stale definitions, re-adds with image → auto-deploys)
+	@echo "▶ First-time infrastructure deploy — deleting stale service definitions and re-adding with images…"
+	@echo "  (Safe to run even if services don't exist yet. All data in Railway volumes is preserved.)"
 	@echo ""
 	@echo "  → redpanda (Confluent KRaft Kafka)"
-	@railway down --service redpanda --yes 2>/dev/null || true
-	@railway add --service redpanda --image confluentinc/cp-kafka:7.9.0 || true
+	@railway service delete --service redpanda --yes 2>/dev/null || true
+	@railway add --service redpanda --image confluentinc/cp-kafka:7.9.0
 	@echo ""
 	@echo "  → risingwave"
-	@railway down --service risingwave --yes 2>/dev/null || true
-	@railway add --service risingwave --image risingwavelabs/risingwave:latest || true
+	@railway service delete --service risingwave --yes 2>/dev/null || true
+	@railway add --service risingwave --image risingwavelabs/risingwave:latest
 	@echo ""
 	@echo "  → clickhouse"
-	@railway down --service clickhouse --yes 2>/dev/null || true
-	@railway add --service clickhouse --image clickhouse/clickhouse-server:latest || true
+	@railway service delete --service clickhouse --yes 2>/dev/null || true
+	@railway add --service clickhouse --image clickhouse/clickhouse-server:latest
 	@echo ""
 	@echo "  → minio"
-	@railway down --service minio --yes 2>/dev/null || true
-	@railway add --service minio --image minio/minio:latest || true
+	@railway service delete --service minio --yes 2>/dev/null || true
+	@railway add --service minio --image minio/minio:latest
 	@echo ""
 	@echo "  → arroyo"
-	@railway down --service arroyo --yes 2>/dev/null || true
-	@railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest || true
+	@railway service delete --service arroyo --yes 2>/dev/null || true
+	@railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest
 	@echo ""
-	@echo "✔ All infra services re-added and auto-deploying."
-	@echo "  Now run: make railway-infra-config  (needs CLUSTER_ID for Kafka)"
-	@echo "  Then:    make railway-full-deploy"
+	@echo "✔ All infra services created and auto-deploying."
+	@echo "  Now run (requires CLUSTER_ID for Kafka):"
+	@echo "    export CLUSTER_ID=\$$(python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\")"
+	@echo "    make railway-infra-config"
+	@echo "  Then wait ~60s and run:"
+	@echo "    make railway-app-start"
 
 railway-infra-start: ## (Re)deploy all infrastructure services — works for both first-deploy and redeploy
 	@echo "▶ Deploying infrastructure services (redpanda → risingwave → clickhouse → minio → arroyo)…"
