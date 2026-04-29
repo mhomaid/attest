@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo railway-logs-collector railway-logs-control-plane railway-logs-workbench railway-logs-arroyo
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start railway-app-start railway-full-deploy railway-full-redeploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo railway-logs-collector railway-logs-control-plane railway-logs-workbench railway-logs-arroyo
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -251,11 +251,51 @@ railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, c
 	@echo "✔ Infrastructure services stopped."
 	@echo "  NOTE: The minio-volume will continue to be billed until deleted."
 
-railway-infra-start: ## Start all infrastructure services (risingwave, redpanda, clickhouse, minio, arroyo)
-	@echo "▶ Starting infrastructure services…"
-	@for svc in risingwave redpanda clickhouse minio arroyo; do \
-	  echo "  → starting $$svc"; \
-	  railway redeploy --service $$svc --yes; \
+railway-infra-start: ## (Re)deploy all infrastructure services — works for both first-deploy and redeploy
+	@echo "▶ Deploying infrastructure services (redpanda → risingwave → clickhouse → minio → arroyo)…"
+	@echo "  This triggers a new deployment for each; safe to run if services are already running."
+	@for svc in redpanda risingwave clickhouse minio arroyo; do \
+	  echo "  → $$svc"; \
+	  railway service redeploy --service $$svc --yes 2>&1 || \
+	    echo "    ⚠ $$svc: no existing deployment — open Railway dashboard and click Deploy once, then re-run."; \
 	done
-	@echo "✔ Infrastructure services started."
-	@echo "  Allow ~60s for Redpanda, RisingWave, and Arroyo to become healthy before starting app services."
+	@echo ""
+	@echo "✔ Infrastructure deploy triggered."
+	@echo "  Wait ~60s for services to become healthy, then run 'make railway-app-start'."
+
+railway-app-start: ## Deploy all application services (assumes infra is already healthy)
+	@echo "▶ Deploying application services…"
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
+	  echo "  → $$svc"; \
+	  railway service redeploy --service $$svc --yes 2>&1 || \
+	    railway up --service $$svc --detach --ci; \
+	done
+	@echo "✔ App services deploy triggered."
+
+railway-full-deploy: ## ⭐ Full ordered deploy: infra first, wait 90s, then app services
+	@echo "════════════════════════════════════════════════════════"
+	@echo " Attest — full Railway deploy (infra → wait → apps)"
+	@echo "════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "Step 1/3 — Deploy infrastructure services…"
+	@for svc in redpanda risingwave clickhouse minio arroyo; do \
+	  echo "  → $$svc"; \
+	  railway service redeploy --service $$svc --yes 2>&1 || \
+	    echo "    ⚠ $$svc has no prior deployment — open the Railway dashboard and click Deploy, then re-run."; \
+	done
+	@echo ""
+	@echo "Step 2/3 — Waiting 90s for infra to become healthy…"
+	@echo "  (Kafka needs ~30s, RisingWave ~45s, ClickHouse ~20s)"
+	@sleep 90
+	@echo ""
+	@echo "Step 3/3 — Deploy application services…"
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
+	  echo "  → $$svc"; \
+	  railway service redeploy --service $$svc --yes 2>&1 || \
+	    railway up --service $$svc --detach --ci; \
+	done
+	@echo ""
+	@echo "✔ Full deploy complete. Run 'make railway-status' to verify."
+
+railway-full-redeploy: ## Full ordered redeploy (same as full-deploy, alias for clarity)
+	@$(MAKE) railway-full-deploy
