@@ -26,6 +26,10 @@ path = "tests/phase3_detection.rs"
 name = "phase4a_triager"
 path = "tests/phase4a_triager.rs"
 
+[[test]]
+name = "phase_arroyo_pipelines"
+path = "tests/phase_arroyo_pipelines.rs"
+
 [dev-dependencies]
 chrono = { workspace = true }
 rdkafka = { workspace = true }

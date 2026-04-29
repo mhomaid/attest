@@ -592,6 +592,7 @@ Attest/
 | `make dev-down` | Stop all containers |
 | `make arroyo-ui` | Open Arroyo web UI at http://localhost:5115 |
 | `make arroyo-deploy` | (Re-)deploy SQL pipelines to a running local Arroyo instance |
+| `make e2e-arroyo` | Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires `dev-up-platform`) |
 | `make train-classifier` | Run full ML pipeline — `train.py` + `novelty.py` + `calibrate.py` via `uv` |
 | `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |

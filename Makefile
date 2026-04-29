@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a arroyo-ui arroyo-deploy
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -57,6 +57,9 @@ e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans u
 
 arroyo-ui: ## Open Arroyo web UI in the browser (http://localhost:5115)
 	open http://localhost:5115
+
+e2e-arroyo: ## Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires dev-up-platform)
+	ATTEST_E2E=1 cargo test --test phase_arroyo_pipelines -- --nocapture --test-threads=1
 
 arroyo-deploy: ## Deploy Arroyo SQL pipelines to a running local Arroyo instance
 	ARROYO_API=http://localhost:5115 \
