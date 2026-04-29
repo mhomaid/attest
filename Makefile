@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a arroyo-ui arroyo-deploy
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -11,7 +11,7 @@ dev-up: ## Start all core services (Redpanda, RisingWave, ClickHouse, MinIO, Pos
 dev-down: ## Stop and remove all containers
 	docker compose down
 
-dev-up-platform: ## Start full platform stack (core + collector + control-plane + iceberg writer + detection runtime)
+dev-up-platform: ## Start full platform stack (core + collector + control-plane + iceberg writer + detection runtime + arroyo)
 	docker compose up -d redpanda postgres minio clickhouse risingwave
 	docker compose run --rm minio-init
 	docker compose --profile platform up -d --build
@@ -54,6 +54,14 @@ e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans u
 	  pkill -f "target.*attest-orchestrator" 2>/dev/null || true; \
 	  pkill -f "calibrate.py" 2>/dev/null || true; \
 	  exit $$STATUS
+
+arroyo-ui: ## Open Arroyo web UI in the browser (http://localhost:5115)
+	open http://localhost:5115
+
+arroyo-deploy: ## Deploy Arroyo SQL pipelines to a running local Arroyo instance
+	ARROYO_API=http://localhost:5115 \
+	PIPELINES_DIR=$(CURDIR)/infra/arroyo/pipelines \
+	bash infra/arroyo/deploy-pipelines.sh
 
 dev-up-llm: ## Start core services + llama.cpp (requires Qwen GGUF in llama-models volume)
 	docker compose --profile llm up -d
@@ -115,7 +123,7 @@ railway-setup: ## Create all services AND configure each one's builder (Dockerfi
 	@echo "  (Infrastructure services — Redpanda, RisingWave, ClickHouse, MinIO —"
 	@echo "   must be added separately: see 'make railway-infra'.)"
 
-railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse, MinIO) as Docker image services
+railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse, MinIO, Arroyo) as Docker image services
 	@echo "▶ Adding Redpanda…"
 	railway add --service redpanda --image redpandadata/redpanda:v26.1.6 || true
 	@echo "▶ Adding RisingWave…"
@@ -124,6 +132,8 @@ railway-infra: ## Add infrastructure services (Redpanda, RisingWave, ClickHouse,
 	railway add --service clickhouse --image clickhouse/clickhouse-server:latest || true
 	@echo "▶ Adding MinIO…"
 	railway add --service minio --image minio/minio:latest || true
+	@echo "▶ Adding Arroyo…"
+	railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest || true
 	@echo ""
 	@echo "✔ Infrastructure services created."
 	@echo "  Run 'make railway-infra-config' to configure ports, start commands, env vars."
@@ -137,6 +147,12 @@ railway-infra-config: ## Configure infrastructure services (start commands, env 
 	  --service-config minio      deploy.startCommand  "server /data --console-address :9001" \
 	  --service-config minio      variables.MINIO_ROOT_USER.value minioadmin \
 	  --service-config minio      variables.MINIO_ROOT_PASSWORD.value minioadmin \
+	  --service-config arroyo     variables.DATABASE_URL.value "$$ARROYO_DATABASE_URL" \
+	  --service-config arroyo     variables.AWS_ACCESS_KEY_ID.value "$$MINIO_ACCESS_KEY" \
+	  --service-config arroyo     variables.AWS_SECRET_ACCESS_KEY.value "$$MINIO_SECRET_KEY" \
+	  --service-config arroyo     variables.AWS_ENDPOINT.value "$$MINIO_ENDPOINT" \
+	  --service-config arroyo     variables.AWS_REGION.value us-east-1 \
+	  --service-config arroyo     variables.KAFKA_BROKERS.value "redpanda.railway.internal:9092" \
 	  -m "configure infrastructure services"
 	@echo "✔ Infrastructure configured."
 
@@ -162,7 +178,7 @@ railway-status: ## Show deployment status for all Railway services
 	@echo ""
 	@railway environment config
 	@echo ""
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench redpanda risingwave clickhouse minio; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench redpanda risingwave clickhouse minio arroyo; do \
 	  echo "── $$svc ──"; \
 	  railway service status --service $$svc 2>&1 | grep -E "Status|status|ACTIVE|FAILED|CRASHED|SLEEPING|DEPLOYING|queued" | head -3 || true; \
 	done
@@ -199,20 +215,20 @@ railway-start: ## Redeploy all source-built app services (assumes infra is alrea
 	done
 	@echo "✔ App services started. Run 'make railway-status' to verify."
 
-railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, clickhouse, minio)
+railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, clickhouse, minio, arroyo)
 	@echo "▶ Stopping infrastructure services…"
-	@for svc in risingwave redpanda clickhouse minio; do \
+	@for svc in risingwave redpanda clickhouse minio arroyo; do \
 	  echo "  → stopping $$svc"; \
 	  railway down --service $$svc --yes 2>&1 | grep -v "^$$" || true; \
 	done
 	@echo "✔ Infrastructure services stopped."
 	@echo "  NOTE: The minio-volume will continue to be billed until deleted."
 
-railway-infra-start: ## Start all infrastructure services (risingwave, redpanda, clickhouse, minio)
+railway-infra-start: ## Start all infrastructure services (risingwave, redpanda, clickhouse, minio, arroyo)
 	@echo "▶ Starting infrastructure services…"
-	@for svc in risingwave redpanda clickhouse minio; do \
+	@for svc in risingwave redpanda clickhouse minio arroyo; do \
 	  echo "  → starting $$svc"; \
 	  railway redeploy --service $$svc --yes; \
 	done
 	@echo "✔ Infrastructure services started."
-	@echo "  Allow ~60s for Redpanda and RisingWave to become healthy before starting app services."
+	@echo "  Allow ~60s for Redpanda, RisingWave, and Arroyo to become healthy before starting app services."

@@ -152,10 +152,13 @@ flowchart TD
 
         subgraph StreamRuntime["Stream Runtime"]
             RW["RisingWave\nMaterialized views\nEntity baselines"]
-            ARR["Arroyo\nStateful CEP\n(n-event sequences)"]
+            subgraph ArroyoSvc["Arroyo :5115"]
+                ARR_ETL["cloudtrail_to_parquet\nKafka → Parquet → MinIO"]
+                ARR_CEP["cep_sequence_detection\nLogin → S3 sequence"]
+            end
         end
 
-        IW["attest-storage-iceberg\nKafka → Parquet → MinIO"]
+        IW["attest-storage-iceberg\nKafka → Parquet → MinIO\n(parallel — migration)"]
     end
 
     subgraph StoragePlane["Storage Plane"]
@@ -186,10 +189,13 @@ flowchart TD
     COL -->|"OCSF FlatEvent\nKafka produce"| RP
 
     RP -->|"Kafka source"| RW
-    RP -->|"Kafka source"| ARR
+    RP -->|"Kafka source"| ARR_ETL
+    RP -->|"Kafka source"| ARR_CEP
     RP -->|"Kafka source"| IW
 
     IW -->|"Parquet files\nS3 API"| MINIO
+    ARR_ETL -->|"Parquet files\nS3 API\n(arroyo/ prefix)"| MINIO
+    ARR_CEP -->|"Produce alert JSON\n(sequence fired)"| ALERTS
 
     HELIQL -->|"CREATE MATERIALIZED VIEW\ndet_*"| RW
     DR -->|"SELECT * FROM det_*\nevery 2s"| RW
@@ -675,7 +681,8 @@ flowchart TB
 
         subgraph Stream["Stream Runtime"]
             RW["risingwave\nRust :4566\n8-core / 32GB\n+ persistent volume"]
-            IW["attest-storage-iceberg\nRust (batch writer)\n2-core / 4GB"]
+            IW["attest-storage-iceberg\nRust (batch writer)\n2-core / 4GB\n(parallel — migration)"]
+            ARR["arroyo\nRust SQL streaming :5115\n2-core / 4GB\n(ETL + CEP pipelines)\ndepends on postgres"]
         end
 
         subgraph Storage["Hot Storage"]
@@ -708,9 +715,12 @@ flowchart TB
     COL -->|"Kafka produce"| RP
     RP -->|"Kafka consume"| RW
     RP -->|"Kafka consume"| IW
+    RP -->|"Kafka consume"| ARR
     RP -->|"Kafka consume"| DR
     IW -->|"S3 API"| MINIO
     IW -->|"S3 API (prod)"| S3
+    ARR -->|"Parquet (arroyo/ prefix)"| MINIO
+    ARR -->|"CEP alerts"| ORCH
     MINIO -->|"Iceberg table function"| CH
     S3 -->|"Iceberg table function"| CH
     RW -->|"entity_baselines / recent_events"| CP

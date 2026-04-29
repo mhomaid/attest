@@ -370,7 +370,16 @@ Starts Redpanda (`:9092`, `:19092`), RisingWave (`:4566`), Postgres (`:5432`), M
 make dev-up-platform
 ```
 
-Builds and starts `attest-collector` (`:4000`), `attest-control-plane` (`:8080`), and `attest-storage-iceberg` using the multi-stage Dockerfiles in `infra/docker/`.
+Builds and starts `attest-collector` (`:4000`), `attest-control-plane` (`:8080`), `attest-storage-iceberg`, `arroyo` (`:5115`), and `arroyo-pipeline-deployer` using the multi-stage Dockerfiles in `infra/docker/` and the pre-built Arroyo image.
+
+The `arroyo-pipeline-deployer` one-shot container waits for Arroyo to be healthy, then deploys the SQL pipeline definitions from `infra/arroyo/pipelines/` via the Arroyo REST API.
+
+Open the Arroyo web UI at **http://localhost:5115** to inspect running pipelines and view real-time metrics.
+
+```sh
+make arroyo-ui        # opens http://localhost:5115 in your browser
+make arroyo-deploy    # (re-)deploy pipelines to a running local Arroyo instance
+```
 
 ### 3. Verify services are healthy
 
@@ -552,6 +561,11 @@ Attest/
 ├── apps/
 │   └── workbench/                # Next.js 15 marketing site + SOC workbench UI
 ├── infra/
+│   ├── arroyo/                   # Arroyo streaming engine
+│   │   ├── pipelines/            # SQL pipeline definitions deployed via REST API
+│   │   │   ├── cloudtrail_to_parquet.sql    # Redpanda → Parquet → MinIO ETL
+│   │   │   └── cep_sequence_detection.sql   # Login → S3-access sequence (CEP)
+│   │   └── deploy-pipelines.sh   # curl-based idempotent pipeline deployer
 │   ├── clickhouse/               # ClickHouse config (listen + S3/MinIO access)
 │   ├── docker/                   # Multi-stage Dockerfiles
 │   ├── risingwave/               # RisingWave DDL (phase1_baseline.sql)
@@ -574,8 +588,10 @@ Attest/
 | Target | What it does |
 |---|---|
 | `make dev-up` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
-| `make dev-up-platform` | Start core infra + collector + control-plane + storage-iceberg |
+| `make dev-up-platform` | Start core infra + collector + control-plane + storage-iceberg + arroyo |
 | `make dev-down` | Stop all containers |
+| `make arroyo-ui` | Open Arroyo web UI at http://localhost:5115 |
+| `make arroyo-deploy` | (Re-)deploy SQL pipelines to a running local Arroyo instance |
 | `make train-classifier` | Run full ML pipeline — `train.py` + `novelty.py` + `calibrate.py` via `uv` |
 | `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
@@ -598,6 +614,7 @@ Attest/
 | `risingwave` | `risingwavelabs/risingwave:latest` | `risingwave.railway.internal:4566` |
 | `clickhouse` | `clickhouse/clickhouse-server:latest` | `clickhouse.railway.internal:8123` |
 | `minio` | `minio/minio:latest` | `minio.railway.internal:9000` |
+| `arroyo` | `ghcr.io/arroyosystems/arroyo:latest` | `arroyo.railway.internal:5115` |
 | `collector` | Dockerfile `infra/docker/collector.Dockerfile` | — |
 | `control-plane` | Dockerfile `infra/docker/control-plane.Dockerfile` | `control-plane-production-b6e3.up.railway.app` |
 | `storage-iceberg` | Dockerfile `infra/docker/storage-iceberg.Dockerfile` | — |
@@ -608,7 +625,7 @@ Attest/
 
 ```sh
 railway login
-make railway-infra        # create the 4 Docker-image infrastructure services
+make railway-infra        # create the 5 Docker-image infrastructure services (incl. Arroyo)
 make railway-infra-config # set start commands + env vars for infra services
 make railway-setup        # create the 5 app services and configure builders
 make railway-deploy       # upload source + trigger first build for all app services
