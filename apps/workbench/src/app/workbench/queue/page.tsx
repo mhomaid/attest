@@ -8,17 +8,22 @@ import type { Alert } from "@/lib/mock-data";
 const CP_URL     = process.env.CONTROL_PLANE_URL  ?? "http://localhost:8080";
 const ARROYO_URL = process.env.ARROYO_URL         ?? "http://localhost:5115";
 
-async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; isLive: boolean }> {
+type LiveStatus = "live" | "connected" | "offline";
+
+async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; status: LiveStatus }> {
   try {
-    const res = await fetch(`${CP_URL}/v1/detections/fired`, { cache: "no-store" });
-    if (!res.ok) return { alerts: mockAlerts, isLive: false };
+    const res = await fetch(`${CP_URL}/v1/detections/fired`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return { alerts: mockAlerts, status: "offline" };
     const data = await res.json();
     const alerts = parseFiredDetections(data);
     return alerts.length > 0
-      ? { alerts, isLive: true }
-      : { alerts: mockAlerts, isLive: false };
+      ? { alerts, status: "live" }
+      : { alerts: mockAlerts, status: "connected" };
   } catch {
-    return { alerts: mockAlerts, isLive: false };
+    return { alerts: mockAlerts, status: "offline" };
   }
 }
 
@@ -37,7 +42,7 @@ async function fetchArroyoPipelines(): Promise<{ name: string; state: string }[]
 }
 
 export default async function QueuePage() {
-  const [{ alerts, isLive }, arroyoPipelines] = await Promise.all([
+  const [{ alerts, status }, arroyoPipelines] = await Promise.all([
     fetchLiveAlerts(),
     fetchArroyoPipelines(),
   ]);
@@ -68,10 +73,14 @@ export default async function QueuePage() {
           <div>
             <div className="mb-2 flex items-center gap-2">
               <StatusBadge tone="info">Queue</StatusBadge>
-              <StatusBadge tone={isLive ? "good" : "muted"}>
-                {isLive
+              <StatusBadge
+                tone={status === "live" ? "good" : status === "connected" ? "info" : "muted"}
+              >
+                {status === "live"
                   ? "Live — HELIQL detections connected"
-                  : "Mock data — control-plane offline"}
+                  : status === "connected"
+                  ? "Connected — no detections yet"
+                  : "Mock data — control-plane unreachable"}
               </StatusBadge>
               {arroyoPipelines.length > 0 && (
                 <StatusBadge tone="good">
