@@ -233,6 +233,58 @@ services:
     profiles:
       - platform
 
+  calibration-sidecar:
+    build:
+      context: .
+      dockerfile: infra/docker/calibration-sidecar.Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      CALIBRATION_PORT: "5001"
+      ARTIFACTS_DIR: /app/artifacts
+      PYTHONUNBUFFERED: "1"
+    profiles:
+      - platform
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: infra/docker/orchestrator.Dockerfile
+    ports:
+      - "4300:4300"
+    environment:
+      ORCHESTRATOR_PORT: "4300"
+      ARTIFACTS_DIR: /artifacts
+      CALIBRATION_URL: http://calibration-sidecar:5001
+      ESCALATION_THRESHOLD: "0.60"
+      NOVELTY_THRESHOLD: "0.70"
+      ATTEST_LOG_PATH: /data/attestations.ndjson
+    volumes:
+      - ./ml/triager/artifacts:/artifacts:ro
+      - attestation-log:/data
+    depends_on:
+      - calibration-sidecar
+    profiles:
+      - platform
+
+  mcp-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/mcp-gateway.Dockerfile
+    ports:
+      - "4242:4242"
+    environment:
+      MCP_GATEWAY_PORT: "4242"
+      CONTROL_PLANE_URL: http://control-plane:8080
+      ATTEST_LOG_PATH: /data/attestations.ndjson
+    volumes:
+      - attestation-log:/data
+    depends_on:
+      - control-plane
+      - orchestrator
+    profiles:
+      - platform
+
   ml-sidecar:
     build:
       context: ./ml/sidecar
@@ -249,3 +301,4 @@ volumes:
   minio-data:
   clickhouse-data:
   llama-models:
+  attestation-log:

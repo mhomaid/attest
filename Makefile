@@ -1,5 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo
-.DEFAULT_GOAL := help
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo.DEFAULT_GOAL := help
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -99,7 +98,7 @@ railway-login: ## Log in to Railway CLI
 
 railway-setup: ## Create all services AND configure each one's builder (Dockerfile path or Nixpacks) — fully CLI driven
 	@echo "▶ Creating services (skipping if they already exist)…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer orchestrator mcp-gateway calibration-sidecar; do \
 	  echo "  → $$svc"; \
 	  railway add --service $$svc >/dev/null 2>&1 || true; \
 	done
@@ -197,7 +196,7 @@ railway-status: ## Show deployment status for all Railway services
 	@echo ""
 	@railway environment config
 	@echo ""
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer redpanda risingwave clickhouse minio arroyo; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer orchestrator mcp-gateway calibration-sidecar redpanda risingwave clickhouse minio arroyo; do \
 	  echo "── $$svc ──"; \
 	  railway service status --service $$svc 2>&1 | grep -E "Status|status|ACTIVE|FAILED|CRASHED|SLEEPING|DEPLOYING|queued" | head -3 || true; \
 	done
@@ -220,7 +219,7 @@ railway-logs: ## Tail runtime logs for all application services (runs in paralle
 
 railway-stop: ## Stop all source-built app services (removes active deployments)
 	@echo "▶ Stopping app services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer orchestrator mcp-gateway calibration-sidecar; do \
 	  echo "  → stopping $$svc"; \
 	  railway down --service $$svc --yes 2>&1 | grep -v "^$$" || true; \
 	done
@@ -271,7 +270,7 @@ railway-infra-deploy: ## ⭐ Deploy infra services — handles first-deploy and 
 
 railway-app-start: ## Deploy all application services — handles first-deploy and redeployment automatically
 	@echo "▶ Deploying application services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer; do \
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer orchestrator mcp-gateway calibration-sidecar; do \
 	  echo "  → $$svc"; \
 	  railway service redeploy --service $$svc --yes 2>&1 || \
 	    railway up --service $$svc --detach --ci; \

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "infra/docker/orchestrator.Dockerfile"
+  },
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE",
+    "healthcheckPath": "/healthz"
+  },
+  "environmentVariables": {
+    "ORCHESTRATOR_PORT": "4300",
+    "PORT": "4300",
+    "ARTIFACTS_DIR": "/artifacts",
+    "CALIBRATION_URL": "http://${{CalibrationSidecar.RAILWAY_PRIVATE_DOMAIN}}:5001",
+    "ESCALATION_THRESHOLD": "0.60",
+    "NOVELTY_THRESHOLD": "0.70",
+    "ATTEST_LOG_PATH": "/data/attestations.ndjson",
+    "RUST_LOG": "info"
+  }
+}

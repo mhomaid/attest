@@ -40,6 +40,9 @@ pub struct TriageVerdict {
     pub escalated: bool,
     pub escalation_reason: Option<String>,
     pub latency_ms: u64,
+    /// Classifier evidence including SHAP values — included so the workbench
+    /// can render the evidence panel without a separate attestation log lookup.
+    pub classifier_evidence: Option<ClassifierEvidence>,
 }
 
 /// All runtime state needed by the triage loop — loaded once at orchestrator startup.
@@ -207,6 +210,11 @@ impl TriageEngine {
             escalated: escalation_reason.is_some(),
             escalation_reason,
             latency_ms,
+            classifier_evidence: match &envelope.evidence {
+                EvidenceBlock::Classifier(ev) => Some(ev.clone()),
+                EvidenceBlock::Hybrid { classifier_draft, .. } => Some(classifier_draft.clone()),
+                _ => None,
+            },
         })
     }
 }
