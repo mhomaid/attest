@@ -251,36 +251,34 @@ railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, c
 	@echo "✔ Infrastructure services stopped."
 	@echo "  NOTE: The minio-volume will continue to be billed until deleted."
 
-railway-infra-first-deploy: ## First-time deploy of ALL infra image services (deletes stale definitions, re-adds with image → auto-deploys)
-	@echo "▶ First-time infrastructure deploy — deleting stale service definitions and re-adding with images…"
-	@echo "  (Safe to run even if services don't exist yet. All data in Railway volumes is preserved.)"
+railway-infra-first-deploy: ## First-time deploy of ALL infra image services (fully non-interactive)
+	@echo "▶ First-time infrastructure deploy — deleting stale definitions, re-adding with images…"
+	@echo "  (Non-interactive. Safe to re-run. Railway volumes are preserved.)"
 	@echo ""
 	@echo "  → redpanda (Confluent KRaft Kafka)"
 	@railway service delete --service redpanda --yes 2>/dev/null || true
-	@railway add --service redpanda --image confluentinc/cp-kafka:7.9.0
+	@railway add --service redpanda --image confluentinc/cp-kafka:7.9.0 --variables "_PLACEHOLDER=1"
 	@echo ""
 	@echo "  → risingwave"
 	@railway service delete --service risingwave --yes 2>/dev/null || true
-	@railway add --service risingwave --image risingwavelabs/risingwave:latest
+	@railway add --service risingwave --image risingwavelabs/risingwave:latest --variables "_PLACEHOLDER=1"
 	@echo ""
 	@echo "  → clickhouse"
 	@railway service delete --service clickhouse --yes 2>/dev/null || true
-	@railway add --service clickhouse --image clickhouse/clickhouse-server:latest
+	@railway add --service clickhouse --image clickhouse/clickhouse-server:latest --variables "_PLACEHOLDER=1"
 	@echo ""
 	@echo "  → minio"
 	@railway service delete --service minio --yes 2>/dev/null || true
-	@railway add --service minio --image minio/minio:latest
+	@railway add --service minio --image minio/minio:latest --variables "_PLACEHOLDER=1"
 	@echo ""
 	@echo "  → arroyo"
 	@railway service delete --service arroyo --yes 2>/dev/null || true
-	@railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest
+	@railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest --variables "_PLACEHOLDER=1"
 	@echo ""
 	@echo "✔ All infra services created and auto-deploying."
-	@echo "  Now run (requires CLUSTER_ID for Kafka):"
+	@echo "  Next steps:"
 	@echo "    export CLUSTER_ID=\$$(python3 -c \"import base64,uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))\")"
-	@echo "    make railway-infra-config"
-	@echo "  Then wait ~60s and run:"
-	@echo "    make railway-app-start"
+	@echo "    make railway-infra-config && make railway-app-start"
 
 railway-infra-start: ## (Re)deploy all infrastructure services — works for both first-deploy and redeploy
 	@echo "▶ Deploying infrastructure services (redpanda → risingwave → clickhouse → minio → arroyo)…"
