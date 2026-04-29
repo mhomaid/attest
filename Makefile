@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs train-classifier e2e-phase4a
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-deploy railway-redeploy railway-domain railway-status railway-logs railway-stop railway-start railway-infra-stop railway-infra-start train-classifier e2e-phase4a
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -181,3 +181,38 @@ railway-logs: ## Tail runtime logs for all application services (runs in paralle
 	@railway logs --service detection-runtime &
 	@railway logs --service workbench &
 	@wait
+
+railway-stop: ## Stop all source-built app services (removes active deployments)
+	@echo "▶ Stopping app services…"
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	  echo "  → stopping $$svc"; \
+	  railway down --service $$svc --yes 2>&1 | grep -v "^$$" || true; \
+	done
+	@echo "✔ App services stopped."
+	@echo "  To stop infra (risingwave, redpanda, clickhouse, minio) run: make railway-infra-stop"
+
+railway-start: ## Redeploy all source-built app services (assumes infra is already running)
+	@echo "▶ Starting app services…"
+	@for svc in collector control-plane storage-iceberg detection-runtime workbench; do \
+	  echo "  → starting $$svc"; \
+	  railway redeploy --service $$svc --yes; \
+	done
+	@echo "✔ App services started. Run 'make railway-status' to verify."
+
+railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, clickhouse, minio)
+	@echo "▶ Stopping infrastructure services…"
+	@for svc in risingwave redpanda clickhouse minio; do \
+	  echo "  → stopping $$svc"; \
+	  railway down --service $$svc --yes 2>&1 | grep -v "^$$" || true; \
+	done
+	@echo "✔ Infrastructure services stopped."
+	@echo "  NOTE: The minio-volume will continue to be billed until deleted."
+
+railway-infra-start: ## Start all infrastructure services (risingwave, redpanda, clickhouse, minio)
+	@echo "▶ Starting infrastructure services…"
+	@for svc in risingwave redpanda clickhouse minio; do \
+	  echo "  → starting $$svc"; \
+	  railway redeploy --service $$svc --yes; \
+	done
+	@echo "✔ Infrastructure services started."
+	@echo "  Allow ~60s for Redpanda and RisingWave to become healthy before starting app services."
