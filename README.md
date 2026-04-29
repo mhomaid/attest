@@ -10,7 +10,8 @@ The agent layer runs on top of the data tier. A Hybrid Triager routes every aler
 |---|---|
 | `docs/README.md` | Product and architecture overview |
 | `docs/01_PRD.md` | Product requirements document |
-| `docs/02_Architecture.md` | System architecture |
+| `docs/02_Architecture.md` | System architecture (six-plane model, principles, components) |
+| `docs/03_Architecture_Diagrams.md` | All Mermaid diagrams — C4, data flow, sequences, state machines |
 | `docs/07_Stack_Revised.md` | Canonical tech stack |
 | `docs/10_Build_Order.md` | Phase-by-phase implementation sequence |
 | `docs/11_Repo_Structure.md` | Repository layout |
