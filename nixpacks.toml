@@ -1,6 +1,10 @@
 [phases.setup]
 nixPkgs = ["nodejs_20", "bun"]
 
+[variables]
+NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "20"
+
 [phases.install]
 cmds = ["bun install --frozen-lockfile"]
 
