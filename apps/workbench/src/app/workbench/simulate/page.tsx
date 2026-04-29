@@ -43,6 +43,9 @@ const MEMORY_STAGES: StageMeta[] = [
 ];
 
 type RunState = "idle" | "running" | "done" | "error";
+type PollState = "idle" | "polling" | "finished";
+
+const POLL_TIMEOUT_MS = 90_000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -156,6 +159,7 @@ export default function SimulatePage() {
 
   const [hot, setHot]       = useState<SimulateResponse | null>(null);
   const [memory, setMemory] = useState<VerifyResponse | null>(null);
+  const [pollState, setPollState] = useState<PollState>("idle");
   const [error, setError]   = useState<string | null>(null);
 
   const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -175,6 +179,7 @@ export default function SimulatePage() {
     setRunState("idle");
     setHot(null);
     setMemory(null);
+    setPollState("idle");
     setError(null);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
@@ -184,6 +189,7 @@ export default function SimulatePage() {
     setRunState("running");
     setHot(null);
     setMemory(null);
+    setPollState("idle");
     setError(null);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
@@ -201,9 +207,15 @@ export default function SimulatePage() {
       // Begin polling memory section
       if (data.event_ids[0]) {
         pollStartRef.current = Date.now();
+        setPollState("polling");
         const eventId  = data.event_ids[0];
         const username = data.username;
         const actionId = data.action_id;
+
+        const stopPolling = () => {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setPollState("finished");
+        };
 
         const poll = async () => {
           try {
@@ -214,17 +226,16 @@ export default function SimulatePage() {
             const v: VerifyResponse = await r.json();
             setMemory(v);
 
-            // Stop polling once everything is verified or 90 s elapsed
             const allOk = v.risingwave.ok && v.detection.ok && v.iceberg.ok && v.mcp.ok;
             const elapsed = Date.now() - pollStartRef.current;
-            if (allOk || elapsed > 90_000) {
-              if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-            }
+            if (allOk || elapsed > POLL_TIMEOUT_MS) stopPolling();
           } catch {/* keep polling */}
         };
 
         await poll();
         pollRef.current = setInterval(poll, 2_500);
+      } else {
+        setPollState("finished");
       }
     } catch (err) {
       setError(String(err));
@@ -252,7 +263,9 @@ export default function SimulatePage() {
     if (runState === "idle" || !hot) return "pending";
     if (!memory) return "running";
     const r = memory[key];
-    return r.ok ? "ok" : "running";  // keep showing "running" until polling stops or all verified
+    if (r.ok) return "ok";
+    // Polling still active → keep spinning. Polling finished → flip to "fail" so user knows it's not coming.
+    return pollState === "polling" ? "running" : "fail";
   };
 
   return (
@@ -462,11 +475,20 @@ export default function SimulatePage() {
                     <h2 className="text-xs font-semibold uppercase tracking-[0.15em]">Memory</h2>
                     <span className="text-[10px] text-muted-foreground">parallel sinks · eventually consistent</span>
                   </div>
-                  {memory && (
-                    <span className="font-mono text-xs text-muted-foreground">
+                  {memory && pollState === "polling" && (
+                    <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                      <span className="size-2 animate-pulse rounded-full bg-primary" />
                       polling…
                     </span>
                   )}
+                  {memory && pollState === "finished" && (() => {
+                    const verified = [memory.risingwave, memory.detection, memory.iceberg, memory.mcp].filter((s) => s.ok).length;
+                    return (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        verified {verified}/4 · polling stopped
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                   {MEMORY_STAGES.map((meta) => (

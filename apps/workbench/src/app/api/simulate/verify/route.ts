@@ -70,13 +70,15 @@ export async function GET(req: NextRequest) {
       return { rowCount: data.rows?.length ?? 0 };
     }),
 
-    // MCP Gateway: healthcheck.
+    // MCP Gateway: list available tools (proves it's running with policy engine + registry).
     timed(async () => {
-      const r = await fetch(`${MCP_GATEWAY_URL}/healthz`, {
+      const r = await fetch(`${MCP_GATEWAY_URL}/tools`, {
         signal: AbortSignal.timeout(2_000),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return { ok: true };
+      const tools = await r.json() as { tools?: Array<{ id?: string }> } | unknown[];
+      const count = Array.isArray(tools) ? tools.length : (tools.tools?.length ?? 0);
+      return { count };
     }),
   ]);
 
@@ -125,7 +127,7 @@ export async function GET(req: NextRequest) {
     ? {
         ok: true,
         latency_ms: mcpResult.latency_ms,
-        artifact: `MCP gateway healthy; attestation ${actionId.slice(0, 8)}… queryable by external auditors`,
+        artifact: `MCP gateway up — ${mcpResult.value.count} tool(s) registered with policy engine; attestation ${actionId.slice(0, 8)}… queryable`,
       }
     : {
         ok: false,
