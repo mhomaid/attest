@@ -4,6 +4,7 @@ members = [
     "apps/workbench-api",
     "apps/ws-gateway",
     "tests/e2e-tests",
+    "tools/load-gen",
 ]
 exclude = ["apps/workbench"]
 resolver = "2"

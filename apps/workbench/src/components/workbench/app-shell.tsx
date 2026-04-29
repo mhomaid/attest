@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  BarChart3,
   Bell,
   Bot,
   Command,
@@ -28,7 +29,8 @@ const navItems = [
   { href: "/workbench/hunt",       label: "Hunt",       icon: Crosshair },
   { href: "/workbench/detections", label: "Detections", icon: FileCode2 },
   { href: "/workbench/simulate",   label: "Simulate",   icon: FlaskConical },
-  { href: "/workbench/coverage",   label: "Coverage",   icon: Gauge },
+  { href: "/workbench/load",       label: "Load Lab",   icon: Gauge },
+  { href: "/workbench/coverage",   label: "Coverage",   icon: BarChart3 },
   { href: "/workbench/agents",     label: "Agents",     icon: Bot },
   { href: "/workbench/settings",   label: "Settings",   icon: Settings },
   { href: "/workbench/admin",      label: "Admin",      icon: Users },

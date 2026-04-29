@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo
+.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -294,3 +294,24 @@ railway-full-deploy: ## ⭐ Full ordered deploy: infra first, wait 90s, then app
 	@$(MAKE) railway-app-start
 	@echo ""
 	@echo "✔ Full deploy complete. Run 'make railway-status' to verify."
+
+load-gen-up: ## Start the load generator container (bench profile)
+	docker compose --profile bench up -d load-gen
+
+load-test: ## Quick smoke benchmark: 10k/sec for 30s against local load-gen
+	curl -s -X POST http://localhost:9100/run \
+	  -H "Content-Type: application/json" \
+	  -d '{"rate":10000,"duration_secs":30,"scenario":"mixed","tenants":3,"seed_baselines":true}' \
+	  | jq .
+
+load-test-burst: ## Burst benchmark: 100k/sec for 60s (requires load-gen running)
+	curl -s -X POST http://localhost:9100/run \
+	  -H "Content-Type: application/json" \
+	  -d '{"rate":100000,"duration_secs":60,"scenario":"mixed","tenants":5,"seed_baselines":true}' \
+	  | jq .
+
+load-status: ## Poll load generator status
+	curl -s http://localhost:9100/status | jq .
+
+load-stop: ## Stop the active load generator run
+	curl -s -X POST http://localhost:9100/stop | jq .

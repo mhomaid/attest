@@ -296,6 +296,21 @@ services:
     profiles:
       - ml
 
+  load-gen:
+    build:
+      context: .
+      dockerfile: infra/docker/load-gen.Dockerfile
+    ports:
+      - "9100:9100"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      LOAD_GEN_PORT: "9100"
+      RUST_LOG: info
+    depends_on:
+      - redpanda
+    profiles:
+      - bench
+
 volumes:
   postgres-data:
   minio-data:

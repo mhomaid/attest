@@ -1,10 +1,5 @@
 //! attest-control-plane — axum REST + WebSocket API backed by RisingWave + ClickHouse.
 //!
-//! Startup order (resilient to infra being offline at boot):
-//!   1. Bind TCP listener immediately → /healthz returns 200 straight away.
-//!   2. Background task: retry-connect to RisingWave, apply DDL, fill OnceLock.
-//!   3. Routes that need DB return 503 until the OnceLock is populated.
-//!
 //! Routes:
 //!   GET  /healthz
 //!   GET  /v1/events/recent?id=<uuid>
@@ -12,8 +7,10 @@
 //!   POST /v1/warm/query             { "sql": "SELECT ..." }
 //!   GET  /v1/detections/fired
 //!   GET  /v1/ws/alerts
+//!   GET  /v1/metrics/stream         (WebSocket — 1 Hz MetricsSnapshot)
 
 mod db;
+mod metrics;
 mod routes;
 mod state;
 
@@ -36,6 +33,7 @@ use crate::{
         detections::{fetch_all_fired, get_detections_fired, ws_alerts},
         events::get_recent_event,
         healthz::healthz,
+        metrics::ws_metrics,
         warm::{post_warm_query, ChUrl},
     },
     state::AppState,
@@ -67,36 +65,38 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
+    let load_gen_url = std::env::var("LOAD_GEN_URL").ok();
 
-    // ── Broadcast channel ───────────────────────────────────────────────────
+    // ── Broadcast channels ──────────────────────────────────────────────────
     let (alert_tx, _) = broadcast::channel::<String>(1024);
+    let (metrics_tx, _) = broadcast::channel::<crate::state::MetricsSnapshot>(128);
 
     // ── AppState with an empty db slot ─────────────────────────────────────
     let db_slot: Arc<OnceLock<crate::db::Db>> = Arc::new(OnceLock::new());
-    let state = AppState { db: db_slot.clone(), alert_tx: alert_tx.clone() };
+    let state = AppState {
+        db: db_slot.clone(),
+        alert_tx: alert_tx.clone(),
+        metrics_tx: metrics_tx.clone(),
+    };
 
     // ── Background setup: connect + DDL, then fill the db slot ─────────────
     {
         let db_slot = db_slot.clone();
         let state_for_poll = state.clone();
         tokio::spawn(async move {
-            // Retry until RisingWave is reachable.
             let db = connect_with_retry(&rw_host, rw_port).await;
 
-            // Kafka topic — non-fatal on error.
             tracing::info!("ensuring Kafka topic 'cloudtrail'");
             ensure_kafka_topic(&kafka_brokers, "cloudtrail").await;
 
-            // DDL — non-fatal; schema may already exist.
             if let Err(e) = apply_phase1_ddl(&db, &kafka_brokers).await {
                 tracing::warn!("DDL warning (continuing): {e}");
             }
 
-            // Make DB available to all route handlers.
             let _ = db_slot.set(db);
             tracing::info!("control-plane fully ready — DB slot filled");
 
-            // ── Background alert polling ────────────────────────────────────
+            // Alert polling
             let mut seen: HashSet<String> = HashSet::new();
             let mut interval = tokio::time::interval(Duration::from_secs(poll_secs));
             loop {
@@ -118,25 +118,35 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // ── CORS ────────────────────────────────────────────────────────────────
+    // ── Metrics sampler task (1 Hz) ─────────────────────────────────────────
+    {
+        let brokers = std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "redpanda:9092".into());
+        let ch = (*ch_url).clone();
+        let tx = metrics_tx.clone();
+        tokio::spawn(async move {
+            metrics::sampler::run_sampler(brokers, ch, load_gen_url, tx).await;
+        });
+    }
+
+    // ── CORS ─────────────────────────────────────────────────────────────────
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // ── Router ──────────────────────────────────────────────────────────────
+    // ── Router ───────────────────────────────────────────────────────────────
     let app = Router::new()
         .route("/healthz",                   get(healthz))
         .route("/v1/events/recent",          get(get_recent_event))
         .route("/v1/baselines/user/{name}",  get(get_user_baseline))
         .route("/v1/detections/fired",       get(get_detections_fired))
         .route("/v1/ws/alerts",              get(ws_alerts))
+        .route("/v1/metrics/stream",         get(ws_metrics))
         .with_state(state)
         .route("/v1/warm/query",             post(post_warm_query))
         .with_state(ch_url)
         .layer(cors);
 
-    // ── Bind and serve — must happen AFTER setup spawn so healthcheck passes ─
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("attest-control-plane listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -150,7 +160,6 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Connect to RisingWave, retrying every 5 s with no overall timeout.
 async fn connect_with_retry(host: &str, port: u16) -> crate::db::Db {
     let mut attempt = 0u32;
     loop {
@@ -170,7 +179,6 @@ async fn connect_with_retry(host: &str, port: u16) -> crate::db::Db {
     }
 }
 
-/// Idempotently ensure a Kafka topic exists.  Logs and returns on any error.
 async fn ensure_kafka_topic(brokers: &str, topic: &str) {
     let admin: AdminClient<DefaultClientContext> = match ClientConfig::new()
         .set("bootstrap.servers", brokers)

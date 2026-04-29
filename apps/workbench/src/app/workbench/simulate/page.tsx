@@ -13,6 +13,7 @@ import { ClassifierEvidencePanel } from "@/components/workbench/classifier-evide
 import type { FeatureImpact } from "@/lib/mock-data";
 import type { SimulateResponse, StageResult } from "@/app/api/simulate/route";
 import type { VerifyResponse } from "@/app/api/simulate/verify/route";
+import { useSimulateStore } from "@/lib/stores/simulate-store";
 
 // ── Stage definitions ─────────────────────────────────────────────────────
 
@@ -165,6 +166,8 @@ export default function SimulatePage() {
   const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollStartRef = useRef<number>(0);
 
+  const pushRun = useSimulateStore(s => s.pushRun);
+
   // ── Stop polling on unmount ───────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -203,6 +206,15 @@ export default function SimulatePage() {
 
       setHot(data);
       setRunState(data.collector.ok && data.orchestrator.ok ? "done" : "error");
+
+      // Persist to cross-navigation history
+      pushRun({
+        ts: Date.now(),
+        scenarioId: selected.id,
+        verdict: data.verdict ?? "unknown",
+        latencyMs: data.total_latency_ms ?? 0,
+        confidence: data.calibrated_confidence,
+      });
 
       // Begin polling memory section
       if (data.event_ids[0]) {
