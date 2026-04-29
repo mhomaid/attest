@@ -38,9 +38,13 @@ pub async fn get_detections_fired(
 }
 
 pub async fn fetch_all_fired(state: &AppState) -> anyhow::Result<Vec<FiredAlert>> {
+    let db = match state.get_db() {
+        Some(db) => db,
+        None => return Ok(vec![]), // DB not ready yet — return empty list
+    };
+
     // Discover det_* views dynamically from the RisingWave catalog.
-    let view_rows = state
-        .db
+    let view_rows = db
         .query(
             "SELECT name FROM rw_catalog.rw_materialized_views WHERE name LIKE 'det_%'",
             &[],
@@ -51,8 +55,7 @@ pub async fn fetch_all_fired(state: &AppState) -> anyhow::Result<Vec<FiredAlert>
 
     for vr in &view_rows {
         let view_name: String = vr.get(0);
-        match state
-            .db
+        match db
             .query(
                 &format!(
                     "SELECT detection_id, event_id, actor_user_name, \

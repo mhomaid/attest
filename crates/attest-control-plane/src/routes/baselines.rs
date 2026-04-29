@@ -5,7 +5,7 @@ use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use serde::Serialize;
 
@@ -23,9 +23,16 @@ pub struct UserBaseline {
 pub async fn get_user_baseline(
     State(state): State<AppState>,
     Path(user_name): Path<String>,
-) -> impl IntoResponse {
-    let rows = match state
-        .db
+) -> Response {
+    let db = match state.get_db() {
+        Some(db) => db,
+        None => return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "service starting up"})),
+        ).into_response(),
+    };
+
+    let rows = match db
         .query(
             "SELECT tenant_id, actor_user_name, \
              regions_seen_30d, event_count_30d, last_seen::TEXT \
@@ -40,7 +47,7 @@ pub async fn get_user_baseline(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": e.to_string()})),
-            );
+            ).into_response();
         }
     };
 
@@ -48,18 +55,18 @@ pub async fn get_user_baseline(
         return (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "user not found in baseline"})),
-        );
+        ).into_response();
     }
 
     let row = &rows[0];
     let regions: Vec<String> = row.get(2);
     let baseline = UserBaseline {
-        tenant_id: row.get(0),
-        actor_user_name: row.get(1),
-        regions_seen_30d: regions,
-        event_count_30d: row.get(3),
-        last_seen: row.get(4),
+        tenant_id:          row.get(0),
+        actor_user_name:    row.get(1),
+        regions_seen_30d:   regions,
+        event_count_30d:    row.get(3),
+        last_seen:          row.get(4),
     };
 
-    (StatusCode::OK, Json(serde_json::to_value(baseline).unwrap()))
+    (StatusCode::OK, Json(serde_json::to_value(baseline).unwrap())).into_response()
 }
