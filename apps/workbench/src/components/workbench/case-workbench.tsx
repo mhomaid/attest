@@ -239,9 +239,9 @@ export function CaseWorkbench({ caseRecord }: { caseRecord: CaseRecord }) {
               </span>
             </header>
             <div className="divide-y divide-border/80">
-              {caseRecord.timeline.map((item) => (
+              {caseRecord.timeline.map((item, i) => (
                 <div
-                  key={`${item.time}-${item.actor}`}
+                  key={`${i}-${item.time}-${item.actor}`}
                   className="grid gap-3 px-3 py-3 md:grid-cols-[5rem_8rem_minmax(0,1fr)]"
                 >
                   <div className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
