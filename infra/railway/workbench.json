@@ -9,9 +9,9 @@
     "restartPolicyType": "ON_FAILURE"
   },
   "environmentVariables": {
-    "CONTROL_PLANE_URL": "http://${{ControlPlane.RAILWAY_PRIVATE_DOMAIN}}:8080",
+    "CONTROL_PLANE_URL": "https://${{ControlPlane.RAILWAY_PUBLIC_DOMAIN}}",
     "ARROYO_URL": "http://${{Arroyo.RAILWAY_PRIVATE_DOMAIN}}:5115",
-    "NEXT_PUBLIC_APP_URL": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+    "NEXT_PUBLIC_APP_URL": "https://attest-wb.up.railway.app",
     "NEXT_PUBLIC_CP_WS_URL": "wss://${{ControlPlane.RAILWAY_PUBLIC_DOMAIN}}"
   }
 }
