@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 const HOME_REGION: &str = "us-east-1";
 
-/// Stable region pool for simulated tenants.
+/// Stable region pool for simulated tenants (exported for future use).
+#[allow(dead_code)]
 pub const REGIONS: &[&str] = &[
     "us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1", "sa-east-1",
 ];

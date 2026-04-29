@@ -47,7 +47,7 @@ async fn run_handler(
     State(state): State<SharedState>,
     Json(cfg): Json<RunConfig>,
 ) -> impl IntoResponse {
-    let mut s = state.write().await;
+    let s = state.write().await;
     if let Some(ref handle) = s.run {
         if handle.running.load(std::sync::atomic::Ordering::Relaxed) {
             return (

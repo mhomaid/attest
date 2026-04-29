@@ -317,10 +317,10 @@ load-stop: ## Stop the active load generator run
 	curl -s -X POST http://localhost:9100/stop | jq .
 
 load-cli-smoke: ## Run smoke benchmark directly via CLI (no HTTP, prints live stats)
-	cargo run -p attest-load-gen -- --rate 10000 --duration 30 --tenants 3 --seed-baselines
+	cargo run -p attest-load-gen -- --brokers localhost:19092 --rate 10000 --duration 30 --tenants 3 --seed-baselines
 
 load-cli-burst: ## Run 100k/sec burst via CLI (prints live stats every 5s)
-	cargo run -p attest-load-gen -- --rate 100000 --duration 60 --scenario mixed --tenants 5 --seed-baselines
+	cargo run -p attest-load-gen -- --brokers localhost:19092 --rate 100000 --duration 60 --scenario mixed --tenants 5 --seed-baselines
 
 load-cli-attack: ## Run attack-only scenario via CLI to stress detection rules
-	cargo run -p attest-load-gen -- --rate 5000 --duration 60 --scenario attack --tenants 5 --seed-baselines
+	cargo run -p attest-load-gen -- --brokers localhost:19092 --rate 5000 --duration 60 --scenario attack --tenants 5 --seed-baselines
