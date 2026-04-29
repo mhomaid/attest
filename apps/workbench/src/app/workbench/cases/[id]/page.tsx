@@ -125,11 +125,6 @@ export default async function CasePage({
       verdict: (verdict.verdict.toLowerCase() as CaseRecord["verdict"]) ?? base.verdict,
       confidence: verdict.calibrated_confidence,
       executionPath: (verdict.execution_path as CaseRecord["executionPath"]) ?? base.executionPath,
-      agentStatus: {
-        ...base.agentStatus,
-        state: "done" as const,
-        latencyMs: verdict.latency_ms,
-      },
     }),
     // Use live SHAP feature impacts if available, else fall back to mock.
     featureImpacts: liveFeatureImpacts ?? base.featureImpacts,
