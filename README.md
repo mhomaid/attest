@@ -13,6 +13,7 @@ The agent layer runs on top of the data tier. A Hybrid Triager routes every aler
 | `docs/02_Architecture.md` | System architecture (six-plane model, principles, components) |
 | `docs/03_Architecture_Diagrams.md` | All Mermaid diagrams — C4, data flow, sequences, state machines |
 | `docs/07_Stack_Revised.md` | Canonical tech stack |
+| `docs/15_Streaming_Engine_Decision.md` | Arroyo vs. Flink vs. RisingWave — ADR + interview reference |
 | `docs/10_Build_Order.md` | Phase-by-phase implementation sequence |
 | `docs/11_Repo_Structure.md` | Repository layout |
 
