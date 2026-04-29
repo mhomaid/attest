@@ -238,12 +238,11 @@ railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, c
 
 railway-infra-deploy: ## ⭐ Deploy infra services — handles first-deploy and redeployment automatically
 	@echo "▶ Deploying infrastructure services (redpanda → risingwave → clickhouse → minio → arroyo)…"
-	@echo "  Tries redeploy first; falls back to initial deploy if no prior deployment exists."
+	@echo "  Tries redeploy first; falls back to recreate only for stateless services."
 	@for pair in \
 	    "redpanda confluentinc/cp-kafka:7.7.8" \
 	    "risingwave risingwavelabs/risingwave:latest" \
 	    "clickhouse clickhouse/clickhouse-server:latest" \
-	    "minio minio/minio:latest" \
 	    "arroyo ghcr.io/arroyosystems/arroyo:latest"; do \
 	  svc=$$(echo $$pair | cut -d' ' -f1); \
 	  img=$$(echo $$pair | cut -d' ' -f2); \
@@ -256,6 +255,16 @@ railway-infra-deploy: ## ⭐ Deploy infra services — handles first-deploy and 
 	    railway add --service $$svc --image $$img --variables "_PLACEHOLDER=1"; \
 	  fi; \
 	done
+	@echo "  → minio (volume-backed — never auto-deleted)"
+	@if railway service redeploy --service minio --yes 2>&1; then \
+	  true; \
+	else \
+	  echo "    ↳ minio has no prior deploy."; \
+	  echo "    ↳ Go to the Railway dashboard → minio → Deploy, then set:"; \
+	  echo "        Start command: server /data --console-address :9001"; \
+	  echo "        Volume: attach minio-volume at /data"; \
+	  echo "    ↳ Skipping auto-recreate to protect volume attachment."; \
+	fi
 	@echo ""
 	@echo "✔ Infrastructure deploy triggered."
 	@echo "  Wait ~60s for services to become healthy, then run 'make railway-app-start'."
