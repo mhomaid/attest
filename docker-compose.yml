@@ -22,6 +22,15 @@ services:
       - "9092:9092"
       - "19092:19092"
 
+  redpanda-console:
+    image: redpandadata/console:latest
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8081:8080"
+    depends_on:
+      - redpanda
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -78,6 +87,7 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./infra/clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./infra/clickhouse/init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s

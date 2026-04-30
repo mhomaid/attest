@@ -6,11 +6,15 @@ import "./globals.css";
 const geistSans = Geist({
   subsets: ["latin"],
   variable: "--font-geist-sans",
+  display: "swap",
+  adjustFontFallback: true,
 });
 
 const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-geist-mono",
+  display: "swap",
+  adjustFontFallback: true,
 });
 
 export const metadata = {
@@ -32,7 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
-      <body>
+      <body className="min-h-dvh font-sans antialiased text-foreground">
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -628,7 +628,7 @@ Every Rust HTTP service serves an interactive [Scalar](https://scalar.com) API e
 ### 1. Start infrastructure
 
 ```sh
-make dev-up
+make dev-up-infra
 ```
 
 Starts Redpanda (`:9092`, `:19092`), RisingWave (`:4566`), Postgres (`:5432`), MinIO (`:9000`, console `:9001`), and ClickHouse (`:8123`) in Docker. The `minio-init` one-shot container creates the `attest-warm` bucket automatically and exits with code 0.
@@ -636,7 +636,7 @@ Starts Redpanda (`:9092`, `:19092`), RisingWave (`:4566`), Postgres (`:5432`), M
 ### 2. Start the full platform stack
 
 ```sh
-make dev-up-platform
+make dev-up-services
 ```
 
 Builds and starts `attest-collector` (`:4000`), `attest-control-plane` (`:8080`), `attest-storage-iceberg`, `arroyo` (`:5115`), and `arroyo-pipeline-deployer` using the multi-stage Dockerfiles in `infra/docker/` and the pre-built Arroyo image.
@@ -719,7 +719,7 @@ Phase 4b (Load Lab, Simulate Lab) is tested manually via the UI. Automated E2E f
 
 ### Step-by-Step Platform Test (do this after every significant change)
 
-**Prerequisites:** `make dev-up-platform` is running, `make train-classifier` has been run once.
+**Prerequisites:** `make dev-up-services` is running, `make train-classifier` has been run once.
 
 #### 1. Verify the streaming substrate
 
@@ -915,7 +915,7 @@ make e2e-phase4a
 # Prerequisite: make train-classifier (only needed once, or when golden_cases.json changes)
 ```
 
-Phases 1–3 require `make dev-up-platform` to be running. Phase 4a is self-contained.
+Phases 1–3 require `make dev-up-services` to be running. Phase 4a is self-contained.
 
 ---
 
@@ -1028,12 +1028,14 @@ Attest/
 
 | Target | What it does |
 |---|---|
-| `make dev-up` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
-| `make dev-up-platform` | Start core infra + collector + control-plane + storage-iceberg + arroyo |
-| `make dev-down` | Stop all containers |
+| `make dev-up-infra` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
+| `make dev-up-services` | Start app services only — assumes infra is already running |
+| `make dev-up-all` | ⭐ Start everything in order: infra → init → all services (clean fresh start) |
+| `make dev-down-infra` | Stop core infrastructure containers only |
+| `make dev-down-all` | Stop and remove ALL containers (infra + services) |
 | `make arroyo-ui` | Open Arroyo web UI at http://localhost:5115 |
 | `make arroyo-deploy` | (Re-)deploy SQL pipelines to a running local Arroyo instance |
-| `make e2e-arroyo` | Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires `dev-up-platform`) |
+| `make e2e-arroyo` | Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires `dev-up-services`) |
 | `make train-classifier` | Run full ML pipeline — `train.py` + `novelty.py` + `calibrate.py` via `uv` |
 | `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |

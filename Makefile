@@ -1,18 +1,26 @@
-.PHONY: help dev-up dev-down smoke seed-data fmt test lint railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy train-classifier e2e-phase4a arroyo-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-orchestrator railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase4a arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
 	  /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-dev-up: ## Start all core services (Redpanda, RisingWave, ClickHouse, MinIO, Postgres)
-	docker compose up -d
+dev-up-infra: ## Start core infrastructure (Redpanda, RisingWave, ClickHouse, MinIO, Postgres, Redpanda Console)
+	docker compose up -d redpanda redpanda-console postgres minio clickhouse risingwave
+	docker compose run --rm minio-init
 
-dev-down: ## Stop and remove all containers
+dev-down-infra: ## Stop core infrastructure containers only
 	docker compose down
 
-dev-up-platform: ## Start full platform stack (core + collector + control-plane + iceberg writer + detection runtime + arroyo)
-	docker compose up -d redpanda postgres minio clickhouse risingwave
+dev-down-all: ## Stop and remove ALL containers (infra + services)
+	docker compose --profile platform down
+	docker compose down
+
+dev-up-services: ## Start app services only — assumes infra is already running (use dev-up-all for a fresh start)
+	docker compose --profile platform up -d --build
+
+dev-up-all: ## ⭐ Start everything in order: infra → init → all services (clean fresh start)
+	docker compose up -d redpanda redpanda-console postgres minio clickhouse risingwave
 	docker compose run --rm minio-init
 	docker compose --profile platform up -d --build
 
@@ -29,6 +37,15 @@ train-classifier: ## Train XGBoost classifier + novelty detector + calibration (
 	cd ml && uv run python triager/train.py
 	cd ml && uv run python triager/novelty.py
 	cd ml && uv run python triager/calibrate.py --train
+
+run-calibration: ## Run calibration sidecar natively (port 5001) — faster than Docker rebuild
+	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve
+
+run-orchestrator: ## Run orchestrator natively against local artifacts (requires calibration sidecar on :5001)
+	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
+	  ORCHESTRATOR_PORT=4300 \
+	  CALIBRATION_URL=http://localhost:5001 \
+	  cargo run -p attest-orchestrator
 
 e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans up
 	@echo "==> Starting calibration sidecar (port 5001)..."
@@ -58,7 +75,10 @@ e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans u
 arroyo-ui: ## Open Arroyo web UI in the browser (http://localhost:5115)
 	open http://localhost:5115
 
-e2e-arroyo: ## Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires dev-up-platform)
+redpanda-ui: ## Open Redpanda Console in the browser (http://localhost:8081)
+	open http://localhost:8081
+
+e2e-arroyo: ## Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires dev-up-services)
 	ATTEST_E2E=1 cargo test --test phase_arroyo_pipelines -- --nocapture --test-threads=1
 
 arroyo-deploy: ## Deploy Arroyo SQL pipelines to a running local Arroyo instance
