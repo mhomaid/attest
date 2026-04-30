@@ -1,12 +1,14 @@
 //! Agent Runtime Orchestrator — implements the Hybrid execution loop.
 //!
-//! Phase 4a: Classifier path is fully wired. LLM escalation is a stub
-//! (EscalatedStub envelope variant); real Claude wiring comes in Phase 4b.
+//! Phase 4b: Full LLM escalation wired via `attest-inference-router` and
+//! the MCP gateway. `EscalatedStub` is kept only as a graceful fallback.
 //!
 //! Entry point: `POST /triage` → `run_triage(request)` → `TriageVerdict`
 
 pub mod agent;
 pub mod calibration;
+pub mod llm_loop;
+pub mod mcp_client;
 pub mod server;
 pub mod triage;
 

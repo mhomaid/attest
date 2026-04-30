@@ -9,8 +9,18 @@
 //!   ATTEST_SIGNING_KEY      Hex-encoded 32-byte Ed25519 seed (generated fresh if absent)
 //!   CALIBRATION_URL         Calibration sidecar URL (default http://localhost:5001)
 //!   ATTEST_LOG_PATH         Attestation log file path (default ./attestations.ndjson)
+//!   MCP_GATEWAY_URL         MCP gateway URL (default http://localhost:4500)
+//!   SYSTEM_PROMPT_PATH      Path to the triager system prompt (default ./agents/triager/system_prompt_v1.md)
+//!
+//! LLM inference (Phase 4b):
+//!   ATTEST_LLM_PROVIDER     "local" (default) | "anthropic"
+//!   ATTEST_LLM_BASE_URL     OpenAI-compat base URL for local provider
+//!                           (default http://127.0.0.1:8888/v1)
+//!   ATTEST_LLM_MODEL        Model ID (default unsloth/Qwen3.6-35B-A3B-GGUF)
+//!   ANTHROPIC_API_KEY       Required when ATTEST_LLM_PROVIDER=anthropic
 
 use attest_attestation::Signer;
+use attest_inference_router::from_env as llm_from_env;
 use attest_orchestrator::{
     agent::{AgentDefinition, ClassifierArtifact, ExecutionPath},
     build_router,
@@ -41,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "0.70".into())
         .parse()?;
 
-    // Load model SHA-256 from artifacts (produced by train.py)
+    // ── Classifier artifacts ──────────────────────────────────────────────────
     let model_hash_path = format!("{artifacts_dir}/model_hash.txt");
     let model_artifact_hash = std::fs::read_to_string(&model_hash_path)
         .unwrap_or_else(|_| "unknown".into())
@@ -66,16 +76,66 @@ async fn main() -> anyhow::Result<()> {
         novelty_threshold,
     };
 
+    // ── System prompt ─────────────────────────────────────────────────────────
+    let system_prompt_path = std::env::var("SYSTEM_PROMPT_PATH")
+        .unwrap_or_else(|_| "./agents/triager/system_prompt_v1.md".into());
+
+    let system_prompt = std::fs::read_to_string(&system_prompt_path)
+        .unwrap_or_else(|e| {
+            tracing::warn!(path = %system_prompt_path, error = %e, "system prompt file not found — using empty prompt");
+            String::new()
+        });
+
+    let system_prompt_hash = hex::encode(Sha256::digest(system_prompt.as_bytes()));
+    tracing::info!(
+        path = %system_prompt_path,
+        hash = %&system_prompt_hash[..16],
+        bytes = system_prompt.len(),
+        "System prompt loaded"
+    );
+
+    // ── LLM client ────────────────────────────────────────────────────────────
+    let llm_provider = std::env::var("ATTEST_LLM_PROVIDER").unwrap_or_else(|_| "local".into());
+    let llm_model = std::env::var("ATTEST_LLM_MODEL")
+        .unwrap_or_else(|_| "unsloth/Qwen3.6-35B-A3B-GGUF".into());
+    let mcp_url = std::env::var("MCP_GATEWAY_URL")
+        .unwrap_or_else(|_| "http://localhost:4242".into());
+
+    let llm_client = match llm_from_env() {
+        Ok(c) => {
+            tracing::info!(
+                provider = c.provider(),
+                model = c.model_id(),
+                mcp_url = %mcp_url,
+                "LLM escalation path ready"
+            );
+            Some(c)
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                provider = %llm_provider,
+                model = %llm_model,
+                "LLM client unavailable — escalated alerts will fall back to EscalatedStub"
+            );
+            None
+        }
+    };
+
+    // ── Agent definition ──────────────────────────────────────────────────────
     let agent_def = AgentDefinition {
         id: "triager-hybrid-v1".into(),
         role: AgentRole::Triager,
         execution: ExecutionPath::Hybrid {
             primary: Box::new(ExecutionPath::Classifier { artifact }),
             escalation: Box::new(ExecutionPath::Llm {
-                provider: "anthropic".into(),
-                model_id: "claude-haiku-3-5".into(),
-                system_prompt_hash: "stub".into(),
-                max_iterations: 5,
+                provider: llm_provider,
+                model_id: llm_model,
+                system_prompt_hash: system_prompt_hash.clone(),
+                max_iterations: std::env::var("LLM_MAX_ITERATIONS")
+                    .unwrap_or_else(|_| "8".into())
+                    .parse()
+                    .unwrap_or(8),
             }),
         },
         version_hash: {
@@ -83,12 +143,14 @@ async fn main() -> anyhow::Result<()> {
                 "id": "triager-hybrid-v1",
                 "escalation_threshold": escalation_threshold,
                 "novelty_threshold": novelty_threshold,
+                "system_prompt_hash": system_prompt_hash,
             }))
             .unwrap();
             hex::encode(Sha256::digest(s.as_bytes()))
         },
     };
 
+    // ── Signing key ───────────────────────────────────────────────────────────
     let signer = if let Ok(seed) = std::env::var("ATTEST_SIGNING_KEY") {
         Signer::from_hex_seed(&seed)?
     } else {
@@ -98,11 +160,18 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(verifying_key = %signer.verifying_key_hex(), "Ed25519 signing key ready");
 
-    let engine = TriageEngine::load(agent_def, Arc::new(signer))?;
-    let router = build_router(engine);
+    // ── Build engine and start server ─────────────────────────────────────────
+    let engine = TriageEngine::load(
+        agent_def,
+        Arc::new(signer),
+        system_prompt,
+        system_prompt_hash,
+        llm_client,
+    )?;
 
+    let router = build_router(engine);
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
-    tracing::info!(port, artifacts_dir, "Orchestrator listening");
+    tracing::info!(port, artifacts_dir, mcp_url, "Orchestrator listening");
 
     axum::serve(listener, router).await?;
     Ok(())

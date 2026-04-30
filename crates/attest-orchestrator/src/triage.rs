@@ -1,15 +1,19 @@
-//! Core triage execution loop — Hybrid path (Classifier primary, stub LLM escalation).
+//! Core triage execution loop — Hybrid path (Classifier primary, LLM escalation).
 //!
-//! Implements the pseudocode from `docs/09_Agent_Harness.md` §4.1.3.
+//! Phase 4b: EscalatedStub is replaced with a real `run_llm_loop` call.
+//! EscalatedStub is kept only as a graceful fallback when the LLM call fails.
 
 use crate::agent::{AgentDefinition, ClassifierArtifact, ExecutionPath};
 use crate::calibration::CalibrationClient;
+use crate::llm_loop::{run_llm_loop, LlmLoopError};
+use crate::mcp_client::McpClient;
 use anyhow::{Context, Result};
 use attest_attestation::{
     AttestationEnvelope, AttestationLog, ClassifierEvidence, EscalationReason,
     EvidenceBlock, ExecutionPathKind, Signer, TimingBlock, Verdict,
 };
 use attest_feature_extractor::FeatureExtractor;
+use attest_inference_router::ChatClient;
 use attest_onnx_runtime::{NoveltyDetector, OnnxClassifier};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -38,7 +42,7 @@ pub struct TriageVerdict {
     pub execution_path: ExecutionPathKind,
     pub calibrated_confidence: f32,
     pub novelty_score: f32,
-    /// If true, escalated to LLM stub (Phase 4b will replace with real Claude call).
+    /// True when the LLM escalation path was taken.
     pub escalated: bool,
     pub escalation_reason: Option<String>,
     pub latency_ms: u64,
@@ -54,14 +58,30 @@ pub struct TriageEngine {
     calibration: CalibrationClient,
     attestation_log: AttestationLog,
     signer: Arc<Signer>,
-    /// Hex-encoded Ed25519 verifying key — published via `/agent` so external
-    /// parties can verify attestation envelope signatures offline.
+    /// Hex-encoded Ed25519 verifying key — published via `/agent` for offline verification.
     pub verifying_key: String,
+    /// Pre-loaded system prompt text.
+    pub system_prompt: String,
+    /// SHA-256 hex of the system prompt (stored on `LlmEvidence`).
+    pub system_prompt_hash: String,
+    /// LLM chat client (Arc so it is shared across concurrent triage calls).
+    llm_client: Option<Arc<Box<dyn ChatClient>>>,
+    /// MCP gateway client.
+    mcp_client: McpClient,
 }
 
 impl TriageEngine {
     /// Load all ONNX artifacts and build the engine.
-    pub fn load(agent: AgentDefinition, signer: Arc<Signer>) -> Result<Self> {
+    ///
+    /// `system_prompt` and `system_prompt_hash` are passed in from `main`
+    /// (the hash is computed at startup so we can record it on every envelope).
+    pub fn load(
+        agent: AgentDefinition,
+        signer: Arc<Signer>,
+        system_prompt: String,
+        system_prompt_hash: String,
+        llm_client: Option<Box<dyn ChatClient>>,
+    ) -> Result<Self> {
         let artifact = extract_classifier_artifact(&agent.execution)?;
 
         let classifier = OnnxClassifier::load(
@@ -87,6 +107,10 @@ impl TriageEngine {
             attestation_log: AttestationLog::from_env(),
             signer,
             verifying_key,
+            system_prompt,
+            system_prompt_hash,
+            llm_client: llm_client.map(|c| Arc::new(c)),
+            mcp_client: McpClient::from_env(),
         })
     }
 
@@ -107,9 +131,9 @@ impl TriageEngine {
         let (raw_score, shap_values) = self.classifier.predict(&features)
             .context("classifier inference failed")?;
 
-        // 3. Calibration
+        // 3. Calibration (classifier path)
         let case_class = infer_case_class(&req.alert);
-        let calibrated = self.calibration.calibrate(&self.agent.id, &case_class, raw_score).await;
+        let calibrated = self.calibration.calibrate(&self.agent.id, &case_class, raw_score, "classifier").await;
 
         // 4. Novelty score
         let novelty_score = self.novelty.score(&features);
@@ -138,21 +162,55 @@ impl TriageEngine {
             );
 
             let reason_str = format!("{:?}", reason);
+
             tracing::info!(
                 action_id = %action_id,
                 case_id = %case_id,
                 calibrated,
                 novelty_score,
                 reason = %reason_str,
-                "escalating to LLM stub (Phase 4b)"
+                "escalating to LLM"
             );
 
-            (
-                Verdict::EscalatedStub,
-                ExecutionPathKind::Hybrid,
-                EvidenceBlock::EscalatedStub { classifier_draft, escalation_reason: reason },
-                Some(reason_str),
-            )
+            // Phase 4b: call the real LLM loop
+            match self.try_llm_escalation(
+                action_id,
+                classifier_draft.clone(),
+                reason.clone(),
+                &req.alert,
+            ).await {
+                Ok((llm_verdict, hybrid_evidence)) => {
+                    tracing::info!(
+                        action_id = %action_id,
+                        verdict = ?llm_verdict,
+                        "LLM escalation produced Hybrid envelope"
+                    );
+                    (
+                        llm_verdict,
+                        ExecutionPathKind::Hybrid,
+                        EvidenceBlock::Hybrid(hybrid_evidence),
+                        Some(reason_str),
+                    )
+                }
+                Err(e) => {
+                    // Graceful fallback: keep the EscalatedStub so /triage never 500s
+                    tracing::warn!(
+                        action_id = %action_id,
+                        error = %e,
+                        error_debug = ?e,
+                        "LLM escalation failed — falling back to EscalatedStub"
+                    );
+                    (
+                        Verdict::EscalatedStub,
+                        ExecutionPathKind::Hybrid,
+                        EvidenceBlock::EscalatedStub {
+                            classifier_draft,
+                            escalation_reason: reason,
+                        },
+                        Some(reason_str),
+                    )
+                }
+            }
         } else {
             // Confident classifier disposition
             let label = if calibrated >= 0.5 { Verdict::TruePositive } else { Verdict::Benign };
@@ -219,6 +277,50 @@ impl TriageEngine {
             },
         })
     }
+
+    /// Attempt LLM escalation; returns an error if no LLM client is configured or
+    /// if the loop itself fails.
+    async fn try_llm_escalation(
+        &self,
+        action_id: Uuid,
+        classifier_draft: ClassifierEvidence,
+        escalation_reason: EscalationReason,
+        alert: &Value,
+    ) -> Result<(Verdict, attest_attestation::HybridEvidence), LlmLoopError> {
+        let client = self.llm_client.as_ref().ok_or_else(|| {
+            LlmLoopError::Provider(anyhow::anyhow!(
+                "no LLM client configured — set ATTEST_LLM_PROVIDER env var"
+            ))
+        })?;
+
+        let max_iterations = self.llm_max_iterations();
+
+        let result = run_llm_loop(
+            client.as_ref().as_ref(),
+            &self.mcp_client,
+            &self.agent,
+            &self.system_prompt,
+            &self.system_prompt_hash,
+            alert,
+            classifier_draft,
+            escalation_reason,
+            max_iterations,
+            action_id,
+        ).await?;
+
+        Ok((result.verdict, result.evidence))
+    }
+
+    fn llm_max_iterations(&self) -> u8 {
+        match &self.agent.execution {
+            ExecutionPath::Hybrid { escalation, .. } => match escalation.as_ref() {
+                ExecutionPath::Llm { max_iterations, .. } => *max_iterations,
+                _ => 8,
+            },
+            ExecutionPath::Llm { max_iterations, .. } => *max_iterations,
+            _ => 8,
+        }
+    }
 }
 
 fn build_classifier_evidence(
@@ -256,7 +358,6 @@ fn infer_case_class(alert: &Value) -> String {
     if let Some(s) = alert["case_class"].as_str() {
         return s.to_string();
     }
-    // Heuristic from feature values
     let severity = alert["severity_score"].as_f64().unwrap_or(0.5);
     let rep = alert["entity_reputation_score"].as_f64().unwrap_or(0.0);
     let bd = alert["baseline_deviation"].as_f64().unwrap_or(0.0);

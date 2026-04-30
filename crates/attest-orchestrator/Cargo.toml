@@ -7,8 +7,10 @@ repository.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 attest-attestation = { path = "../attest-attestation" }
 attest-feature-extractor = { path = "../attest-feature-extractor" }
+attest-inference-router = { path = "../attest-inference-router" }
 attest-onnx-runtime = { path = "../attest-onnx-runtime" }
 attest-policy-engine = { path = "../attest-policy-engine" }
 axum = { workspace = true }
@@ -18,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
@@ -25,3 +28,7 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 utoipa = { workspace = true }
 utoipa-scalar = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6"
