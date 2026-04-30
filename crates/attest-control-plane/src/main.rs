@@ -15,7 +15,7 @@ mod routes;
 mod state;
 
 use anyhow::Context;
-use axum::{Router, routing::{get, post}};
+use axum::{Router, middleware::from_fn, routing::{get, post}};
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
@@ -24,7 +24,6 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
-use tracing_subscriber::{fmt, EnvFilter};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable as _};
 
@@ -70,11 +69,9 @@ struct ApiDoc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
+    let service_name =
+        std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "attest-control-plane".into());
+    let _otel = attest_telemetry::init_subscriber_with_otel(&service_name)?;
 
     let rw_host = std::env::var("RISINGWAVE_HOST").unwrap_or_else(|_| "localhost".into());
     let rw_port: u16 = std::env::var("RISINGWAVE_PORT")
@@ -176,7 +173,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/warm/query",             post(post_warm_query))
         .with_state(ch_url)
         .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
-        .layer(cors);
+        .layer(cors)
+        .layer(from_fn(attest_telemetry::axum_trace_propagation));
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("attest-control-plane listening on {addr}");

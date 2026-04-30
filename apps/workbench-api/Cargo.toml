@@ -6,4 +6,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-
+anyhow = { workspace = true }
+axum = { workspace = true }
+attest-attestation = { path = "../../crates/attest-attestation" }
+attest-telemetry = { path = "../../crates/attest-telemetry" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

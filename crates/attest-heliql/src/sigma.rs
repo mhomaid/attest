@@ -58,6 +58,13 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
         .map(map_sigma_level)
         .unwrap_or(Severity::Medium);
 
+    let condition = sigma.detection.as_ref().and_then(|d| d.condition.as_deref());
+    let description = merge_sigma_meta(
+        sigma.description.clone(),
+        sigma.status.as_deref(),
+        condition,
+    );
+
     let mitre = sigma
         .tags
         .as_deref()
@@ -78,6 +85,9 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
             (Some("aws"), Some("cloudtrail")) => Some("ocsf.authentication".to_string()),
             (Some("okta"), _)                => Some("ocsf.authentication".to_string()),
             (Some("azure") | Some("m365"), _) => Some("ocsf.authentication".to_string()),
+            _ if ls.category.as_deref().is_some_and(|c| c.eq_ignore_ascii_case("authentication")) => {
+                Some("ocsf.authentication".to_string())
+            }
             _ => None,
         }
     });
@@ -101,7 +111,7 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
 
     Ok(Detection {
         id,
-        description: sigma.description,
+        description,
         applies_to,
         entity: Some("identity.user".to_string()),
         where_conditions,
@@ -110,6 +120,28 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
         mitre,
         runtime: vec![Runtime::Stream],
     })
+}
+
+fn merge_sigma_meta(
+    base: Option<String>,
+    status: Option<&str>,
+    condition: Option<&str>,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(d) = base.filter(|s| !s.trim().is_empty()) {
+        parts.push(d);
+    }
+    if let Some(s) = status.filter(|s| !s.trim().is_empty()) {
+        parts.push(format!("Sigma status: {s}"));
+    }
+    if let Some(c) = condition.filter(|s| !s.trim().is_empty()) {
+        parts.push(format!("Sigma condition: {c}"));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
+    }
 }
 
 fn sigma_selection_to_atoms(val: &serde_json::Value) -> Option<Vec<ConditionAtom>> {

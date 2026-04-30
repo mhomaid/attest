@@ -17,6 +17,42 @@ pub enum Verdict {
     EscalatedStub,
 }
 
+/// Case disposition after the shadow-check gate (Phase 6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CaseState {
+    /// Closed automatically — shadow check approved, signed envelope emitted.
+    AutoClosed,
+    /// Routed to the human review queue.
+    #[default]
+    PendingHumanReview,
+}
+
+/// The shadow-check gate decision embedded in auto-close envelopes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShadowCheckDecision {
+    pub allowed: bool,
+    /// Human-readable explanation (always populated).
+    pub reason: String,
+    /// Ordered list of policy names that were evaluated.
+    pub policies_evaluated: Vec<String>,
+}
+
+/// Evidence embedded in an `EvidenceBlock::AutoClose` envelope.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoCloseEvidence {
+    /// The classifier or hybrid evidence that produced the verdict.
+    pub classifier_evidence: ClassifierEvidence,
+    /// The shadow-check gate result.
+    pub shadow_check: ShadowCheckDecision,
+    /// The threshold that was configured at auto-close time.
+    pub auto_close_threshold: f32,
+    /// Principal extracted from the alert.
+    pub principal: String,
+    /// Action class extracted from the alert.
+    pub action_class: String,
+}
+
 /// Which execution path produced this envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -140,6 +176,8 @@ pub enum EvidenceBlock {
         classifier_draft: ClassifierEvidence,
         escalation_reason: EscalationReason,
     },
+    /// Phase 6: Triager auto-closed the case after shadow-check approval.
+    AutoClose(AutoCloseEvidence),
 }
 
 /// Common signed wrapper shared by all three envelope variants.

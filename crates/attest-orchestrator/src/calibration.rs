@@ -1,6 +1,6 @@
 //! Calibration sidecar client.
 //!
-//! Calls the Python Flask sidecar at `CALIBRATION_URL` (default http://localhost:5001).
+//! Calls the Python FastAPI calibration sidecar at `CALIBRATION_URL` (default http://localhost:5001).
 //! Phase 4b adds an optional `path` tag ("classifier" | "llm") so the sidecar can
 //! maintain per-path calibration models. The sidecar falls back to the per-class
 //! model when no per-path model is trained yet.

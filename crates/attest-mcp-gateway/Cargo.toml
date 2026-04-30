@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 attest-policy-engine = { path = "../attest-policy-engine" }
+attest-telemetry = { path = "../attest-telemetry" }
+http = "1"
 axum = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }

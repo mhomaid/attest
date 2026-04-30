@@ -21,6 +21,9 @@ services:
     ports:
       - "9092:9092"
       - "19092:19092"
+    volumes:
+      # Persists topics/partitions across `docker compose down` (omit `down -v`).
+      - redpanda-data:/var/lib/redpanda/data
 
   redpanda-console:
     image: redpandadata/console:latest
@@ -94,6 +97,19 @@ services:
       timeout: 5s
       retries: 10
 
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./infra/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  # Playground mode is in-memory only; a volume here would not preserve MV/catalog state.
+  # For durable RisingWave, replace with standalone + object store (see RisingWave Docker Compose docs).
   risingwave:
     image: risingwavelabs/risingwave:latest
     command: playground
@@ -178,8 +194,11 @@ services:
       KAFKA_BROKERS: redpanda:9092
       TENANT_ID: local-dev
       PORT: "4000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-collector
     depends_on:
       - redpanda
+      - tempo
     profiles:
       - platform
 
@@ -197,10 +216,13 @@ services:
       PORT: "8080"
       LOAD_GEN_URL: http://load-gen:9100
       ORCHESTRATOR_URL: http://orchestrator:4300
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-control-plane
     depends_on:
       - risingwave
       - redpanda
       - clickhouse
+      - tempo
     profiles:
       - platform
 
@@ -272,11 +294,20 @@ services:
       ESCALATION_THRESHOLD: "0.60"
       NOVELTY_THRESHOLD: "0.70"
       ATTEST_LOG_PATH: /data/attestations.ndjson
+      MCP_GATEWAY_URL: http://mcp-gateway:4242
+      SYSTEM_PROMPT_PATH: /agents/triager/system_prompt_v1.md
+      REVIEWER_PROMPT_PATH: /agents/triager/reviewer_prompt_v1.md
+      INVESTIGATOR_PROMPT_PATH: /agents/investigator/system_prompt_v1.md
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-orchestrator
     volumes:
       - ./ml/triager/artifacts:/artifacts:ro
+      - ./agents:/agents:ro
       - attestation-log:/data
     depends_on:
       - calibration-sidecar
+      - mcp-gateway
+      - tempo
     profiles:
       - platform
 
@@ -290,11 +321,13 @@ services:
       MCP_GATEWAY_PORT: "4242"
       CONTROL_PLANE_URL: http://control-plane:8080
       ATTEST_LOG_PATH: /data/attestations.ndjson
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-mcp-gateway
     volumes:
       - attestation-log:/data
     depends_on:
       - control-plane
-      - orchestrator
+      - tempo
     profiles:
       - platform
 
@@ -325,8 +358,10 @@ services:
       - bench
 
 volumes:
+  redpanda-data:
   postgres-data:
   minio-data:
   clickhouse-data:
+  tempo-data:
   llama-models:
   attestation-log:

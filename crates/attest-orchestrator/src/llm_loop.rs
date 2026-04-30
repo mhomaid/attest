@@ -16,7 +16,6 @@ use crate::guardrails::{
     retrieval_reprompt, validate_citations, EnforcementMode,
 };
 use crate::mcp_client::McpClient;
-use anyhow::Result;
 use attest_attestation::{
     CrossReviewBlock, EscalationReason, HybridEvidence, IntermediateBelief, LlmEvidence,
     ToolCallRecord, ClassifierEvidence,
@@ -120,7 +119,74 @@ fn triager_tools() -> Vec<ToolDef> {
     ]
 }
 
-/// Build `LlmEvidence` metadata from loop state.
+/// Tool definitions for the Investigator agent (Triager tools + warm tier + MVP stubs).
+pub(crate) fn investigator_tools() -> Vec<ToolDef> {
+    let mut tools = triager_tools();
+    tools.push(ToolDef {
+        name: "query_warm_tier".into(),
+        description: "Query historical security events from the Iceberg warm tier via ClickHouse. Use read-only SELECT.".into(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "sql": { "type": "string", "description": "Read-only SELECT against warm-tier tables" },
+                "limit": { "type": "integer", "default": 500, "description": "Max rows to return (capped server-side)" }
+            },
+            "required": ["sql"]
+        }),
+    });
+    tools.push(ToolDef {
+        name: "analyze_code_snippet".into(),
+        description: "Static analysis stub for code referenced in an alert (MVP returns synthetic findings).".into(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "snippet_id": { "type": "string" },
+                "code": { "type": "string" }
+            },
+            "required": ["snippet_id"]
+        }),
+    });
+    tools.push(ToolDef {
+        name: "sandbox_detonate".into(),
+        description: "Sandbox detonation stub for suspicious payloads (MVP — no real detonation).".into(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "artifact_hash": { "type": "string" }
+            },
+            "required": ["artifact_hash"]
+        }),
+    });
+    tools
+}
+
+/// Build `LlmEvidence` using explicit model metadata (Investigator path).
+#[allow(clippy::too_many_arguments)]
+fn build_llm_evidence_for_model(
+    model_provider: &str,
+    model_id: &str,
+    system_prompt_hash: &str,
+    tool_calls: Vec<ToolCallRecord>,
+    intermediate_beliefs: Vec<IntermediateBelief>,
+    evidence_citations: Vec<String>,
+    total_iterations: u8,
+    validation_retries: u8,
+) -> LlmEvidence {
+    let model_version_hash = hex::encode(Sha256::digest(model_id.as_bytes()));
+    LlmEvidence {
+        model_provider: model_provider.to_string(),
+        model_id: model_id.to_string(),
+        model_version_hash,
+        system_prompt_hash: system_prompt_hash.to_string(),
+        tool_calls,
+        intermediate_beliefs,
+        evidence_citations,
+        total_iterations,
+        validation_retries,
+        cross_review: None,
+    }
+}
+
 fn build_llm_evidence(
     agent: &AgentDefinition,
     system_prompt_hash: &str,
@@ -132,28 +198,22 @@ fn build_llm_evidence(
 ) -> LlmEvidence {
     let (provider, model_id) = match &agent.execution {
         ExecutionPath::Hybrid { escalation, .. } => match escalation.as_ref() {
-            ExecutionPath::Llm { provider, model_id, .. } => (provider.clone(), model_id.clone()),
-            _ => ("unknown".into(), "unknown".into()),
+            ExecutionPath::Llm { provider, model_id, .. } => (provider.as_str(), model_id.as_str()),
+            _ => ("unknown", "unknown"),
         },
-        ExecutionPath::Llm { provider, model_id, .. } => (provider.clone(), model_id.clone()),
-        _ => ("unknown".into(), "unknown".into()),
+        ExecutionPath::Llm { provider, model_id, .. } => (provider.as_str(), model_id.as_str()),
+        _ => ("unknown", "unknown"),
     };
-
-    // Derive a model version hash from the model ID string
-    let model_version_hash = hex::encode(Sha256::digest(model_id.as_bytes()));
-
-    LlmEvidence {
-        model_provider: provider,
+    build_llm_evidence_for_model(
+        provider,
         model_id,
-        model_version_hash,
-        system_prompt_hash: system_prompt_hash.to_string(),
+        system_prompt_hash,
         tool_calls,
         intermediate_beliefs,
         evidence_citations,
         total_iterations,
         validation_retries,
-        cross_review: None,
-    }
+    )
 }
 
 /// Map a model verdict string to the attestation `Verdict` enum.
@@ -461,6 +521,235 @@ pub async fn run_llm_loop(
             };
 
             return Ok(LlmLoopResult { evidence: hybrid, verdict });
+        }
+    }
+
+    Err(LlmLoopError::MaxIterations(max_iterations))
+}
+
+/// Result of the Investigator agent loop (Phase 7 — `Llm` execution path only).
+#[derive(Debug)]
+pub struct InvestigatorLlmResult {
+    pub evidence: LlmEvidence,
+    pub verdict: attest_attestation::Verdict,
+}
+
+/// Multi-turn Investigator loop after Triager returns `NeedsInvestigation`.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_investigator_llm_loop(
+    client: &dyn ChatClient,
+    mcp: &McpClient,
+    investigator_agent_id: &str,
+    system_prompt: &str,
+    system_prompt_hash: &str,
+    alert: &Value,
+    triage_context: &str,
+    triage_calibrated_confidence: f32,
+    max_iterations: u8,
+    action_id: Uuid,
+    enforcement: Option<EnforcementMode>,
+    guardrail_retries_cap: Option<u8>,
+) -> Result<InvestigatorLlmResult, LlmLoopError> {
+    use crate::guardrails::investigator_retrieval_reprompt;
+
+    let enforcement = enforcement.unwrap_or_else(EnforcementMode::from_env);
+    let guardrail_retries_cap = guardrail_retries_cap.unwrap_or_else(max_validation_retries);
+    let tools = investigator_tools();
+    let mut messages: Vec<ChatMessage> = vec![
+        ChatMessage::system(system_prompt),
+        ChatMessage::user(format!(
+            "{triage_context}\n\nFull alert JSON:\n{}",
+            serde_json::to_string_pretty(alert).unwrap_or_else(|_| alert.to_string())
+        )),
+    ];
+
+    let mut tool_call_records: Vec<ToolCallRecord> = Vec::new();
+    let mut intermediate_beliefs: Vec<IntermediateBelief> = Vec::new();
+    let mut validation_retries: u8 = 0;
+    let mut successful_call_ids: Vec<String> = Vec::new();
+
+    for iteration in 0..max_iterations {
+        let req = ChatRequest::new(messages.clone(), tools.clone());
+        let resp = client.chat(req).await.map_err(LlmLoopError::Provider)?;
+
+        tracing::debug!(
+            iteration,
+            action_id = %action_id,
+            phase = "investigator",
+            has_tool_calls = resp.has_tool_calls(),
+            "Investigator LLM iteration"
+        );
+
+        if resp.has_tool_calls() {
+            intermediate_beliefs.push(IntermediateBelief {
+                iteration,
+                content_summary: if resp.content.is_empty() {
+                    format!("requesting {} tool calls", resp.tool_calls.len())
+                } else {
+                    truncate_summary(&resp.content, 200)
+                },
+                self_reported_confidence: None,
+                timestamp: Utc::now(),
+            });
+
+            messages.push(ChatMessage::Assistant {
+                content: resp.content.clone(),
+                tool_calls: Some(resp.tool_calls.iter().map(|tc| {
+                    attest_inference_router::ToolCall {
+                        id: tc.id.clone(),
+                        name: tc.name.clone(),
+                        arguments: tc.arguments.clone(),
+                    }
+                }).collect()),
+            });
+
+            for tc in &resp.tool_calls {
+                let result = mcp
+                    .invoke(
+                        investigator_agent_id,
+                        action_id,
+                        "investigator",
+                        &tc.name,
+                        &tc.arguments,
+                        triage_calibrated_confidence,
+                    )
+                    .await;
+
+                let (tool_output, record) = match result {
+                    Ok(r) => {
+                        let output = r
+                            .result
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| r.error.unwrap_or_else(|| "tool denied".into()));
+                        (output, r.record)
+                    }
+                    Err(e) => {
+                        tracing::warn!(tool = %tc.name, error = %e, "Investigator MCP tool failed");
+                        let dummy_record = ToolCallRecord {
+                            tool_id: tc.name.clone(),
+                            args_hash: hex::encode(Sha256::digest(
+                                serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                            )),
+                            result_hash: hex::encode(Sha256::digest(e.to_string().as_bytes())),
+                            latency_ms: 0,
+                            policy_decision: "error".into(),
+                            timestamp: Utc::now(),
+                        };
+                        (format!("error: {e}"), dummy_record)
+                    }
+                };
+
+                tool_call_records.push(record);
+                if tool_call_records
+                    .last()
+                    .map(|r| r.policy_decision == "allow")
+                    .unwrap_or(false)
+                {
+                    successful_call_ids.push(tc.id.clone());
+                }
+                messages.push(ChatMessage::tool_result(tc.id.clone(), tool_output));
+            }
+        } else {
+            let raw_content = resp.content.trim().to_string();
+            let json_str = extract_json_block(&raw_content);
+            let model_verdict: ModelVerdict = serde_json::from_str(&json_str).map_err(|e| {
+                LlmLoopError::InvalidVerdict(format!(
+                    "could not parse verdict JSON: {e}\nraw: {json_str}"
+                ))
+            })?;
+
+            if enforcement == EnforcementMode::On && !has_retrieved_evidence(&tool_call_records) {
+                if validation_retries >= guardrail_retries_cap {
+                    let llm_evidence = build_llm_evidence_for_model(
+                        client.provider(),
+                        client.model_id(),
+                        system_prompt_hash,
+                        tool_call_records,
+                        intermediate_beliefs,
+                        vec![],
+                        iteration + 1,
+                        validation_retries,
+                    );
+                    return Ok(InvestigatorLlmResult {
+                        evidence: llm_evidence,
+                        verdict: attest_attestation::Verdict::NeedsInvestigation,
+                    });
+                }
+                validation_retries += 1;
+                intermediate_beliefs.push(IntermediateBelief {
+                    iteration,
+                    content_summary: format!("guardrail_retry:{validation_retries} no-retrieval"),
+                    self_reported_confidence: Some(0.0),
+                    timestamp: Utc::now(),
+                });
+                messages.push(ChatMessage::user(investigator_retrieval_reprompt().to_string()));
+                continue;
+            }
+
+            let citation_report = validate_citations(
+                &model_verdict.reasoning,
+                &model_verdict.evidence_citations,
+                &successful_call_ids,
+            );
+
+            if enforcement == EnforcementMode::On && !citation_report.passed {
+                if validation_retries >= guardrail_retries_cap {
+                    let llm_evidence = build_llm_evidence_for_model(
+                        client.provider(),
+                        client.model_id(),
+                        system_prompt_hash,
+                        tool_call_records,
+                        intermediate_beliefs,
+                        model_verdict.evidence_citations,
+                        iteration + 1,
+                        validation_retries,
+                    );
+                    return Ok(InvestigatorLlmResult {
+                        evidence: llm_evidence,
+                        verdict: attest_attestation::Verdict::NeedsInvestigation,
+                    });
+                }
+                validation_retries += 1;
+                intermediate_beliefs.push(IntermediateBelief {
+                    iteration,
+                    content_summary: format!("guardrail_retry:{validation_retries} citation-fail"),
+                    self_reported_confidence: Some(0.0),
+                    timestamp: Utc::now(),
+                });
+                messages.push(ChatMessage::user(citation_reprompt(&citation_report)));
+                continue;
+            }
+
+            intermediate_beliefs.push(IntermediateBelief {
+                iteration,
+                content_summary: if model_verdict.reasoning.is_empty() {
+                    truncate_summary(&raw_content, 300)
+                } else {
+                    truncate_summary(&model_verdict.reasoning, 300)
+                },
+                self_reported_confidence: model_verdict.confidence,
+                timestamp: Utc::now(),
+            });
+
+            let verdict = parse_verdict(&model_verdict.verdict);
+            let evidence_citations = model_verdict.evidence_citations;
+            let total_iterations = iteration + 1;
+
+            let llm_evidence = build_llm_evidence_for_model(
+                client.provider(),
+                client.model_id(),
+                system_prompt_hash,
+                tool_call_records,
+                intermediate_beliefs,
+                evidence_citations,
+                total_iterations,
+                validation_retries,
+            );
+
+            return Ok(InvestigatorLlmResult {
+                evidence: llm_evidence,
+                verdict,
+            });
         }
     }
 

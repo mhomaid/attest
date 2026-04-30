@@ -104,7 +104,6 @@ const MetricChart = memo(function MetricChart({
 }: MetricChartProps) {
   const chartData = useMemo(
     () => data.map((s, i) => ({ t: i, v: s[dataKey] as number })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, dataKey],
   );
 
@@ -214,6 +213,7 @@ export default function LoadPage() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef        = useRef(1000);
   const mountedRef        = useRef(true);
+  const connectWsRef      = useRef<() => void>(() => {});
   const [wsConnected, setWsConnected] = useState(false);
 
   // Track mount status so the WS close handler never schedules reconnects after unmount.
@@ -249,7 +249,7 @@ export default function LoadPage() {
         setWsConnected(false);
         reconnectTimerRef.current = setTimeout(() => {
           backoffRef.current = Math.min(backoffRef.current * 1.5, 30_000);
-          connectWs();
+          connectWsRef.current();
         }, backoffRef.current);
       };
 
@@ -259,6 +259,10 @@ export default function LoadPage() {
       };
     } catch {/* WebSocket unavailable during SSR — safe to ignore */}
   }, [ingestSnapshot]);
+
+  useEffect(() => {
+    connectWsRef.current = connectWs;
+  }, [connectWs]);
 
   useEffect(() => {
     connectWs();

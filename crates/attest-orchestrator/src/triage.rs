@@ -6,16 +6,21 @@
 //! Phase 5: After `run_llm_loop` returns a `TruePositive` verdict with a score
 //! above `CROSS_REVIEW_SEVERITY_THRESHOLD`, a second "reviewer" LLM pass is
 //! triggered. Disagreement downgrades the verdict to `NeedsInvestigation`.
+//!
+//! Phase 6: After verdict resolution, `try_auto_close` evaluates the shadow-check
+//! gate and may emit a second signed `AutoClose` envelope.
 
 use crate::agent::{AgentDefinition, ClassifierArtifact, ExecutionPath};
+use crate::auto_close::{try_auto_close, AutoCloseResult};
 use crate::calibration::CalibrationClient;
 use crate::guardrails::EnforcementMode;
-use crate::llm_loop::{build_cross_review_block, run_llm_loop, run_review, LlmLoopError};
+use crate::llm_loop::{build_cross_review_block, run_investigator_llm_loop, run_llm_loop, run_review, LlmLoopError};
 use crate::mcp_client::McpClient;
+use crate::shadow_check::ShadowChecker;
 use anyhow::{Context, Result};
 use attest_attestation::{
-    AttestationEnvelope, AttestationLog, ClassifierEvidence, EscalationReason,
-    EvidenceBlock, ExecutionPathKind, Signer, TimingBlock, Verdict,
+    AttestationEnvelope, AttestationLog, CaseState, ClassifierEvidence, EscalationReason,
+    EvidenceBlock, ExecutionPathKind, ShadowCheckDecision, Signer, TimingBlock, Verdict,
 };
 use attest_feature_extractor::FeatureExtractor;
 use attest_inference_router::ChatClient;
@@ -44,6 +49,20 @@ pub struct TriageRequest {
     pub alert: Value,
 }
 
+/// Summary of an automatic Investigator run (Phase 7).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct InvestigationSummary {
+    pub action_id: Uuid,
+    #[schema(value_type = String)]
+    pub verdict: Verdict,
+    #[schema(value_type = String)]
+    pub execution_path: ExecutionPathKind,
+    pub evidence_citations: Vec<String>,
+    pub queried_warm_tier: bool,
+    pub latency_ms: u64,
+    pub error: Option<String>,
+}
+
 /// Verdict returned from the triage execution loop.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TriageVerdict {
@@ -61,6 +80,15 @@ pub struct TriageVerdict {
     pub latency_ms: u64,
     #[schema(value_type = Object)]
     pub classifier_evidence: Option<ClassifierEvidence>,
+    /// Phase 6: case disposition after the shadow-check gate.
+    #[schema(value_type = String)]
+    pub case_state: CaseState,
+    /// Phase 6: shadow-check gate decision (always present).
+    #[schema(value_type = Object)]
+    pub shadow_check: Option<ShadowCheckDecision>,
+    /// Phase 7: Investigator run when triage verdict is `NeedsInvestigation` (requires LLM).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub investigation: Option<InvestigationSummary>,
 }
 
 /// All runtime state needed by the triage loop — loaded once at orchestrator startup.
@@ -85,6 +113,12 @@ pub struct TriageEngine {
     llm_client: Option<Arc<Box<dyn ChatClient>>>,
     /// MCP gateway client.
     mcp_client: McpClient,
+    /// Phase 6: shadow-check gate loaded at startup.
+    shadow_checker: ShadowChecker,
+    /// Phase 7: Investigator prompt (loaded at startup).
+    investigator_prompt: String,
+    investigator_prompt_hash: String,
+    investigator_agent_id: String,
 }
 
 impl TriageEngine {
@@ -93,6 +127,7 @@ impl TriageEngine {
     /// `system_prompt`, `system_prompt_hash`, `reviewer_prompt`, and
     /// `reviewer_prompt_hash` are passed in from `main` (hashes are computed
     /// at startup so they can be recorded on every envelope).
+    #[allow(clippy::too_many_arguments)]
     pub fn load(
         agent: AgentDefinition,
         signer: Arc<Signer>,
@@ -100,7 +135,11 @@ impl TriageEngine {
         system_prompt_hash: String,
         reviewer_prompt: String,
         reviewer_prompt_hash: String,
+        investigator_prompt: String,
+        investigator_prompt_hash: String,
+        investigator_agent_id: String,
         llm_client: Option<Box<dyn ChatClient>>,
+        shadow_checker: ShadowChecker,
     ) -> Result<Self> {
         let artifact = extract_classifier_artifact(&agent.execution)?;
 
@@ -131,8 +170,12 @@ impl TriageEngine {
             system_prompt_hash,
             reviewer_prompt,
             reviewer_prompt_hash,
-            llm_client: llm_client.map(|c| Arc::new(c)),
+            llm_client: llm_client.map(Arc::new),
             mcp_client: McpClient::from_env(),
+            shadow_checker,
+            investigator_prompt,
+            investigator_prompt_hash,
+            investigator_agent_id,
         })
     }
 
@@ -250,7 +293,7 @@ impl TriageEngine {
             envelope_version: "1.1".into(),
             agent_action_id: action_id,
             case_id,
-            tenant_id,
+            tenant_id: tenant_id.clone(),
             agent_id: self.agent.id.clone(),
             execution_path: execution_path.clone(),
             verdict: verdict.clone(),
@@ -281,6 +324,138 @@ impl TriageEngine {
             }
         });
 
+        // 8. Phase 6: attempt auto-close
+        let classifier_ev_for_ac = match &envelope.evidence {
+            EvidenceBlock::Classifier(ev) => Some(ev.clone()),
+            EvidenceBlock::Hybrid(h) => Some(h.classifier_draft.clone()),
+            EvidenceBlock::EscalatedStub { classifier_draft, .. } => Some(classifier_draft.clone()),
+            _ => None,
+        };
+
+        let AutoCloseResult { case_state, shadow_check, envelope: _ac_envelope } =
+            if let Some(cls_ev) = classifier_ev_for_ac {
+                let result = try_auto_close(
+                    &verdict,
+                    calibrated,
+                    &req.alert,
+                    cls_ev,
+                    &self.shadow_checker,
+                    &self.signer,
+                    &self.agent.id,
+                    &tenant_id,
+                    case_id,
+                    action_id,
+                )
+                .await;
+
+                // If auto-closed, also log the second envelope
+                if let Some(ref ac_env) = result.envelope {
+                    let log2 = self.attestation_log.clone();
+                    let ac_clone = ac_env.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = log2.append(&ac_clone).await {
+                            tracing::error!(error = %e, "failed to write auto-close attestation log");
+                        }
+                    });
+                }
+                result
+            } else {
+                AutoCloseResult {
+                    case_state: attest_attestation::CaseState::PendingHumanReview,
+                    shadow_check: attest_attestation::ShadowCheckDecision {
+                        allowed: false,
+                        reason: "no classifier evidence available for auto-close".into(),
+                        policies_evaluated: vec![],
+                    },
+                    envelope: None,
+                }
+            };
+
+        // 9. Phase 7: Investigator for `NeedsInvestigation` (requires configured LLM).
+        let mut investigation: Option<InvestigationSummary> = None;
+        if matches!(verdict, Verdict::NeedsInvestigation) {
+            if let Some(client) = self.llm_client.as_ref() {
+                let inv_action_id = Uuid::new_v4();
+                let inv_started = Utc::now();
+                let t_ctx = format!(
+                    "Triager outcome: verdict={verdict:?}, path={execution_path:?}, calibrated_confidence={calibrated:.3}, escalation_reason={escalation_reason:?}"
+                );
+                let t0_inv = Instant::now();
+                match run_investigator_llm_loop(
+                    client.as_ref().as_ref(),
+                    &self.mcp_client,
+                    &self.investigator_agent_id,
+                    &self.investigator_prompt,
+                    &self.investigator_prompt_hash,
+                    &req.alert,
+                    &t_ctx,
+                    calibrated,
+                    self.investigator_max_iterations(),
+                    inv_action_id,
+                    None,
+                    None,
+                )
+                .await
+                {
+                    Ok(inv) => {
+                        let queried_warm = inv
+                            .evidence
+                            .tool_calls
+                            .iter()
+                            .any(|t| t.tool_id == "query_warm_tier");
+                        let inv_lat = t0_inv.elapsed().as_millis() as u64;
+                        let inv_finished = Utc::now();
+                        let mut inv_env = AttestationEnvelope {
+                            envelope_version: "1.1".into(),
+                            agent_action_id: inv_action_id,
+                            case_id,
+                            tenant_id: tenant_id.clone(),
+                            agent_id: self.investigator_agent_id.clone(),
+                            execution_path: ExecutionPathKind::Llm,
+                            verdict: inv.verdict.clone(),
+                            evidence: EvidenceBlock::Llm(inv.evidence.clone()),
+                            timing: TimingBlock {
+                                started_at: inv_started,
+                                finished_at: inv_finished,
+                                total_ms: inv_lat,
+                            },
+                            signature: String::new(),
+                            signed_at: inv_finished,
+                        };
+                        self.signer.sign(&mut inv_env);
+                        let log3 = self.attestation_log.clone();
+                        let ic = inv_env.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = log3.append(&ic).await {
+                                tracing::error!(error = %e, "failed to write investigator attestation log");
+                            }
+                        });
+                        investigation = Some(InvestigationSummary {
+                            action_id: inv_action_id,
+                            verdict: inv.verdict,
+                            execution_path: ExecutionPathKind::Llm,
+                            evidence_citations: inv.evidence.evidence_citations.clone(),
+                            queried_warm_tier: queried_warm,
+                            latency_ms: inv_lat,
+                            error: None,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!(case_id = %case_id, error = %e, "Investigator loop failed");
+                        investigation = Some(InvestigationSummary {
+                            action_id: inv_action_id,
+                            verdict: Verdict::NeedsInvestigation,
+                            execution_path: ExecutionPathKind::Llm,
+                            evidence_citations: vec![],
+                            queried_warm_tier: false,
+                            latency_ms: t0_inv.elapsed().as_millis() as u64,
+                            error: Some(e.to_string()),
+                        });
+                    }
+                }
+            }
+        }
+
         Ok(TriageVerdict {
             action_id,
             case_id,
@@ -297,6 +472,9 @@ impl TriageEngine {
                 EvidenceBlock::EscalatedStub { classifier_draft, .. } => Some(classifier_draft.clone()),
                 _ => None,
             },
+            case_state,
+            shadow_check: Some(shadow_check),
+            investigation,
         })
     }
 
@@ -388,6 +566,13 @@ impl TriageEngine {
             ExecutionPath::Llm { max_iterations, .. } => *max_iterations,
             _ => 8,
         }
+    }
+
+    fn investigator_max_iterations(&self) -> u8 {
+        std::env::var("INVESTIGATOR_MAX_ITERATIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10)
     }
 }
 

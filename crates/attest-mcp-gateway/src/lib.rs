@@ -9,6 +9,8 @@
 pub mod registry;
 pub mod tools;
 pub mod server;
+pub mod warm_limit;
 
 pub use registry::{ToolDescriptor, ToolRegistry};
 pub use server::build_router;
+pub use warm_limit::WarmTierLimiter;

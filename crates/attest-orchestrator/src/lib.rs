@@ -6,11 +6,13 @@
 //! Entry point: `POST /triage` → `run_triage(request)` → `TriageVerdict`
 
 pub mod agent;
+pub mod auto_close;
 pub mod calibration;
 pub mod guardrails;
 pub mod llm_loop;
 pub mod mcp_client;
 pub mod server;
+pub mod shadow_check;
 pub mod triage;
 
 pub use agent::{AgentDefinition, AgentRole, ClassifierArtifact, ExecutionPath};

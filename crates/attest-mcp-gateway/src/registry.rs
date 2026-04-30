@@ -120,5 +120,32 @@ pub fn default_registry() -> ToolRegistry {
         class: ToolClass::Internal,
     });
 
+    r.register(ToolDescriptor {
+        id: "analyze_code_snippet".into(),
+        description: "Static analysis stub for code snippets referenced in alerts (MVP).".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "snippet_id": { "type": "string" },
+                "code": { "type": "string" }
+            },
+            "required": ["snippet_id"]
+        }),
+        class: ToolClass::Internal,
+    });
+
+    r.register(ToolDescriptor {
+        id: "sandbox_detonate".into(),
+        description: "Sandbox detonation stub for suspicious payloads (MVP — no live detonation).".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "artifact_hash": { "type": "string" }
+            },
+            "required": ["artifact_hash"]
+        }),
+        class: ToolClass::Internal,
+    });
+
     r
 }

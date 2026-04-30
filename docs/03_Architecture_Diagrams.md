@@ -70,7 +70,7 @@ C4Container
     Container(policy, "Policy Engine", "Rust (in-process)", "Hard-coded per-role authorization: Allow / Deny / Escalate")
     Container(mcp, "MCP Gateway", "Rust, Axum :4242", "Intercepts every tool call — logs, authorizes, dispatches")
     Container(attest_log, "Attestation Log", "Rust, ndjson", "Append-only Ed25519-signed evidence envelopes")
-    Container(ml_sidecar, "ML Sidecar", "Python, Flask :5001", "Isotonic calibration; novelty parameters; XGBoost training harness")
+    Container(ml_sidecar, "ML Sidecar", "Python, FastAPI :5001", "Isotonic calibration; novelty parameters; XGBoost training harness")
     Container(llm_router, "Inference Router", "Rust", "Routes LLM requests: Anthropic API (prod) / vLLM + Qwen (local/air-gap)")
   }
 
@@ -693,7 +693,7 @@ flowchart TB
         subgraph AgentLayer["Agentic Layer"]
             ORCH["attest-orchestrator\nRust :4300\n4-core / 16GB"]
             MCP_GW["attest-mcp-gateway\nRust :4242\n2-core / 4GB"]
-            ML["ml-sidecar\nPython Flask :5001\n4-core / 16GB"]
+            ML["ml-sidecar\nPython FastAPI :5001\n4-core / 16GB"]
         end
 
         subgraph API["API + Frontend"]

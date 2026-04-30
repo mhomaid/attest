@@ -1,3 +1,4 @@
+import { AttestationTracePanel } from "@/components/workbench/attestation-trace-panel";
 import { CaseWorkbench } from "@/components/workbench/case-workbench";
 import type { CaseRecord, FeatureImpact } from "@/lib/mock-data";
 import type { OcsfEvent } from "@/lib/ocsf-to-alert";
@@ -32,7 +33,7 @@ async function fetchBaseline(username: string): Promise<{ regions_seen_30d?: str
 
 type TriageVerdict = {
   action_id: string;
-  case_id: string;
+  case_id: string; // UUID from orchestrator — workbench-api trace key
   verdict: string;
   execution_path: string;
   calibrated_confidence: number;
@@ -180,5 +181,14 @@ export default async function CasePage({
     featureImpacts,
   };
 
-  return <CaseWorkbench caseRecord={caseRecord} />;
+  return (
+    <>
+      <CaseWorkbench caseRecord={caseRecord} />
+      {verdict ? (
+        <div className="border-t border-border/80 p-3">
+          <AttestationTracePanel caseId={verdict.case_id} />
+        </div>
+      ) : null}
+    </>
+  );
 }
