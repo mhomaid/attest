@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase4a e2e-phase4b arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase4a e2e-phase4b e2e-phase5 arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 help: ## Show this help message
@@ -122,6 +122,44 @@ e2e-phase4b: ## Run Phase 4b E2E tests — hybrid LLM escalation (requires ATTES
 	  exit $$STATUS
 
 	open http://localhost:5115
+
+e2e-phase5: ## Run Phase 5 E2E tests — hallucination guardrails (ATTEST_GUARDRAILS=on, requires local LLM)
+	@test -n "$$ATTEST_LLM_API_KEY" || (echo "WARNING: ATTEST_LLM_API_KEY is not set — Unsloth Studio may reject requests"; true)
+	@echo "==> Starting calibration sidecar (port 5001)..."
+	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
+	@echo "==> Starting orchestrator with guardrails enabled (port 4300)..."
+	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
+	  ORCHESTRATOR_PORT=4300 \
+	  CALIBRATION_URL=http://localhost:5001 \
+	  SYSTEM_PROMPT_PATH=$(CURDIR)/agents/triager/system_prompt_v1.md \
+	  REVIEWER_PROMPT_PATH=$(CURDIR)/agents/triager/reviewer_prompt_v1.md \
+	  ATTEST_LLM_PROVIDER=local \
+	  ATTEST_LLM_BASE_URL=http://127.0.0.1:8888/v1 \
+	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
+	  ATTEST_LLM_API_KEY=$(ATTEST_LLM_API_KEY) \
+	  MCP_GATEWAY_URL=http://localhost:4242 \
+	  ATTEST_GUARDRAILS=on \
+	  GUARDRAIL_MAX_RETRIES=2 \
+	  CROSS_REVIEW_SEVERITY_THRESHOLD=0.85 \
+	  ATTEST_LOG_PATH=/tmp/attest-test-attestations-p5.ndjson \
+	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator-p5.log 2>&1 &
+	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
+	@for i in $$(seq 1 60); do \
+	  curl -sf http://localhost:4300/healthz > /dev/null 2>&1 && echo "  ready after $${i}s" && break; \
+	  sleep 1; \
+	done
+	@curl -sf http://localhost:4300/healthz > /dev/null 2>&1 || \
+	  (echo "ERROR: orchestrator did not start. Logs:"; cat /tmp/attest-orchestrator-p5.log; \
+	   pkill -f "calibrate.py" 2>/dev/null || true; exit 1)
+	@echo "==> Running Phase 5 E2E tests..."
+	ATTEST_E2E=1 ATTEST_GUARDRAILS=on GUARDRAIL_MAX_RETRIES=2 \
+	  cargo test --test phase5_guardrails -- --nocapture; \
+	  STATUS=$$?; \
+	  echo "==> Stopping services..."; \
+	  pkill -f "target.*attest-orchestrator" 2>/dev/null || true; \
+	  pkill -f "calibrate.py" 2>/dev/null || true; \
+	  exit $$STATUS
+
 
 redpanda-ui: ## Open Redpanda Console in the browser (http://localhost:8081)
 	open http://localhost:8081

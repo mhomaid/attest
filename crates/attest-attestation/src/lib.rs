@@ -13,8 +13,9 @@ pub mod log;
 pub mod signer;
 
 pub use envelope::{
-    AttestationEnvelope, ClassifierEvidence, EscalationReason, EvidenceBlock, ExecutionPathKind,
-    HybridEvidence, IntermediateBelief, LlmEvidence, TimingBlock, ToolCallRecord, Verdict,
+    AttestationEnvelope, ClassifierEvidence, CrossReviewBlock, EscalationReason, EvidenceBlock,
+    ExecutionPathKind, HybridEvidence, IntermediateBelief, LlmEvidence, TimingBlock,
+    ToolCallRecord, Verdict,
 };
 pub use log::AttestationLog;
 pub use signer::Signer;

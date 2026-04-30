@@ -2,10 +2,15 @@
 //!
 //! Phase 4b: EscalatedStub is replaced with a real `run_llm_loop` call.
 //! EscalatedStub is kept only as a graceful fallback when the LLM call fails.
+//!
+//! Phase 5: After `run_llm_loop` returns a `TruePositive` verdict with a score
+//! above `CROSS_REVIEW_SEVERITY_THRESHOLD`, a second "reviewer" LLM pass is
+//! triggered. Disagreement downgrades the verdict to `NeedsInvestigation`.
 
 use crate::agent::{AgentDefinition, ClassifierArtifact, ExecutionPath};
 use crate::calibration::CalibrationClient;
-use crate::llm_loop::{run_llm_loop, LlmLoopError};
+use crate::guardrails::EnforcementMode;
+use crate::llm_loop::{build_cross_review_block, run_llm_loop, run_review, LlmLoopError};
 use crate::mcp_client::McpClient;
 use anyhow::{Context, Result};
 use attest_attestation::{
@@ -21,6 +26,14 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
+
+/// Severity threshold above which a `TruePositive` verdict triggers cross-review.
+fn cross_review_threshold() -> f32 {
+    std::env::var("CROSS_REVIEW_SEVERITY_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.85)
+}
 
 /// Inbound triage request (JSON body for `POST /triage`).
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -64,6 +77,10 @@ pub struct TriageEngine {
     pub system_prompt: String,
     /// SHA-256 hex of the system prompt (stored on `LlmEvidence`).
     pub system_prompt_hash: String,
+    /// Pre-loaded reviewer system prompt text.
+    pub reviewer_prompt: String,
+    /// SHA-256 hex of the reviewer prompt.
+    pub reviewer_prompt_hash: String,
     /// LLM chat client (Arc so it is shared across concurrent triage calls).
     llm_client: Option<Arc<Box<dyn ChatClient>>>,
     /// MCP gateway client.
@@ -73,13 +90,16 @@ pub struct TriageEngine {
 impl TriageEngine {
     /// Load all ONNX artifacts and build the engine.
     ///
-    /// `system_prompt` and `system_prompt_hash` are passed in from `main`
-    /// (the hash is computed at startup so we can record it on every envelope).
+    /// `system_prompt`, `system_prompt_hash`, `reviewer_prompt`, and
+    /// `reviewer_prompt_hash` are passed in from `main` (hashes are computed
+    /// at startup so they can be recorded on every envelope).
     pub fn load(
         agent: AgentDefinition,
         signer: Arc<Signer>,
         system_prompt: String,
         system_prompt_hash: String,
+        reviewer_prompt: String,
+        reviewer_prompt_hash: String,
         llm_client: Option<Box<dyn ChatClient>>,
     ) -> Result<Self> {
         let artifact = extract_classifier_artifact(&agent.execution)?;
@@ -109,6 +129,8 @@ impl TriageEngine {
             verifying_key,
             system_prompt,
             system_prompt_hash,
+            reviewer_prompt,
+            reviewer_prompt_hash,
             llm_client: llm_client.map(|c| Arc::new(c)),
             mcp_client: McpClient::from_env(),
         })
@@ -295,7 +317,7 @@ impl TriageEngine {
 
         let max_iterations = self.llm_max_iterations();
 
-        let result = run_llm_loop(
+        let mut result = run_llm_loop(
             client.as_ref().as_ref(),
             &self.mcp_client,
             &self.agent,
@@ -306,7 +328,53 @@ impl TriageEngine {
             escalation_reason,
             max_iterations,
             action_id,
+            None, // read enforcement mode from env
+            None, // read max retries from env
         ).await?;
+
+        // Phase 5: Cross-agent review for high-impact TruePositive verdicts
+        if result.verdict == Verdict::TruePositive
+            && EnforcementMode::from_env() == EnforcementMode::On
+        {
+            let calibrated = result.evidence.classifier_draft.calibrated_confidence;
+            if calibrated >= cross_review_threshold() {
+                tracing::info!(
+                    action_id = %action_id,
+                    calibrated,
+                    "cross-review: triggering reviewer pass for high-impact TruePositive"
+                );
+
+                let last_reasoning = result.evidence.llm_final.intermediate_beliefs
+                    .last()
+                    .map(|b| b.content_summary.as_str())
+                    .unwrap_or("");
+
+                let outcome = run_review(
+                    client.as_ref().as_ref(),
+                    &self.reviewer_prompt,
+                    &self.reviewer_prompt_hash,
+                    "true_positive",
+                    last_reasoning,
+                    alert,
+                ).await;
+
+                let agrees = outcome.agrees;
+                let cross_review_block = build_cross_review_block(
+                    &self.reviewer_prompt_hash,
+                    outcome,
+                );
+
+                result.evidence.llm_final.cross_review = Some(cross_review_block);
+
+                if !agrees {
+                    tracing::warn!(
+                        action_id = %action_id,
+                        "cross-review: reviewer disagreed — downgrading to NeedsInvestigation"
+                    );
+                    result.verdict = Verdict::NeedsInvestigation;
+                }
+            }
+        }
 
         Ok((result.verdict, result.evidence))
     }

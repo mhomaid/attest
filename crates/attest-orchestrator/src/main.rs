@@ -11,6 +11,12 @@
 //!   ATTEST_LOG_PATH         Attestation log file path (default ./attestations.ndjson)
 //!   MCP_GATEWAY_URL         MCP gateway URL (default http://localhost:4500)
 //!   SYSTEM_PROMPT_PATH      Path to the triager system prompt (default ./agents/triager/system_prompt_v1.md)
+//!   REVIEWER_PROMPT_PATH    Path to the reviewer system prompt (default ./agents/triager/reviewer_prompt_v1.md)
+//!
+//! Guardrails (Phase 5):
+//!   ATTEST_GUARDRAILS             "on" (default) | "off"
+//!   GUARDRAIL_MAX_RETRIES         Max re-prompts per check (default 3)
+//!   CROSS_REVIEW_SEVERITY_THRESHOLD  Calibrated confidence above which cross-review fires (default 0.85)
 //!
 //! LLM inference (Phase 4b):
 //!   ATTEST_LLM_PROVIDER     "local" (default) | "anthropic"
@@ -94,6 +100,24 @@ async fn main() -> anyhow::Result<()> {
         "System prompt loaded"
     );
 
+    // ── Reviewer prompt ───────────────────────────────────────────────────────
+    let reviewer_prompt_path = std::env::var("REVIEWER_PROMPT_PATH")
+        .unwrap_or_else(|_| "./agents/triager/reviewer_prompt_v1.md".into());
+
+    let reviewer_prompt = std::fs::read_to_string(&reviewer_prompt_path)
+        .unwrap_or_else(|e| {
+            tracing::warn!(path = %reviewer_prompt_path, error = %e, "reviewer prompt file not found — cross-review will be a no-op");
+            String::new()
+        });
+
+    let reviewer_prompt_hash = hex::encode(Sha256::digest(reviewer_prompt.as_bytes()));
+    tracing::info!(
+        path = %reviewer_prompt_path,
+        hash = %&reviewer_prompt_hash[..16],
+        bytes = reviewer_prompt.len(),
+        "Reviewer prompt loaded"
+    );
+
     // ── LLM client ────────────────────────────────────────────────────────────
     let llm_provider = std::env::var("ATTEST_LLM_PROVIDER").unwrap_or_else(|_| "local".into());
     let llm_model = std::env::var("ATTEST_LLM_MODEL")
@@ -166,6 +190,8 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(signer),
         system_prompt,
         system_prompt_hash,
+        reviewer_prompt,
+        reviewer_prompt_hash,
         llm_client,
     )?;
 

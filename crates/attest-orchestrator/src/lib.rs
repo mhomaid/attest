@@ -7,6 +7,7 @@
 
 pub mod agent;
 pub mod calibration;
+pub mod guardrails;
 pub mod llm_loop;
 pub mod mcp_client;
 pub mod server;

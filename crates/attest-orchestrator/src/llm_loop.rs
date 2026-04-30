@@ -4,13 +4,22 @@
 //! JSON verdict or the iteration cap is reached.  Every tool call is routed
 //! through the MCP gateway (policy-checked, logged).  The resulting
 //! `LlmEvidence` is dropped into `EvidenceBlock::Hybrid` by the caller.
+//!
+//! Phase 5 adds three guardrail checks in the final-verdict branch:
+//!   1. Retrieval-before-reasoning
+//!   2. Citation enforcement
+//!   3. (Cross-review handled in `triage.rs` via `run_review`)
 
 use crate::agent::{AgentDefinition, ExecutionPath};
+use crate::guardrails::{
+    citation_reprompt, has_retrieved_evidence, max_validation_retries,
+    retrieval_reprompt, validate_citations, EnforcementMode,
+};
 use crate::mcp_client::McpClient;
 use anyhow::Result;
 use attest_attestation::{
-    EscalationReason, HybridEvidence, IntermediateBelief, LlmEvidence, ToolCallRecord,
-    ClassifierEvidence,
+    CrossReviewBlock, EscalationReason, HybridEvidence, IntermediateBelief, LlmEvidence,
+    ToolCallRecord, ClassifierEvidence,
 };
 use attest_inference_router::{ChatClient, ChatMessage, ChatRequest, ToolDef};
 use chrono::Utc;
@@ -119,6 +128,7 @@ fn build_llm_evidence(
     intermediate_beliefs: Vec<IntermediateBelief>,
     evidence_citations: Vec<String>,
     total_iterations: u8,
+    validation_retries: u8,
 ) -> LlmEvidence {
     let (provider, model_id) = match &agent.execution {
         ExecutionPath::Hybrid { escalation, .. } => match escalation.as_ref() {
@@ -141,6 +151,8 @@ fn build_llm_evidence(
         intermediate_beliefs,
         evidence_citations,
         total_iterations,
+        validation_retries,
+        cross_review: None,
     }
 }
 
@@ -163,6 +175,14 @@ pub struct LlmLoopResult {
     pub verdict: attest_attestation::Verdict,
 }
 
+/// Outcome of the cross-reviewer pass (see `run_review`).
+#[derive(Debug)]
+pub struct ReviewOutcome {
+    pub agrees: bool,
+    pub disagreement_reason: Option<String>,
+    pub intermediate_beliefs: Vec<IntermediateBelief>,
+}
+
 /// Run the multi-turn LLM agent loop.
 ///
 /// # Arguments
@@ -176,6 +196,9 @@ pub struct LlmLoopResult {
 /// * `escalation_reason` — Why the classifier escalated.
 /// * `max_iterations` — Maximum chat rounds before giving up (default 8).
 /// * `action_id` — Shared action ID for MCP audit log correlation.
+/// * `enforcement` — Guardrail enforcement mode (read from env if not supplied).
+/// * `guardrail_retries_cap` — Max per-check re-prompts (read from env if `None`).
+#[allow(clippy::too_many_arguments)]
 pub async fn run_llm_loop(
     client: &dyn ChatClient,
     mcp: &McpClient,
@@ -187,7 +210,11 @@ pub async fn run_llm_loop(
     escalation_reason: EscalationReason,
     max_iterations: u8,
     action_id: Uuid,
+    enforcement: Option<EnforcementMode>,
+    guardrail_retries_cap: Option<u8>,
 ) -> Result<LlmLoopResult, LlmLoopError> {
+    let enforcement = enforcement.unwrap_or_else(EnforcementMode::from_env);
+    let guardrail_retries_cap = guardrail_retries_cap.unwrap_or_else(max_validation_retries);
     let tools = triager_tools();
     let mut messages: Vec<ChatMessage> = vec![
         ChatMessage::system(system_prompt),
@@ -202,6 +229,9 @@ pub async fn run_llm_loop(
 
     let mut tool_call_records: Vec<ToolCallRecord> = Vec::new();
     let mut intermediate_beliefs: Vec<IntermediateBelief> = Vec::new();
+    let mut validation_retries: u8 = 0;
+    // IDs of tool calls (from the LLM response) that MCP allowed successfully.
+    let mut successful_call_ids: Vec<String> = Vec::new();
 
     for iteration in 0..max_iterations {
         let req = ChatRequest::new(messages.clone(), tools.clone());
@@ -280,6 +310,10 @@ pub async fn run_llm_loop(
                 };
 
                 tool_call_records.push(record);
+                // Track this call ID if the MCP allowed the call
+                if tool_call_records.last().map(|r| r.policy_decision == "allow").unwrap_or(false) {
+                    successful_call_ids.push(tc.id.clone());
+                }
                 messages.push(ChatMessage::tool_result(tc.id.clone(), tool_output));
             }
         } else {
@@ -301,7 +335,100 @@ pub async fn run_llm_loop(
                     format!("could not parse verdict JSON: {e}\nraw: {json_str}")
                 ))?;
 
-            // Record the final belief using the parsed fields
+            // ── Phase 5 Guardrail 1: Retrieval-before-reasoning ──────────────
+            if enforcement == EnforcementMode::On
+                && !has_retrieved_evidence(&tool_call_records)
+            {
+                if validation_retries >= guardrail_retries_cap {
+                    tracing::warn!(
+                        action_id = %action_id,
+                        validation_retries,
+                        "guardrail: no retrieval after max retries — forcing NeedsInvestigation"
+                    );
+                    intermediate_beliefs.push(IntermediateBelief {
+                        iteration,
+                        content_summary: "guardrail: no retrieval — capped".into(),
+                        self_reported_confidence: Some(0.0),
+                        timestamp: Utc::now(),
+                    });
+                    let llm_evidence = build_llm_evidence(
+                        agent, system_prompt_hash, tool_call_records,
+                        intermediate_beliefs, vec![], iteration + 1, validation_retries,
+                    );
+                    let hybrid = HybridEvidence { classifier_draft, llm_final: llm_evidence, escalation_reason };
+                    return Ok(LlmLoopResult {
+                        evidence: hybrid,
+                        verdict: attest_attestation::Verdict::NeedsInvestigation,
+                    });
+                }
+
+                validation_retries += 1;
+                tracing::warn!(
+                    action_id = %action_id,
+                    validation_retries,
+                    "guardrail: no retrieval — re-prompting"
+                );
+                intermediate_beliefs.push(IntermediateBelief {
+                    iteration,
+                    content_summary: format!("guardrail_retry:{validation_retries} no-retrieval"),
+                    self_reported_confidence: Some(0.0),
+                    timestamp: Utc::now(),
+                });
+                messages.push(ChatMessage::user(retrieval_reprompt()));
+                continue;
+            }
+
+            // ── Phase 5 Guardrail 2: Citation enforcement ────────────────────
+            let citation_report = validate_citations(
+                &model_verdict.reasoning,
+                &model_verdict.evidence_citations,
+                &successful_call_ids,
+            );
+
+            if enforcement == EnforcementMode::On && !citation_report.passed {
+                if validation_retries >= guardrail_retries_cap {
+                    tracing::warn!(
+                        action_id = %action_id,
+                        validation_retries,
+                        orphans = ?citation_report.orphan_citations,
+                        "guardrail: citation failure after max retries — forcing NeedsInvestigation"
+                    );
+                    intermediate_beliefs.push(IntermediateBelief {
+                        iteration,
+                        content_summary: "guardrail: citation failure — capped".into(),
+                        self_reported_confidence: Some(0.0),
+                        timestamp: Utc::now(),
+                    });
+                    let llm_evidence = build_llm_evidence(
+                        agent, system_prompt_hash, tool_call_records,
+                        intermediate_beliefs, model_verdict.evidence_citations,
+                        iteration + 1, validation_retries,
+                    );
+                    let hybrid = HybridEvidence { classifier_draft, llm_final: llm_evidence, escalation_reason };
+                    return Ok(LlmLoopResult {
+                        evidence: hybrid,
+                        verdict: attest_attestation::Verdict::NeedsInvestigation,
+                    });
+                }
+
+                validation_retries += 1;
+                tracing::warn!(
+                    action_id = %action_id,
+                    validation_retries,
+                    orphans = ?citation_report.orphan_citations,
+                    "guardrail: citation failure — re-prompting"
+                );
+                intermediate_beliefs.push(IntermediateBelief {
+                    iteration,
+                    content_summary: format!("guardrail_retry:{validation_retries} citation-fail"),
+                    self_reported_confidence: Some(0.0),
+                    timestamp: Utc::now(),
+                });
+                messages.push(ChatMessage::user(citation_reprompt(&citation_report)));
+                continue;
+            }
+
+            // ── Guardrails passed — record final belief and return ────────────
             intermediate_beliefs.push(IntermediateBelief {
                 iteration,
                 content_summary: if model_verdict.reasoning.is_empty() {
@@ -324,6 +451,7 @@ pub async fn run_llm_loop(
                 intermediate_beliefs,
                 evidence_citations,
                 total_iterations,
+                validation_retries,
             );
 
             let hybrid = HybridEvidence {
@@ -337,6 +465,88 @@ pub async fn run_llm_loop(
     }
 
     Err(LlmLoopError::MaxIterations(max_iterations))
+}
+
+/// Run a single-round reviewer pass for cross-agent review.
+///
+/// Sends the primary verdict to a second LLM invocation (no tools, low
+/// temperature) and asks it to agree or disagree.  Returns a `ReviewOutcome`
+/// that the caller embeds in `CrossReviewBlock`.
+pub async fn run_review(
+    client: &dyn ChatClient,
+    reviewer_prompt: &str,
+    reviewer_prompt_hash: &str,
+    verdict: &str,
+    reasoning: &str,
+    alert: &Value,
+) -> ReviewOutcome {
+    let user_msg = format!(
+        "You are reviewing a security triage verdict made by another analyst.\n\n\
+         Alert:\n{}\n\n\
+         Primary verdict: **{verdict}**\n\
+         Primary reasoning: {reasoning}\n\n\
+         Do you agree with this verdict? Respond ONLY with a JSON object:\n\
+         {{\"agrees\": true/false, \"reason\": \"brief explanation\"}}",
+        serde_json::to_string_pretty(alert).unwrap_or_else(|_| alert.to_string()),
+    );
+
+    let messages = vec![
+        ChatMessage::system(reviewer_prompt),
+        ChatMessage::user(user_msg),
+    ];
+    // No tools; single round; low temperature enforced by system prompt instruction.
+    let req = ChatRequest::new(messages, vec![]);
+
+    let reviewer_beliefs: Vec<IntermediateBelief> = Vec::new();
+
+    match client.chat(req).await {
+        Ok(resp) => {
+            let raw = extract_json_block(resp.content.trim());
+            #[derive(Deserialize)]
+            struct ReviewJson { agrees: bool, #[serde(default)] reason: String }
+            match serde_json::from_str::<ReviewJson>(&raw) {
+                Ok(r) => ReviewOutcome {
+                    agrees: r.agrees,
+                    disagreement_reason: if r.agrees { None } else { Some(r.reason) },
+                    intermediate_beliefs: reviewer_beliefs,
+                },
+                Err(e) => {
+                    tracing::warn!(
+                        reviewer_prompt_hash,
+                        error = %e,
+                        raw_preview = %raw.chars().take(200).collect::<String>(),
+                        "reviewer: could not parse response — treating as disagree"
+                    );
+                    ReviewOutcome {
+                        agrees: false,
+                        disagreement_reason: Some(format!("parse error: {e}")),
+                        intermediate_beliefs: reviewer_beliefs,
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(reviewer_prompt_hash, error = %e, "reviewer: LLM call failed");
+            ReviewOutcome {
+                agrees: false,
+                disagreement_reason: Some(format!("reviewer call failed: {e}")),
+                intermediate_beliefs: reviewer_beliefs,
+            }
+        }
+    }
+}
+
+/// Build a `CrossReviewBlock` from a `ReviewOutcome`.
+pub fn build_cross_review_block(
+    reviewer_prompt_hash: &str,
+    outcome: ReviewOutcome,
+) -> CrossReviewBlock {
+    CrossReviewBlock {
+        reviewer_prompt_hash: reviewer_prompt_hash.to_string(),
+        agrees: outcome.agrees,
+        disagreement_reason: outcome.disagreement_reason,
+        reviewer_intermediate_beliefs: outcome.intermediate_beliefs,
+    }
 }
 
 /// Extract the first JSON object from a string.

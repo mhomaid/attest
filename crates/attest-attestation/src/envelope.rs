@@ -95,6 +95,25 @@ pub struct LlmEvidence {
     /// Structured `[evidence:ocsf_event_id]` citations from the final verdict.
     pub evidence_citations: Vec<String>,
     pub total_iterations: u8,
+    /// Number of times the verdict was rejected by guardrails and re-prompted.
+    #[serde(default)]
+    pub validation_retries: u8,
+    /// Cross-agent review result for high-impact verdicts (None if not triggered).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cross_review: Option<CrossReviewBlock>,
+}
+
+/// Result of an independent reviewer LLM pass on a high-impact verdict.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossReviewBlock {
+    /// SHA-256 of the reviewer system prompt.
+    pub reviewer_prompt_hash: String,
+    /// Whether the reviewer agreed with the primary agent's verdict.
+    pub agrees: bool,
+    /// Reviewer's explanation when disagreeing (or brief confirmation when agreeing).
+    pub disagreement_reason: Option<String>,
+    /// Reasoning steps recorded during the reviewer pass.
+    pub reviewer_intermediate_beliefs: Vec<IntermediateBelief>,
 }
 
 // ── Hybrid evidence ───────────────────────────────────────────────────────────

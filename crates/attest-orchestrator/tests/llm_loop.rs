@@ -182,6 +182,8 @@ async fn llm_loop_tool_call_then_verdict() {
         EscalationReason::HighNoveltyScore { score: 0.80, threshold: 0.70 },
         8,
         Uuid::new_v4(),
+        None,
+        None,
     )
     .await
     .expect("LLM loop should succeed");
@@ -244,6 +246,8 @@ async fn llm_loop_max_iterations_exceeded() {
         EscalationReason::BothLowConfidenceAndHighNovelty,
         3, // max 3 iterations
         Uuid::new_v4(),
+        None,
+        None,
     )
     .await
     .expect_err("should fail with MaxIterations");
@@ -307,6 +311,8 @@ async fn llm_loop_multi_tool_then_verdict() {
         EscalationReason::LowCalibratedConfidence { score: 0.40, threshold: 0.60 },
         8,
         Uuid::new_v4(),
+        None,
+        None,
     )
     .await
     .expect("should succeed");
