@@ -74,7 +74,12 @@ export function CommandPalette() {
   }
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+    <CommandDialog
+      open={open}
+      onOpenChange={setOpen}
+      title="Search"
+      description="Search workbench pages and open external tools. Arrow keys to move, Enter to open, Escape to close."
+    >
       <CommandInput placeholder="Search pages, alerts, detections..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
