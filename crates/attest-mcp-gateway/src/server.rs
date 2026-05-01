@@ -3,15 +3,18 @@
 //! Endpoint: `POST /invoke`
 //! Body: `{ "agent_id": "...", "action_id": "...", "agent_role": "...", "tool_id": "...", "args": {...} }`
 //! Response: `{ "result": {...}, "call_log": {...} }`
+//!
+//! `GET /healthz` returns `200` with body `ok` for load balancers / compose checks.
 
 use crate::registry::ToolRegistry;
 use crate::tools;
+use crate::warm_limit::WarmTierLimiter;
 use attest_policy_engine::{authorize, AgentRole, PolicyContext, PolicyDecision};
 use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use chrono::Utc;
@@ -27,6 +30,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct GatewayState {
     pub registry: Arc<ToolRegistry>,
+    pub warm_limiter: Arc<WarmTierLimiter>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -94,13 +98,21 @@ struct ApiDoc;
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn build_router(registry: ToolRegistry) -> Router {
-    let state = GatewayState { registry: Arc::new(registry) };
+    build_router_with_warm_limiter(registry, WarmTierLimiter::from_env())
+}
+
+pub fn build_router_with_warm_limiter(registry: ToolRegistry, warm_limiter: WarmTierLimiter) -> Router {
+    let state = GatewayState {
+        registry: Arc::new(registry),
+        warm_limiter: Arc::new(warm_limiter),
+    };
     let api = Router::new()
         .route("/invoke", post(handle_invoke))
         .route("/tools", axum::routing::get(handle_list_tools))
         .with_state(state);
 
     Router::new()
+        .route("/healthz", get(|| async { "ok" }))
         .merge(api)
         .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
 }
@@ -176,7 +188,7 @@ async fn handle_invoke(
 
     // 3. Dispatch
     let t0 = Instant::now();
-    let dispatch_result = tools::dispatch(&req.tool_id, &req.args).await;
+    let dispatch_result = tools::dispatch(&req.tool_id, &req.args, &state.warm_limiter).await;
     let latency_ms = t0.elapsed().as_millis() as u64;
 
     let (result, result_hash, error) = match dispatch_result {

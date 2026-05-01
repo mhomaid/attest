@@ -1,5 +1,9 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase4a e2e-phase4b e2e-phase5 arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
+
+# Source repo-root `.env` in native `make run-*` / E2E recipes below.
+# Docker Compose loads `.env` by default; a bare shell does not — without this, values only exist in `.env`, not in the process environment.
+DOTENV_SH := set -a; [ -f "$(CURDIR)/.env" ] && . "$(CURDIR)/.env"; set +a;
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -34,41 +38,72 @@ e2e-phase3: ## Run Phase 3 E2E test — HELIQL detections fire alerts on stream 
 	ATTEST_E2E=1 cargo test --test phase3_detection -- --nocapture
 
 train-classifier: ## Train XGBoost classifier + novelty detector + calibration (outputs to ml/triager/artifacts/)
-	cd ml && uv run python triager/train.py
-	cd ml && uv run python triager/novelty.py
-	cd ml && uv run python triager/calibrate.py --train
+	cd ml && env -u VIRTUAL_ENV uv run python triager/train.py
+	cd ml && env -u VIRTUAL_ENV uv run python triager/novelty.py
+	cd ml && env -u VIRTUAL_ENV uv run python triager/calibrate.py --train
 
-run-calibration: ## Run calibration sidecar natively (port 5001) — faster than Docker rebuild
-	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve
+run-calibration: ## Run calibration sidecar natively (port 5001); unsets VIRTUAL_ENV so uv uses ml/.venv
+	cd ml && env -u VIRTUAL_ENV CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve
+
+run-mcp-gateway: ## Run MCP gateway natively (port 4242) — set CONTROL_PLANE_URL if not localhost:8080
+	$(DOTENV_SH) \
+	CONTROL_PLANE_URL=$${CONTROL_PLANE_URL:-http://localhost:8080} \
+	  MCP_GATEWAY_PORT=4242 \
+	  cargo run -p attest-mcp-gateway
+
+run-control-plane: ## Run control-plane API natively (port 8080) — requires RisingWave, ClickHouse, Kafka reachable via env
+	$(DOTENV_SH) \
+	RISINGWAVE_HOST=$${RISINGWAVE_HOST:-localhost} \
+	  RISINGWAVE_PORT=$${RISINGWAVE_PORT:-4566} \
+	  CLICKHOUSE_URL=$${CLICKHOUSE_URL:-http://localhost:8123} \
+	  KAFKA_BROKERS=$${KAFKA_BROKERS:-localhost:19092} \
+	  PORT=8080 \
+	  cargo run -p attest-control-plane
+
+run-workbench-api: ## Run workbench trace API (port 4400) — reads ATTEST_LOG_PATH (default ./attestations.ndjson)
+	$(DOTENV_SH) \
+	WORKBENCH_API_PORT=$${WORKBENCH_API_PORT:-4400} \
+	  ATTEST_LOG_PATH=$${ATTEST_LOG_PATH:-$(CURDIR)/attestations.ndjson} \
+	  cargo run -p workbench-api
 
 run-orchestrator: ## Run orchestrator natively (local Unsloth LLM path — requires calibration sidecar on :5001 and Unsloth Studio on :8888)
+	$(DOTENV_SH) \
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
 	  CALIBRATION_URL=http://localhost:5001 \
 	  SYSTEM_PROMPT_PATH=$(CURDIR)/agents/triager/system_prompt_v1.md \
+	  REVIEWER_PROMPT_PATH=$(CURDIR)/agents/triager/reviewer_prompt_v1.md \
+	  INVESTIGATOR_PROMPT_PATH=$(CURDIR)/agents/investigator/system_prompt_v1.md \
 	  ATTEST_LLM_PROVIDER=local \
 	  ATTEST_LLM_BASE_URL=http://127.0.0.1:8888/v1 \
 	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
-	  ATTEST_LLM_API_KEY=$(ATTEST_LLM_API_KEY) \
+	  ATTEST_LLM_API_KEY=$${ATTEST_LLM_API_KEY} \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
 	  cargo run -p attest-orchestrator
 
 run-orchestrator-local: run-orchestrator ## Alias for run-orchestrator (local Unsloth LLM path)
 
 run-orchestrator-cloud: ## Run orchestrator natively (Anthropic Sonnet LLM path — requires ANTHROPIC_API_KEY)
-	@test -n "$$ANTHROPIC_API_KEY" || (echo "ERROR: ANTHROPIC_API_KEY is not set"; exit 1)
+	$(DOTENV_SH) \
+	test -n "$$ANTHROPIC_API_KEY" || (echo "ERROR: ANTHROPIC_API_KEY is not set (add to .env or export)"; exit 1); \
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
 	  CALIBRATION_URL=http://localhost:5001 \
 	  SYSTEM_PROMPT_PATH=$(CURDIR)/agents/triager/system_prompt_v1.md \
+	  REVIEWER_PROMPT_PATH=$(CURDIR)/agents/triager/reviewer_prompt_v1.md \
+	  INVESTIGATOR_PROMPT_PATH=$(CURDIR)/agents/investigator/system_prompt_v1.md \
 	  ATTEST_LLM_PROVIDER=anthropic \
 	  ATTEST_LLM_MODEL=claude-sonnet-4-5 \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
 	  cargo run -p attest-orchestrator
 
 e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans up
+	@echo "==> Cleaning up any previous test processes..."
+	@pkill -f "target.*attest-orchestrator" 2>/dev/null || true
+	@pkill -f "calibrate.py" 2>/dev/null || true
+	@sleep 1
 	@echo "==> Starting calibration sidecar (port 5001)..."
-	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
+	cd ml && env -u VIRTUAL_ENV CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
 	@echo "==> Starting orchestrator (port 4300)..."
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
@@ -92,8 +127,12 @@ e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans u
 	  exit $$STATUS
 
 e2e-phase4b: ## Run Phase 4b E2E tests — hybrid LLM escalation (requires ATTEST_LLM_PROVIDER=local and Unsloth on :8888)
+	@echo "==> Cleaning up any previous test processes..."
+	@pkill -f "target.*attest-orchestrator" 2>/dev/null || true
+	@pkill -f "calibrate.py" 2>/dev/null || true
+	@sleep 1
 	@echo "==> Starting calibration sidecar (port 5001)..."
-	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
+	cd ml && env -u VIRTUAL_ENV CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
 	@echo "==> Starting orchestrator with local LLM config (port 4300)..."
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
@@ -124,9 +163,13 @@ e2e-phase4b: ## Run Phase 4b E2E tests — hybrid LLM escalation (requires ATTES
 	open http://localhost:5115
 
 e2e-phase5: ## Run Phase 5 E2E tests — hallucination guardrails (ATTEST_GUARDRAILS=on, requires local LLM)
+	@echo "==> Cleaning up any previous test processes..."
+	@pkill -f "target.*attest-orchestrator" 2>/dev/null || true
+	@pkill -f "calibrate.py" 2>/dev/null || true
+	@sleep 1
 	@test -n "$$ATTEST_LLM_API_KEY" || (echo "WARNING: ATTEST_LLM_API_KEY is not set — Unsloth Studio may reject requests"; true)
 	@echo "==> Starting calibration sidecar (port 5001)..."
-	cd ml && CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
+	cd ml && env -u VIRTUAL_ENV CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
 	@echo "==> Starting orchestrator with guardrails enabled (port 4300)..."
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
@@ -160,6 +203,70 @@ e2e-phase5: ## Run Phase 5 E2E tests — hallucination guardrails (ATTEST_GUARDR
 	  pkill -f "calibrate.py" 2>/dev/null || true; \
 	  exit $$STATUS
 
+e2e-phase6: ## Run Phase 6 E2E tests — shadow check + triager auto-close
+	@echo "==> Cleaning up any previous test processes..."
+	@pkill -f "target.*attest-orchestrator" 2>/dev/null || true
+	@pkill -f "calibrate.py" 2>/dev/null || true
+	@sleep 1
+	@echo "==> Starting calibration sidecar (port 5001)..."
+	cd ml && env -u VIRTUAL_ENV CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve > /tmp/attest-calibration.log 2>&1 &
+	@echo "==> Starting orchestrator with Phase 6 env vars (port 4300)..."
+	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
+	  ORCHESTRATOR_PORT=4300 \
+	  CALIBRATION_URL=http://localhost:5001 \
+	  SYSTEM_PROMPT_PATH=$(CURDIR)/agents/triager/system_prompt_v1.md \
+	  REVIEWER_PROMPT_PATH=$(CURDIR)/agents/triager/reviewer_prompt_v1.md \
+	  ATTEST_LLM_PROVIDER=local \
+	  ATTEST_LLM_BASE_URL=http://127.0.0.1:8888/v1 \
+	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
+	  ATTEST_LLM_API_KEY=$(ATTEST_LLM_API_KEY) \
+	  MCP_GATEWAY_URL=http://localhost:4242 \
+	  AUTO_CLOSE_THRESHOLD=0.90 \
+	  DO_NOT_TOUCH_LIST=ceo@corp.com,admin@corp.com \
+	  TENANT_ALLOWS_AUTOMATION=true \
+	  AUTO_CLOSE_ACTION_CLASSES=login,api_call,file_access \
+	  ATTEST_GUARDRAILS=on \
+	  ATTEST_LOG_PATH=/tmp/attest-test-attestations-p6.ndjson \
+	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator-p6.log 2>&1 &
+	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
+	@for i in $$(seq 1 60); do \
+	  curl -sf http://localhost:4300/healthz > /dev/null 2>&1 && echo "  ready after $${i}s" && break; \
+	  sleep 1; \
+	done
+	@curl -sf http://localhost:4300/healthz > /dev/null 2>&1 || \
+	  (echo "ERROR: orchestrator did not start. Logs:"; cat /tmp/attest-orchestrator-p6.log; \
+	   pkill -f "calibrate.py" 2>/dev/null || true; exit 1)
+	@grep -q "Address already in use" /tmp/attest-orchestrator-p6.log && \
+	  (echo "ERROR: port 4300 still in use — run: pkill -f attest-orchestrator"; exit 1) || true
+	@echo "==> Running Phase 6 E2E tests..."
+	ATTEST_E2E=1 AUTO_CLOSE_THRESHOLD=0.90 DO_NOT_TOUCH_LIST=ceo@corp.com,admin@corp.com \
+	  TENANT_ALLOWS_AUTOMATION=true \
+	  cargo test --test phase6_auto_close -- --nocapture; \
+	  STATUS=$$?; \
+	  echo "==> Stopping services..."; \
+	  pkill -f "target.*attest-orchestrator" 2>/dev/null || true; \
+	  pkill -f "calibrate.py" 2>/dev/null || true; \
+	  exit $$STATUS
+
+e2e-phase7: ## Phase 7 — Investigator loop (integration test; wiremock + scripted LLM)
+	@echo "==> Running Phase 7 investigator integration tests..."
+	cargo test -p attest-orchestrator --test investigator_loop -- --nocapture
+
+e2e-phase7-live: ## Phase 7 — live stack: POST /triage → investigator → GET …/trace (see scripts/e2e/README.md)
+	@echo "==> Phase 7 live E2E (orchestrator + workbench-api + shared ATTEST_LOG_PATH)..."
+	$(DOTENV_SH) \
+	ATTEST_E2E=1 ATTEST_PHASE7_LIVE=1 \
+	  cargo test -p e2e-tests --test phase7_live_investigator -- --nocapture
+
+e2e-run-phase: ## Usage: make e2e-run-phase P=7|7-live — shell driver (see scripts/e2e/README.md)
+	@test -n "$(P)" || (echo "Set P to 1,2,3,4a,4b,5,6,7,7-live,arroyo,all-platform,all-offline,help"; exit 1)
+	@scripts/e2e/run-phase.sh $(P)
+
+e2e-all-offline: ## Rust workspace + Phase7 investigator test + ML pytest (no Docker)
+	scripts/e2e/run-phase.sh all-offline
+
+e2e-all-platform: ## Phases 1–3 only; requires stack + ATTEST_E2E implied by script
+	scripts/e2e/run-phase.sh all-platform
 
 redpanda-ui: ## Open Redpanda Console in the browser (http://localhost:8081)
 	open http://localhost:8081
@@ -181,7 +288,7 @@ dev-up-ml: ## Start core services + Python ML sidecar
 smoke: ## Quick sanity check: cargo test + bun test + pytest
 	cargo test --workspace
 	bun run test
-	uv run pytest ml/
+	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
 
 seed-data: ## Download Tier 1 datasets into MinIO and Postgres (see 08_Datasets_and_ML.md)
 	@echo "TODO: implement seed-data (08_Datasets_and_ML.md §2.1)"
@@ -192,7 +299,7 @@ fmt: ## Format all Rust code
 test: ## Run all tests: Rust workspace + JS + Python
 	cargo test --workspace
 	bun run test
-	uv run pytest ml/
+	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
 
 lint: ## Lint all code: clippy + bun lint
 	cargo clippy --workspace --all-targets -- -D warnings

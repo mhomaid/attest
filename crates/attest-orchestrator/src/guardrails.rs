@@ -69,6 +69,15 @@ pub fn retrieval_reprompt() -> &'static str {
      your verdict."
 }
 
+/// Investigator-loop variant — warm tier is mandatory when historical evidence matters.
+pub fn investigator_retrieval_reprompt() -> &'static str {
+    "Your verdict was rejected: you must call at least one investigation tool before \
+     the final JSON. For historical or multi-day context you must call `query_warm_tier` \
+     with a read-only SELECT. You may also use query_hot_tier, lookup_threat_intel, \
+     get_asset_context, get_user_baseline, analyze_code_snippet, or sandbox_detonate. \
+     Call a tool now, then re-emit your verdict JSON."
+}
+
 // ── Citation enforcement ──────────────────────────────────────────────────────
 
 /// Result of citation validation.
@@ -184,7 +193,7 @@ pub fn validate_citations(
 
     // 2. Missing citation check — factual claim sentences without any citation
     let missing_citations: Vec<String> = reasoning
-        .split(|c| c == '.' || c == '\n')
+        .split(['.', '\n'])
         .map(str::trim)
         .filter(|s| !s.is_empty() && s.len() > 20)
         .filter(|s| is_claim_sentence(s))

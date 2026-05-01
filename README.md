@@ -212,7 +212,7 @@ A Python pipeline (managed with `uv`) that trains the classifier artifacts the R
 |---|---|
 | `train.py` | XGBoost classifier → `model.onnx` + `shap_background.npy` + SHA-256 hashes |
 | `novelty.py` | Mahalanobis covariance parameters → `novelty_mean.npy` + `novelty_inv_cov.npy` + `novelty_threshold.txt` |
-| `calibrate.py` | Isotonic regression calibration → `calibration_models.pkl`; also serves a Flask HTTP sidecar on `:5001` |
+| `calibrate.py` | Isotonic regression calibration → `calibration_models.pkl`; also serves a FastAPI HTTP sidecar on `:5001` |
 
 ```
 ml/triager/golden_cases.json  (210 labelled alerts, 10 OOD)
@@ -989,7 +989,7 @@ Attest/
 │       ├── golden_cases.json     # 210 labelled alerts (200 in-dist + 10 OOD)
 │       ├── train.py              # XGBoost → model.onnx + shap_background.npy
 │       ├── novelty.py            # Mahalanobis → novelty_mean/inv_cov.npy + threshold
-│       ├── calibrate.py          # Isotonic regression → calibration_models.pkl + Flask sidecar
+│       ├── calibrate.py          # Isotonic regression → calibration_models.pkl + FastAPI sidecar
 │       ├── Makefile              # train / novelty / calibrate / serve-calibration targets
 │       └── artifacts/            # Generated — gitignored
 ├── agents/

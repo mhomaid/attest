@@ -11,6 +11,7 @@ use crate::triage::{TriageEngine, TriageRequest};
 use axum::{
     extract::State,
     http::StatusCode,
+    middleware::from_fn,
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
@@ -64,6 +65,7 @@ pub struct OrchestratorMetrics {
         OrchestratorMetrics,
         crate::triage::TriageRequest,
         crate::triage::TriageVerdict,
+        crate::triage::InvestigationSummary,
     )),
     info(
         title = "Attest Orchestrator",
@@ -91,6 +93,7 @@ pub fn build_router(engine: TriageEngine) -> Router {
     Router::new()
         .merge(api)
         .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
+        .layer(from_fn(attest_telemetry::axum_trace_propagation))
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────

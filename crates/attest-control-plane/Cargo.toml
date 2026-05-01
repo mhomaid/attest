@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 attest-common = { path = "../attest-common" }
+attest-telemetry = { path = "../attest-telemetry" }
 anyhow = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
 chrono = { workspace = true }

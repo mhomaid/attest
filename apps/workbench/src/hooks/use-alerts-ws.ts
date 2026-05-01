@@ -23,6 +23,7 @@ export function useAlertsWs() {
   // Dedup within the session to avoid showing the same event twice if the
   // server reconnects and replays.
   const seenIds = useRef<Set<string>>(new Set());
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     const wsUrl =
@@ -55,14 +56,18 @@ export function useAlertsWs() {
       // Exponential back-off: 1s, 2s, 4s … 32s
       retryTimer.current = setTimeout(() => {
         retryMs.current = Math.min(retryMs.current * 2, 32_000);
-        connect();
+        connectRef.current();
       }, retryMs.current);
     };
 
     ws.onerror = () => {
       ws.close(); // triggers onclose → retry
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

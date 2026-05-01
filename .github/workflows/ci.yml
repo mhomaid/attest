@@ -42,7 +42,8 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Run tests
-        run: uv run pytest ml/
+        working-directory: ml
+        run: uv sync && uv run pytest triager/ test_smoke.py -q
 
   typescript:
     name: TypeScript (bun · typecheck · lint)

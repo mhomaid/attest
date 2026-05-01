@@ -1,4 +1,4 @@
-# Calibration sidecar — Python Flask service that serves isotonic regression
+# Calibration sidecar — FastAPI + uvicorn serving isotonic regression
 # calibration models trained by ml/triager/calibrate.py.
 
 FROM python:3.12-slim
@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir flask numpy scikit-learn
+RUN pip install --no-cache-dir fastapi "uvicorn[standard]" numpy scikit-learn
 
 COPY ml/triager/calibrate.py ./calibrate.py
 COPY ml/triager/artifacts/ ./artifacts/

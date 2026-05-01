@@ -18,29 +18,48 @@
 //!   GUARDRAIL_MAX_RETRIES         Max re-prompts per check (default 3)
 //!   CROSS_REVIEW_SEVERITY_THRESHOLD  Calibrated confidence above which cross-review fires (default 0.85)
 //!
+//! Auto-close (Phase 6):
+//!   AUTO_CLOSE_THRESHOLD        Confidence floor for auto-close (default 0.90)
+//!   DO_NOT_TOUCH_LIST           Comma-separated principals that are never auto-closed
+//!   TENANT_ALLOWS_AUTOMATION    "true" (default) | "false"
+//!   AUTO_CLOSE_ACTION_CLASSES   Comma-separated action classes eligible for auto-close
+//!                               (default login,api_call,file_access)
+//!
 //! LLM inference (Phase 4b):
 //!   ATTEST_LLM_PROVIDER     "local" (default) | "anthropic"
 //!   ATTEST_LLM_BASE_URL     OpenAI-compat base URL for local provider
 //!                           (default http://127.0.0.1:8888/v1)
 //!   ATTEST_LLM_MODEL        Model ID (default unsloth/Qwen3.6-35B-A3B-GGUF)
 //!   ANTHROPIC_API_KEY       Required when ATTEST_LLM_PROVIDER=anthropic
+//!
+//! Investigator (Phase 7):
+//!   INVESTIGATOR_PROMPT_PATH     Path to investigator system prompt
+//!                                (default ./agents/investigator/system_prompt_v1.md)
+//!   INVESTIGATOR_AGENT_ID        Agent id on investigator envelopes (default investigator-v1)
+//!   INVESTIGATOR_MAX_ITERATIONS  Max LLM tool rounds for Investigator (default 10)
+//!
+//! OpenTelemetry / Grafana Tempo (optional):
+//!   OTEL_EXPORTER_OTLP_ENDPOINT  OTLP gRPC endpoint (e.g. http://127.0.0.1:4317)
+//!   OTEL_SERVICE_NAME            Override default service name for traces
 
 use attest_attestation::Signer;
 use attest_inference_router::from_env as llm_from_env;
 use attest_orchestrator::{
     agent::{AgentDefinition, ClassifierArtifact, ExecutionPath},
     build_router,
+    shadow_check::ShadowChecker,
     triage::TriageEngine,
     AgentRole,
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing_subscriber::{fmt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    fmt().with_env_filter(EnvFilter::from_default_env()).init();
+    let service_name =
+        std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "attest-orchestrator".into());
+    let _otel = attest_telemetry::init_subscriber_with_otel(&service_name)?;
 
     let port: u16 = std::env::var("ORCHESTRATOR_PORT")
         .unwrap_or_else(|_| "4300".into())
@@ -118,6 +137,29 @@ async fn main() -> anyhow::Result<()> {
         "Reviewer prompt loaded"
     );
 
+    // ── Investigator prompt (Phase 7) ────────────────────────────────────────
+    let investigator_prompt_path = std::env::var("INVESTIGATOR_PROMPT_PATH").unwrap_or_else(|_| {
+        "./agents/investigator/system_prompt_v1.md".into()
+    });
+    let investigator_prompt = std::fs::read_to_string(&investigator_prompt_path)
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                path = %investigator_prompt_path,
+                error = %e,
+                "investigator prompt not found — NeedsInvestigation cases will get empty instructions"
+            );
+            String::new()
+        });
+    let investigator_prompt_hash = hex::encode(Sha256::digest(investigator_prompt.as_bytes()));
+    let investigator_agent_id =
+        std::env::var("INVESTIGATOR_AGENT_ID").unwrap_or_else(|_| "investigator-v1".into());
+    tracing::info!(
+        path = %investigator_prompt_path,
+        agent_id = %investigator_agent_id,
+        hash = %&investigator_prompt_hash[..16],
+        "Investigator prompt loaded"
+    );
+
     // ── LLM client ────────────────────────────────────────────────────────────
     let llm_provider = std::env::var("ATTEST_LLM_PROVIDER").unwrap_or_else(|_| "local".into());
     let llm_model = std::env::var("ATTEST_LLM_MODEL")
@@ -184,6 +226,14 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(verifying_key = %signer.verifying_key_hex(), "Ed25519 signing key ready");
 
+    // ── Shadow checker (Phase 6) ──────────────────────────────────────────────
+    let shadow_checker = ShadowChecker::from_env();
+    tracing::info!(
+        auto_close_threshold = std::env::var("AUTO_CLOSE_THRESHOLD").unwrap_or_else(|_| "0.90".into()),
+        tenant_allows_automation = std::env::var("TENANT_ALLOWS_AUTOMATION").unwrap_or_else(|_| "true".into()),
+        "Shadow checker ready"
+    );
+
     // ── Build engine and start server ─────────────────────────────────────────
     let engine = TriageEngine::load(
         agent_def,
@@ -192,7 +242,11 @@ async fn main() -> anyhow::Result<()> {
         system_prompt_hash,
         reviewer_prompt,
         reviewer_prompt_hash,
+        investigator_prompt,
+        investigator_prompt_hash,
+        investigator_agent_id,
         llm_client,
+        shadow_checker,
     )?;
 
     let router = build_router(engine);

@@ -1,5 +1,4 @@
 mod consumer;
-mod error;
 mod schema;
 mod writer;
 

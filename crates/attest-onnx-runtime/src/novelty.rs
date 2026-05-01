@@ -132,8 +132,8 @@ mod tests {
         let n = 8;
         let mean = vec![0.0f64; n];
         let mut inv_cov = vec![vec![0.0f64; n]; n];
-        for i in 0..n {
-            inv_cov[i][i] = 1.0;
+        for (i, row) in inv_cov.iter_mut().enumerate().take(n) {
+            row[i] = 1.0;
         }
         let det = NoveltyDetector { mean, inv_cov, threshold: 3.0, n_features: n };
         let features = FeatureExtractor::extract_from_json(&serde_json::json!({

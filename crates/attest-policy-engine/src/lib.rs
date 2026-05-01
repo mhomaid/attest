@@ -56,7 +56,13 @@ pub fn authorize(role: &AgentRole, tool_id: &str, ctx: &PolicyContext) -> Policy
     // All roles: read-only hot/warm tier and baseline queries are always allowed.
     if matches!(
         tool_id,
-        "query_hot_tier" | "query_warm_tier" | "get_user_baseline" | "get_asset_context" | "lookup_threat_intel"
+        "query_hot_tier"
+            | "query_warm_tier"
+            | "get_user_baseline"
+            | "get_asset_context"
+            | "lookup_threat_intel"
+            | "analyze_code_snippet"
+            | "sandbox_detonate"
     ) {
         return PolicyDecision::allow();
     }

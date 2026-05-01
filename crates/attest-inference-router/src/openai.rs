@@ -95,7 +95,7 @@ struct WireUsage {
 
 // ── Conversions ───────────────────────────────────────────────────────────────
 
-fn to_wire_messages(msgs: &[ChatMessage]) -> Vec<WireMessage> {
+fn to_wire_messages(msgs: &[ChatMessage], encode_tool_results_as_user: bool) -> Vec<WireMessage> {
     msgs.iter().map(|m| match m {
         ChatMessage::System { content } => WireMessage {
             role: "system".into(),
@@ -127,13 +127,27 @@ fn to_wire_messages(msgs: &[ChatMessage]) -> Vec<WireMessage> {
             tool_call_id: None,
             name: None,
         },
-        ChatMessage::Tool { tool_call_id, content } => WireMessage {
-            role: "tool".into(),
-            content: Some(WireContent::Text(content.clone())),
-            tool_calls: None,
-            tool_call_id: Some(tool_call_id.clone()),
-            name: None,
-        },
+        ChatMessage::Tool { tool_call_id, content } => {
+            if encode_tool_results_as_user {
+                WireMessage {
+                    role: "user".into(),
+                    content: Some(WireContent::Text(format!(
+                        "[tool_result tool_call_id={tool_call_id}]\n{content}"
+                    ))),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
+                }
+            } else {
+                WireMessage {
+                    role: "tool".into(),
+                    content: Some(WireContent::Text(content.clone())),
+                    tool_calls: None,
+                    tool_call_id: Some(tool_call_id.clone()),
+                    name: None,
+                }
+            }
+        }
     }).collect()
 }
 
@@ -160,19 +174,45 @@ fn parse_finish_reason(s: Option<&str>) -> FinishReason {
 
 // ── Client ────────────────────────────────────────────────────────────────────
 
+/// Tunables for [`OpenAiCompatClient`].
+#[derive(Clone, Copy, Debug)]
+pub struct OpenAiCompatConfig {
+    /// When true (default), tool results are sent as `role: "user"` with a tagged prefix.
+    /// Strict OpenAI-compat validators (e.g. some local servers) reject `role: "tool"`.
+    pub encode_tool_results_as_user: bool,
+}
+
+impl Default for OpenAiCompatConfig {
+    fn default() -> Self {
+        Self {
+            encode_tool_results_as_user: true,
+        }
+    }
+}
+
 pub struct OpenAiCompatClient {
     base_url: String,
     model: String,
     client: reqwest::Client,
     api_key: Option<String>,
+    encode_tool_results_as_user: bool,
 }
 
 impl OpenAiCompatClient {
-    /// Create a new client.
+    /// Create a new client with [`OpenAiCompatConfig::default`] (Unsloth-friendly tool encoding).
     ///
     /// `base_url` should point to the root of the OpenAI-compat API, e.g.
     /// `http://127.0.0.1:8888/v1`.
     pub fn new(base_url: impl Into<String>, model: impl Into<String>, api_key: Option<String>) -> Self {
+        Self::with_config(base_url, model, api_key, OpenAiCompatConfig::default())
+    }
+
+    pub fn with_config(
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+        api_key: Option<String>,
+        config: OpenAiCompatConfig,
+    ) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             model: model.into(),
@@ -181,6 +221,7 @@ impl OpenAiCompatClient {
                 .build()
                 .expect("failed to build reqwest client"),
             api_key,
+            encode_tool_results_as_user: config.encode_tool_results_as_user,
         }
     }
 }
@@ -196,7 +237,7 @@ impl ChatClient for OpenAiCompatClient {
         let has_tools = !req.tools.is_empty();
         let wire_req = WireRequest {
             model: &self.model,
-            messages: to_wire_messages(&req.messages),
+            messages: to_wire_messages(&req.messages, self.encode_tool_results_as_user),
             tools: to_wire_tools(&req.tools),
             max_tokens: req.max_tokens,
             temperature: req.temperature,
@@ -258,7 +299,7 @@ impl ChatClient for OpenAiCompatClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ToolDef};
+    use crate::{ToolCall, ToolDef};
     use serde_json::json;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
 
@@ -336,6 +377,91 @@ mod tests {
         assert_eq!(tc.id, "call_abc");
         assert_eq!(tc.name, "get_user_baseline");
         assert_eq!(tc.arguments["principal"], "alice@example.com");
+    }
+
+    #[tokio::test]
+    async fn tool_results_default_to_user_role_for_strict_openai_compat() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": "done" },
+                    "finish_reason": "stop"
+                }],
+                "usage": { "prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12 }
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiCompatClient::new(server.uri(), "test-model", None);
+        let req = ChatRequest::new(
+            vec![
+                ChatMessage::user("run tool"),
+                ChatMessage::Assistant {
+                    content: String::new(),
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_abc".into(),
+                        name: "get_user_baseline".into(),
+                        arguments: json!({ "principal": "alice@example.com" }),
+                    }]),
+                },
+                ChatMessage::tool_result("call_abc", r#"{"baseline":"normal"}"#),
+            ],
+            vec![tool_def()],
+        );
+        client.chat(req).await.unwrap();
+
+        let requests = server.received_requests().await.expect("captured request");
+        assert_eq!(requests.len(), 1);
+        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let msgs = body["messages"].as_array().unwrap();
+        let last = msgs.last().unwrap();
+        assert_eq!(last["role"], "user");
+        let text = last["content"].as_str().unwrap();
+        assert!(text.starts_with("[tool_result tool_call_id=call_abc]\n"));
+        assert!(text.ends_with(r#"{"baseline":"normal"}"#));
+    }
+
+    #[tokio::test]
+    async fn tool_results_use_native_role_when_configured() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": "done" },
+                    "finish_reason": "stop"
+                }],
+                "usage": { "prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12 }
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiCompatClient::with_config(
+            server.uri(),
+            "test-model",
+            None,
+            OpenAiCompatConfig {
+                encode_tool_results_as_user: false,
+            },
+        );
+        let req = ChatRequest::new(
+            vec![
+                ChatMessage::user("run tool"),
+                ChatMessage::tool_result("call_abc", "ok"),
+            ],
+            vec![],
+        );
+        client.chat(req).await.unwrap();
+
+        let requests = server.received_requests().await.expect("captured request");
+        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let msgs = body["messages"].as_array().unwrap();
+        let last = msgs.last().unwrap();
+        assert_eq!(last["role"], "tool");
+        assert_eq!(last["tool_call_id"], "call_abc");
+        assert_eq!(last["content"], "ok");
     }
 
     #[tokio::test]

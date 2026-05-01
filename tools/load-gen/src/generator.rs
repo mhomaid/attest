@@ -26,18 +26,13 @@ use crate::scenarios;
 const N_PRODUCERS: usize = 8;
 const TOPIC: &str = "cloudtrail";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Scenario {
+    #[default]
     Mixed,
     Attack,
     Benign,
-}
-
-impl Default for Scenario {
-    fn default() -> Self {
-        Scenario::Mixed
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

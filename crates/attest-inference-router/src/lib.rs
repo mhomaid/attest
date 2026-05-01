@@ -149,6 +149,7 @@ pub trait ChatClient: Send + Sync {
 /// | `ATTEST_LLM_PROVIDER` | `local` | `local` or `anthropic` |
 /// | `ATTEST_LLM_BASE_URL` | `http://127.0.0.1:8888/v1` | OpenAI-compat base URL (for `local`) |
 /// | `ATTEST_LLM_MODEL` | `unsloth/Qwen3.6-35B-A3B-GGUF` | Model ID |
+/// | `ATTEST_OPENAI_NATIVE_TOOL_MESSAGES` | unset (`false`) | Set to `1`/`true` to send OpenAI-native `role: "tool"` messages (Unsloth often rejects these; default wraps results as `user`) |
 /// | `ANTHROPIC_API_KEY` | — | Required when provider is `anthropic` |
 pub fn from_env() -> Result<Box<dyn ChatClient>> {
     let provider = std::env::var("ATTEST_LLM_PROVIDER").unwrap_or_else(|_| "local".into());
@@ -161,8 +162,25 @@ pub fn from_env() -> Result<Box<dyn ChatClient>> {
                 .unwrap_or_else(|_| "unsloth/Qwen3.6-35B-A3B-GGUF".into());
             // Optional bearer token for Unsloth Studio (Settings → API Keys)
             let api_key = std::env::var("ATTEST_LLM_API_KEY").ok();
-            tracing::info!(base_url, model, "LLM provider: local (OpenAI-compat)");
-            Ok(Box::new(openai::OpenAiCompatClient::new(base_url, model, api_key)))
+            let native_tool_messages = std::env::var("ATTEST_OPENAI_NATIVE_TOOL_MESSAGES")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            let openai_config = openai::OpenAiCompatConfig {
+                encode_tool_results_as_user: !native_tool_messages,
+            };
+            tracing::info!(
+                base_url,
+                model,
+                native_tool_messages,
+                "LLM provider: local (OpenAI-compat)"
+            );
+            Ok(Box::new(openai::OpenAiCompatClient::with_config(
+                base_url,
+                model,
+                api_key,
+                openai_config,
+            )))
         }
         "anthropic" => {
             let api_key = std::env::var("ANTHROPIC_API_KEY")

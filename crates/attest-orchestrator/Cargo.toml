@@ -13,6 +13,7 @@ attest-feature-extractor = { path = "../attest-feature-extractor" }
 attest-inference-router = { path = "../attest-inference-router" }
 attest-onnx-runtime = { path = "../attest-onnx-runtime" }
 attest-policy-engine = { path = "../attest-policy-engine" }
+attest-telemetry = { path = "../attest-telemetry" }
 axum = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
@@ -20,6 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+http = "1"
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }

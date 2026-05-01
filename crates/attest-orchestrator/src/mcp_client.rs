@@ -97,9 +97,21 @@ impl McpClient {
             calibrated_confidence,
         };
 
-        let http_resp = self.client
+        let mut req = self
+            .client
             .post(format!("{}/invoke", self.base_url))
-            .json(&body)
+            .json(&body);
+
+        if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+        {
+            let mut headers = http::HeaderMap::new();
+            attest_telemetry::inject_trace_headers(&mut headers);
+            req = req.headers(headers);
+        }
+
+        let http_resp = req
             .send()
             .await
             .with_context(|| format!("MCP gateway unreachable at {}", self.base_url))?;
