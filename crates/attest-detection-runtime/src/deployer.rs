@@ -1,13 +1,13 @@
 //! Deploy compiled HELIQL detections as RisingWave materialized views.
 
 use anyhow::{Context, Result};
-use attest_heliql::{Detection, compile_to_risingwave, drop_view_sql};
+use attest_heliql::{compile_to_risingwave, drop_view_sql, Detection};
 use tokio_postgres::Client;
 use tracing::info;
 
 /// (Re-)deploy a detection: drop the view if it exists, then recreate it.
 pub async fn deploy(db: &Client, detection: &Detection) -> Result<()> {
-    let drop_sql   = drop_view_sql(&detection.id);
+    let drop_sql = drop_view_sql(&detection.id);
     let create_sql = compile_to_risingwave(detection)
         .with_context(|| format!("compile failed for detection '{}'", detection.id))?;
 
@@ -28,8 +28,10 @@ pub async fn deploy_all(db: &Client, detections: &[Detection]) -> usize {
     let mut ok = 0usize;
     for d in detections {
         match deploy(db, d).await {
-            Ok(_)  => ok += 1,
-            Err(e) => tracing::warn!(detection_id = %d.id, error = %e, detail = %format!("{e:#}"), "deploy failed"),
+            Ok(_) => ok += 1,
+            Err(e) => {
+                tracing::warn!(detection_id = %d.id, error = %e, detail = %format!("{e:#}"), "deploy failed")
+            }
         }
     }
     info!("{ok}/{} detections deployed successfully", detections.len());

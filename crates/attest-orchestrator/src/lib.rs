@@ -13,6 +13,7 @@ pub mod llm_loop;
 pub mod mcp_client;
 pub mod server;
 pub mod shadow_check;
+pub mod trace_kafka;
 pub mod triage;
 
 pub use agent::{AgentDefinition, AgentRole, ClassifierArtifact, ExecutionPath};

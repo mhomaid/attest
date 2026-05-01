@@ -60,6 +60,8 @@ pub enum ExecutionPathKind {
     Classifier,
     Llm,
     Hybrid,
+    /// Analyst human override (Phase 8).
+    HumanOverride,
 }
 
 /// Why the classifier escalated to the LLM path.
@@ -162,6 +164,17 @@ pub struct HybridEvidence {
     pub escalation_reason: EscalationReason,
 }
 
+/// Analyst override of a prior agent verdict (Phase 8 — immutable original preserved in log).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverrideEvidence {
+    /// Triager / investigator action that is being superseded.
+    pub original_agent_action_id: Uuid,
+    pub corrected_verdict: Verdict,
+    pub reason: String,
+    pub actor_id: String,
+    pub actor_email: String,
+}
+
 // ── Envelope variants ─────────────────────────────────────────────────────────
 
 /// The execution-path-specific evidence block.
@@ -178,6 +191,8 @@ pub enum EvidenceBlock {
     },
     /// Phase 6: Triager auto-closed the case after shadow-check approval.
     AutoClose(AutoCloseEvidence),
+    /// Phase 8: Human analyst override — new signed envelope; prior rows preserved.
+    Override(OverrideEvidence),
 }
 
 /// Common signed wrapper shared by all three envelope variants.

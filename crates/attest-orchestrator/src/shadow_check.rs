@@ -32,7 +32,11 @@ impl ShadowChecker {
         tenant_allows_automation: bool,
         allowed_action_classes: HashSet<String>,
     ) -> Self {
-        Self { do_not_touch, tenant_allows_automation, allowed_action_classes }
+        Self {
+            do_not_touch,
+            tenant_allows_automation,
+            allowed_action_classes,
+        }
     }
 
     /// Build from environment variables.
@@ -55,15 +59,19 @@ impl ShadowChecker {
             .map(|v| !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "off"))
             .unwrap_or(true);
 
-        let allowed_action_classes: HashSet<String> =
-            std::env::var("AUTO_CLOSE_ACTION_CLASSES")
-                .unwrap_or_else(|_| "login,api_call,file_access".into())
-                .split(',')
-                .map(|s| s.trim().to_ascii_lowercase())
-                .filter(|s| !s.is_empty())
-                .collect();
+        let allowed_action_classes: HashSet<String> = std::env::var("AUTO_CLOSE_ACTION_CLASSES")
+            .unwrap_or_else(|_| "login,api_call,file_access".into())
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        Self::new(do_not_touch, 0.90, tenant_allows_automation, allowed_action_classes)
+        Self::new(
+            do_not_touch,
+            0.90,
+            tenant_allows_automation,
+            allowed_action_classes,
+        )
     }
 
     /// Evaluate all shadow-check policies against the given triage context.
@@ -93,12 +101,13 @@ impl ShadowChecker {
 
         // Policy 2: Action-class allowlist
         policies_evaluated.push("action_class_allowlist".into());
-        if !self.allowed_action_classes.contains(&action_class.to_ascii_lowercase()) {
+        if !self
+            .allowed_action_classes
+            .contains(&action_class.to_ascii_lowercase())
+        {
             return ShadowCheckDecision {
                 allowed: false,
-                reason: format!(
-                    "action class '{action_class}' is not in the auto-close allowlist"
-                ),
+                reason: format!("action class '{action_class}' is not in the auto-close allowlist"),
                 policies_evaluated,
             };
         }
@@ -155,7 +164,9 @@ mod tests {
     fn allows_confident_benign_login() {
         let dec = checker().check("alice@corp.com", "login", 0.95);
         assert!(dec.allowed, "{}", dec.reason);
-        assert!(dec.policies_evaluated.contains(&"policy_engine_triager_auto_close".into()));
+        assert!(dec
+            .policies_evaluated
+            .contains(&"policy_engine_triager_auto_close".into()));
     }
 
     #[test]
@@ -174,9 +185,7 @@ mod tests {
 
     #[test]
     fn denies_when_tenant_automation_off() {
-        let c = ShadowChecker::new(
-            HashSet::new(), 0.90, false, ["login".into()].into(),
-        );
+        let c = ShadowChecker::new(HashSet::new(), 0.90, false, ["login".into()].into());
         let dec = c.check("alice@corp.com", "login", 0.95);
         assert!(!dec.allowed);
         assert!(dec.reason.contains("tenant"), "{}", dec.reason);

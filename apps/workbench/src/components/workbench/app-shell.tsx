@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { AttestSidebar } from "@/components/workbench/attest-sidebar";
 import { CommandPalette } from "@/components/workbench/command-palette";
+import { SignOutButton } from "@/components/workbench/sign-out-button";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -69,6 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <RadioTower className="h-3.5 w-3.5 text-signal-good" />
               <span className="font-mono text-[11px] text-muted-foreground">Attest</span>
             </div>
+            <SignOutButton />
           </div>
         </header>
 

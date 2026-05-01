@@ -96,7 +96,7 @@ export function firedDetectionToAlert(d: FiredDetection): Alert {
     verdict:       "investigating",
     confidence:    0,
     executionPath: "classifier",
-    updatedAt:     relativeTime(d.fired_at),
+    updatedAt:     d.fired_at,  // raw ISO — relative label computed live in UI
     technique,
     summary:       `Detection rule "${d.detection_id}" fired — entity: ${d.actor_user_name}, region: ${d.cloud_region}.`,
     agentStatus:   IDLE_AGENT,

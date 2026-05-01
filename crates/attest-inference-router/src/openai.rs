@@ -2,7 +2,9 @@
 //!
 //! Works with Unsloth Studio (127.0.0.1:8888/v1), llama.cpp server, vLLM, OpenAI, etc.
 
-use crate::{ChatClient, ChatMessage, ChatRequest, ChatResponse, FinishReason, ToolCall, ToolDef, Usage};
+use crate::{
+    ChatClient, ChatMessage, ChatRequest, ChatResponse, FinishReason, ToolCall, ToolDef, Usage,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -96,70 +98,83 @@ struct WireUsage {
 // ── Conversions ───────────────────────────────────────────────────────────────
 
 fn to_wire_messages(msgs: &[ChatMessage], encode_tool_results_as_user: bool) -> Vec<WireMessage> {
-    msgs.iter().map(|m| match m {
-        ChatMessage::System { content } => WireMessage {
-            role: "system".into(),
-            content: Some(WireContent::Text(content.clone())),
-            tool_calls: None,
-            tool_call_id: None,
-            name: None,
-        },
-        ChatMessage::User { content } => WireMessage {
-            role: "user".into(),
-            content: Some(WireContent::Text(content.clone())),
-            tool_calls: None,
-            tool_call_id: None,
-            name: None,
-        },
-        ChatMessage::Assistant { content, tool_calls } => WireMessage {
-            role: "assistant".into(),
-            content: Some(WireContent::Text(content.clone())),
-            tool_calls: tool_calls.as_ref().map(|tc| {
-                tc.iter().map(|c| WireToolCall {
-                    id: c.id.clone(),
-                    kind: "function".into(),
-                    function: WireFunction {
-                        name: c.name.clone(),
-                        arguments: serde_json::to_string(&c.arguments).unwrap_or_default(),
-                    },
-                }).collect()
-            }),
-            tool_call_id: None,
-            name: None,
-        },
-        ChatMessage::Tool { tool_call_id, content } => {
-            if encode_tool_results_as_user {
-                WireMessage {
-                    role: "user".into(),
-                    content: Some(WireContent::Text(format!(
-                        "[tool_result tool_call_id={tool_call_id}]\n{content}"
-                    ))),
-                    tool_calls: None,
-                    tool_call_id: None,
-                    name: None,
-                }
-            } else {
-                WireMessage {
-                    role: "tool".into(),
-                    content: Some(WireContent::Text(content.clone())),
-                    tool_calls: None,
-                    tool_call_id: Some(tool_call_id.clone()),
-                    name: None,
+    msgs.iter()
+        .map(|m| match m {
+            ChatMessage::System { content } => WireMessage {
+                role: "system".into(),
+                content: Some(WireContent::Text(content.clone())),
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+            },
+            ChatMessage::User { content } => WireMessage {
+                role: "user".into(),
+                content: Some(WireContent::Text(content.clone())),
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+            },
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+            } => WireMessage {
+                role: "assistant".into(),
+                content: Some(WireContent::Text(content.clone())),
+                tool_calls: tool_calls.as_ref().map(|tc| {
+                    tc.iter()
+                        .map(|c| WireToolCall {
+                            id: c.id.clone(),
+                            kind: "function".into(),
+                            function: WireFunction {
+                                name: c.name.clone(),
+                                arguments: serde_json::to_string(&c.arguments).unwrap_or_default(),
+                            },
+                        })
+                        .collect()
+                }),
+                tool_call_id: None,
+                name: None,
+            },
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+            } => {
+                if encode_tool_results_as_user {
+                    WireMessage {
+                        role: "user".into(),
+                        content: Some(WireContent::Text(format!(
+                            "[tool_result tool_call_id={tool_call_id}]\n{content}"
+                        ))),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        name: None,
+                    }
+                } else {
+                    WireMessage {
+                        role: "tool".into(),
+                        content: Some(WireContent::Text(content.clone())),
+                        tool_calls: None,
+                        tool_call_id: Some(tool_call_id.clone()),
+                        name: None,
+                    }
                 }
             }
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 fn to_wire_tools(tools: &[ToolDef]) -> Vec<WireTool> {
-    tools.iter().map(|t| WireTool {
-        kind: "function",
-        function: WireToolFunction {
-            name: t.name.clone(),
-            description: t.description.clone(),
-            parameters: t.parameters.clone(),
-        },
-    }).collect()
+    tools
+        .iter()
+        .map(|t| WireTool {
+            kind: "function",
+            function: WireToolFunction {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            },
+        })
+        .collect()
 }
 
 fn parse_finish_reason(s: Option<&str>) -> FinishReason {
@@ -199,12 +214,27 @@ pub struct OpenAiCompatClient {
 }
 
 impl OpenAiCompatClient {
-    /// Create a new client with [`OpenAiCompatConfig::default`] (Unsloth-friendly tool encoding).
+    /// Create a new client for a local OpenAI-compat server (llama.cpp, Unsloth, Ollama, etc.).
+    ///
+    /// Sets `encode_tool_results_as_user = false` so tool results are sent with the proper
+    /// `role: "tool"` message type, giving the model correct context to produce a verdict
+    /// after calling tools rather than re-prompting endlessly.
     ///
     /// `base_url` should point to the root of the OpenAI-compat API, e.g.
     /// `http://127.0.0.1:8888/v1`.
-    pub fn new(base_url: impl Into<String>, model: impl Into<String>, api_key: Option<String>) -> Self {
-        Self::with_config(base_url, model, api_key, OpenAiCompatConfig::default())
+    pub fn new(
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+        api_key: Option<String>,
+    ) -> Self {
+        Self::with_config(
+            base_url,
+            model,
+            api_key,
+            OpenAiCompatConfig {
+                encode_tool_results_as_user: false,
+            },
+        )
     }
 
     pub fn with_config(
@@ -228,8 +258,12 @@ impl OpenAiCompatClient {
 
 #[async_trait]
 impl ChatClient for OpenAiCompatClient {
-    fn provider(&self) -> &str { "local" }
-    fn model_id(&self) -> &str { &self.model }
+    fn provider(&self) -> &str {
+        "local"
+    }
+    fn model_id(&self) -> &str {
+        &self.model
+    }
 
     async fn chat(&self, req: ChatRequest) -> Result<ChatResponse> {
         let t0 = Instant::now();
@@ -251,9 +285,15 @@ impl ChatClient for OpenAiCompatClient {
             rb = rb.bearer_auth(key);
         }
 
-        let http_resp = rb.send().await.context("OpenAI-compat: HTTP request failed")?;
+        let http_resp = rb
+            .send()
+            .await
+            .context("OpenAI-compat: HTTP request failed")?;
         let status = http_resp.status();
-        let body: Value = http_resp.json().await.context("OpenAI-compat: failed to parse response")?;
+        let body: Value = http_resp
+            .json()
+            .await
+            .context("OpenAI-compat: failed to parse response")?;
 
         if !status.is_success() {
             anyhow::bail!("OpenAI-compat API error {status}: {body}");
@@ -262,7 +302,10 @@ impl ChatClient for OpenAiCompatClient {
         let wire: WireResponse = serde_json::from_value(body.clone())
             .with_context(|| format!("OpenAI-compat: unexpected response shape: {body}"))?;
 
-        let choice = wire.choices.into_iter().next()
+        let choice = wire
+            .choices
+            .into_iter()
+            .next()
             .context("OpenAI-compat: empty choices")?;
         let msg = choice.message;
 
@@ -271,18 +314,30 @@ impl ChatClient for OpenAiCompatClient {
             _ => String::new(),
         };
 
-        let tool_calls = msg.tool_calls.unwrap_or_default().into_iter().map(|tc| {
-            let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
-            ToolCall { id: tc.id, name: tc.function.name, arguments: args }
-        }).collect::<Vec<_>>();
+        let tool_calls = msg
+            .tool_calls
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tc| {
+                let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+                ToolCall {
+                    id: tc.id,
+                    name: tc.function.name,
+                    arguments: args,
+                }
+            })
+            .collect::<Vec<_>>();
 
         let finish_reason = parse_finish_reason(choice.finish_reason.as_deref());
 
-        let usage = wire.usage.map(|u| Usage {
-            prompt_tokens: u.prompt_tokens,
-            completion_tokens: u.completion_tokens,
-            total_tokens: u.total_tokens,
-        }).unwrap_or_default();
+        let usage = wire
+            .usage
+            .map(|u| Usage {
+                prompt_tokens: u.prompt_tokens,
+                completion_tokens: u.completion_tokens,
+                total_tokens: u.total_tokens,
+            })
+            .unwrap_or_default();
 
         Ok(ChatResponse {
             content,
@@ -301,7 +356,10 @@ mod tests {
     use super::*;
     use crate::{ToolCall, ToolDef};
     use serde_json::json;
-    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     fn tool_def() -> ToolDef {
         ToolDef {
@@ -327,10 +385,7 @@ mod tests {
             .await;
 
         let client = OpenAiCompatClient::new(server.uri(), "test-model", None);
-        let req = ChatRequest::new(
-            vec![ChatMessage::user("classify this alert")],
-            vec![],
-        );
+        let req = ChatRequest::new(vec![ChatMessage::user("classify this alert")], vec![]);
         let resp = client.chat(req).await.unwrap();
         assert_eq!(resp.content, "verdict: benign");
         assert_eq!(resp.finish_reason, FinishReason::Stop);

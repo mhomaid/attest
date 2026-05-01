@@ -49,7 +49,9 @@ fn benign_alert() -> serde_json::Value {
 /// High-confidence benign login: all gates pass → AutoClosed + signed envelope.
 #[tokio::test]
 async fn auto_close_approves_benign_login() {
-    unsafe { std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90"); }
+    unsafe {
+        std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90");
+    }
 
     let result = try_auto_close(
         &Verdict::Benign,
@@ -62,9 +64,14 @@ async fn auto_close_approves_benign_login() {
         "test-tenant",
         Uuid::new_v4(),
         Uuid::new_v4(),
-    ).await;
+    )
+    .await;
 
-    assert_eq!(result.case_state, CaseState::AutoClosed, "expected AutoClosed");
+    assert_eq!(
+        result.case_state,
+        CaseState::AutoClosed,
+        "expected AutoClosed"
+    );
     assert!(result.shadow_check.allowed, "shadow check must be allowed");
     assert!(result.envelope.is_some(), "signed envelope must be present");
 
@@ -88,7 +95,8 @@ async fn auto_close_rejects_true_positive() {
         "test-tenant",
         Uuid::new_v4(),
         Uuid::new_v4(),
-    ).await;
+    )
+    .await;
 
     assert_eq!(result.case_state, CaseState::PendingHumanReview);
     assert!(!result.shadow_check.allowed);
@@ -100,7 +108,9 @@ async fn auto_close_rejects_true_positive() {
 /// Confidence below threshold routes to PendingHumanReview.
 #[tokio::test]
 async fn auto_close_rejects_low_confidence() {
-    unsafe { std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90"); }
+    unsafe {
+        std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90");
+    }
 
     let result = try_auto_close(
         &Verdict::Benign,
@@ -113,11 +123,16 @@ async fn auto_close_rejects_low_confidence() {
         "test-tenant",
         Uuid::new_v4(),
         Uuid::new_v4(),
-    ).await;
+    )
+    .await;
 
     assert_eq!(result.case_state, CaseState::PendingHumanReview);
     assert!(!result.shadow_check.allowed);
-    assert!(result.shadow_check.reason.contains("threshold"), "{}", result.shadow_check.reason);
+    assert!(
+        result.shadow_check.reason.contains("threshold"),
+        "{}",
+        result.shadow_check.reason
+    );
 }
 
 // ── Test 4 ────────────────────────────────────────────────────────────────────
@@ -125,7 +140,9 @@ async fn auto_close_rejects_low_confidence() {
 /// Principal on do-not-touch list: denied even at max confidence.
 #[tokio::test]
 async fn auto_close_rejects_do_not_touch_principal() {
-    unsafe { std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90"); }
+    unsafe {
+        std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90");
+    }
 
     let alert = json!({
         "principal": "ceo@corp.com",
@@ -143,11 +160,16 @@ async fn auto_close_rejects_do_not_touch_principal() {
         "test-tenant",
         Uuid::new_v4(),
         Uuid::new_v4(),
-    ).await;
+    )
+    .await;
 
     assert_eq!(result.case_state, CaseState::PendingHumanReview);
     assert!(!result.shadow_check.allowed);
-    assert!(result.shadow_check.reason.contains("do-not-touch"), "{}", result.shadow_check.reason);
+    assert!(
+        result.shadow_check.reason.contains("do-not-touch"),
+        "{}",
+        result.shadow_check.reason
+    );
 }
 
 // ── Test 5 ────────────────────────────────────────────────────────────────────
@@ -155,7 +177,9 @@ async fn auto_close_rejects_do_not_touch_principal() {
 /// Tenant automation disabled: denied even if everything else passes.
 #[tokio::test]
 async fn auto_close_rejects_when_tenant_automation_off() {
-    unsafe { std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90"); }
+    unsafe {
+        std::env::set_var("AUTO_CLOSE_THRESHOLD", "0.90");
+    }
 
     let result = try_auto_close(
         &Verdict::Benign,
@@ -168,7 +192,8 @@ async fn auto_close_rejects_when_tenant_automation_off() {
         "test-tenant",
         Uuid::new_v4(),
         Uuid::new_v4(),
-    ).await;
+    )
+    .await;
 
     assert_eq!(result.case_state, CaseState::PendingHumanReview);
     assert!(!result.shadow_check.allowed);

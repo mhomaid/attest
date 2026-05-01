@@ -431,7 +431,7 @@ Optional: `ATTEST_PHASE7_LIVE_STRICT=1`, `PHASE7_REQUIRE_WARM_QUERY=1`. Full not
 
 ## Workbench UI — Page Guide
 
-The workbench is a Next.js 15 App Router application at `apps/workbench`. Every page is a React Server Component that fetches live data from the backend on each request. No mock data is used — if the backend is offline, pages show explicit offline states. Client components (Load Lab, Simulate Lab) use Zustand stores for cross-navigation state.
+The workbench is a Next.js 16 App Router application at `apps/workbench`. Every page is a React Server Component that fetches live data from the backend on each request. No mock data is used — if the backend is offline, pages show explicit offline states. Client components (Load Lab, Simulate Lab) use Zustand stores for cross-navigation state.
 
 ### Page Map
 
@@ -713,18 +713,42 @@ curl http://localhost:4000/healthz    # {"status":"ok"}
 curl http://localhost:8080/healthz    # {"status":"ok"}
 ```
 
-### 4. Start the workbench UI
+### 4. Apply Postgres schema (workbench / Better Auth)
+
+The workbench uses **Postgres** for Better Auth (`auth_*` tables, snake_case columns). Migrations live in **`infra/db`** (Python **uv** + **Alembic**; SQL under `infra/db/sql/`). After infra is up (`make dev-up-infra` or full stack), run:
+
+```sh
+cd infra/db
+uv sync
+export DATABASE_URL=postgres://attest:attest@127.0.0.1:5432/attest
+uv run alembic upgrade head
+```
+
+This applies the auth DDL and **seeds local dev users** (same password for all: **`analyst-dev`**):
+
+| Email | Notes |
+| --- | --- |
+| `analyst@attest.local` | Default on the login form |
+| `viewer@attest.local` | Extra persona / second browser session |
+| `operator@attest.local` | Extra persona |
+
+`apps/workbench/migrations/0001_auth.sql` is a **symlink** into `infra/db/sql/` for tools that still expect that path. **Prefer Alembic** so `alembic_version` stays in sync.
+
+Optional HTTP fallback (not required if migrations ran): `POST /api/auth/seed-analyst` with `ALLOW_AUTH_SEED=1` and header `x-seed-secret` — see `apps/workbench/.env.local.example`.
+
+### 5. Start the workbench UI
 
 ```sh
 cd apps/workbench
+cp .env.local.example .env.local   # then set BETTER_AUTH_SECRET (≥32 chars), DATABASE_URL, etc.
 bun install
 bun run dev
 # Open http://localhost:3000
 ```
 
-The queue page badge will show **"Live — control-plane connected"** when the backend is reachable.
+The queue page badge will show **"Live — control-plane connected"** when the backend is reachable. Sign in at `/login` with one of the dev emails above (`analyst-dev`).
 
-### 5. Train the classifier and run the Triager agent (Phase 4a)
+### 6. Train the classifier and run the Triager agent (Phase 4a)
 
 ```sh
 # Install Python ML dependencies and train all artifacts (~30 s)
@@ -775,7 +799,7 @@ Phase 4b (Load Lab, Simulate Lab) is tested manually via the UI. Automated E2E f
 
 ### Step-by-Step Platform Test (do this after every significant change)
 
-**Prerequisites:** `make dev-up-services` is running, `make train-classifier` has been run once.
+**Prerequisites:** `make dev-up-services` is running, `make train-classifier` has been run once. For workbench routes that require sign-in, apply **Postgres migrations** from `infra/db` (`uv run alembic upgrade head` — see Quick Start §4) and ensure `apps/workbench/.env.local` has `DATABASE_URL` pointing at the same database.
 
 #### 1. Verify the streaming substrate
 
@@ -1078,8 +1102,9 @@ Attest/
 │   └── run_eval.py               # Calls POST /triage for each golden case, asserts metrics
 ├── detections/                   # 10 bundled HELIQL detection rules (Phase 3)
 ├── apps/
-│   └── workbench/                # Next.js 15 marketing site + SOC workbench UI
+│   └── workbench/                # Next.js 16 marketing site + SOC workbench UI
 ├── infra/
+│   ├── db/                       # Postgres migrations (uv + Alembic) — Better Auth schema + dev seed users
 │   ├── arroyo/                   # Arroyo streaming engine
 │   │   ├── pipelines/            # SQL pipeline definitions deployed via REST API
 │   │   │   ├── cloudtrail_to_parquet.sql    # Redpanda → Parquet → MinIO ETL

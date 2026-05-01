@@ -11,7 +11,11 @@ const HOME_REGION: &str = "us-east-1";
 /// Stable region pool for simulated tenants (exported for future use).
 #[allow(dead_code)]
 pub const REGIONS: &[&str] = &[
-    "us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1", "sa-east-1",
+    "us-east-1",
+    "us-west-2",
+    "eu-west-1",
+    "ap-southeast-1",
+    "sa-east-1",
 ];
 
 /// Build a benign login event (home region, success).
@@ -145,7 +149,10 @@ pub fn pick_event(tenant_id: &str, user_name: &str) -> FlatEvent {
 
 fn random_account() -> String {
     let mut rng = rand::thread_rng();
-    format!("{:012}", rng.gen_range(100_000_000_000u64..999_999_999_999u64))
+    format!(
+        "{:012}",
+        rng.gen_range(100_000_000_000u64..999_999_999_999u64)
+    )
 }
 
 fn pick_foreign_region() -> String {

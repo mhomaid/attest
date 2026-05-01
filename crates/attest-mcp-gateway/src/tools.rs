@@ -46,13 +46,10 @@ async fn query_warm_tier(args: &Value, warm_limiter: &WarmTierLimiter) -> Result
     let sql = args["sql"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("query_warm_tier requires string 'sql'"))?;
-    let max_rows: usize = args["limit"]
-        .as_u64()
-        .unwrap_or(500)
-        .min(10_000) as usize;
+    let max_rows: usize = args["limit"].as_u64().unwrap_or(500).min(10_000) as usize;
 
-    let base = std::env::var("CONTROL_PLANE_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".into());
+    let base =
+        std::env::var("CONTROL_PLANE_URL").unwrap_or_else(|_| "http://localhost:8080".into());
     let url = format!("{}/v1/warm/query", base.trim_end_matches('/'));
 
     let client = reqwest::Client::builder()

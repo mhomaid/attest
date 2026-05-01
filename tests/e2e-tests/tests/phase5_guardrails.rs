@@ -97,7 +97,10 @@ async fn phase5_classifier_path_unaffected_by_guardrails() {
     let elapsed = t0.elapsed();
 
     // Response must always carry a valid verdict field
-    assert!(resp["verdict"].is_string(), "response must have a verdict field: {resp}");
+    assert!(
+        resp["verdict"].is_string(),
+        "response must have a verdict field: {resp}"
+    );
 
     if resp["escalated"] == false {
         // Classifier-only path: must be well under 300ms
@@ -106,7 +109,11 @@ async fn phase5_classifier_path_unaffected_by_guardrails() {
             "classifier path must be fast, got {}ms",
             elapsed.as_millis()
         );
-        println!("Classifier path: {}ms verdict={}", elapsed.as_millis(), resp["verdict"]);
+        println!(
+            "Classifier path: {}ms verdict={}",
+            elapsed.as_millis(),
+            resp["verdict"]
+        );
     } else {
         // The model escalated this alert — guardrails ran correctly on the LLM path.
         println!(
@@ -168,7 +175,12 @@ async fn phase5_escalated_alerts_produce_valid_verdicts() {
         );
     }
 
-    let valid_verdicts = ["true_positive", "false_positive", "benign", "needs_investigation"];
+    let valid_verdicts = [
+        "true_positive",
+        "false_positive",
+        "benign",
+        "needs_investigation",
+    ];
     assert!(
         valid_verdicts.contains(&verdict),
         "escalated alert must have a valid verdict, got: {verdict}"
@@ -214,7 +226,10 @@ async fn phase5_attestation_log_has_guardrail_fields() {
     let resp = post_triage(&client, &url, alert).await;
 
     // Primary check: no 5xx error
-    assert!(resp["verdict"].is_string(), "response must have a verdict field: {resp}");
+    assert!(
+        resp["verdict"].is_string(),
+        "response must have a verdict field: {resp}"
+    );
 
     // If escalated, the action_id should be present for log cross-reference
     if resp["escalated"] == true {
@@ -269,6 +284,9 @@ async fn phase5_cross_review_present_on_high_severity_true_positive() {
         // For now just assert the response structure is present.
         assert!(resp["action_id"].is_string());
     } else {
-        println!("LLM did not emit true_positive for this alert — test inconclusive (verdict={})", resp["verdict"]);
+        println!(
+            "LLM did not emit true_positive for this alert — test inconclusive (verdict={})",
+            resp["verdict"]
+        );
     }
 }

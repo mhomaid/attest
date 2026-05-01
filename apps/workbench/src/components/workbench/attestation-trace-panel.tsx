@@ -1,10 +1,11 @@
 "use client";
 
 import { FileWarning, Loader2, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import type { KafkaTraceStep, WsTraceStatus } from "@/hooks/use-case-trace-ws";
 
-type TraceStep = {
+type HttpTraceStep = {
   kind: string;
   agent_action_id: string;
   agent_id: string;
@@ -14,41 +15,73 @@ type TraceStep = {
   belief_count: number;
 };
 
-type TraceResponse = { steps?: TraceStep[]; error?: string };
+type TraceResponse = { steps?: HttpTraceStep[]; error?: string };
 
 async function fetchCaseTrace(caseId: string): Promise<TraceResponse> {
   const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/trace`);
   return (await res.json()) as TraceResponse;
 }
 
-export function AttestationTracePanel({ caseId }: { caseId: string }) {
+function kafkaToDisplay(s: KafkaTraceStep): HttpTraceStep {
+  return {
+    kind: s.step_kind,
+    agent_action_id: s.agent_action_id,
+    agent_id: s.agent_id,
+    execution_path: s.execution_path,
+    verdict: s.summary,
+    tool_call_count: 0,
+    belief_count: 0,
+  };
+}
+
+export function AttestationTracePanel({
+  caseId,
+  liveSteps = [],
+  wsStatus = "disconnected",
+}: {
+  caseId: string;
+  liveSteps?: KafkaTraceStep[];
+  wsStatus?: WsTraceStatus;
+}) {
   const [data, setData] = useState<TraceResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchCaseTrace(caseId)
-      .then((json) => {
-        if (!cancelled) setData(json);
-      })
-      .catch(() => {
-        if (!cancelled) setData({ error: "Failed to load trace" });
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [caseId]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickTop = useRef(true);
 
-  function refresh() {
+  const load = useCallback(() => {
     setLoading(true);
     void fetchCaseTrace(caseId)
       .then(setData)
       .catch(() => setData({ error: "Failed to load trace" }))
       .finally(() => setLoading(false));
-  }
+  }, [caseId]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      load();
+    });
+  }, [load]);
+
+  const mergedSteps = useMemo(() => {
+    const http = data?.steps ?? [];
+    const live = liveSteps.map(kafkaToDisplay);
+    const seen = new Set<string>();
+    const out: HttpTraceStep[] = [];
+    for (const s of [...live, ...http]) {
+      const k = `${s.agent_action_id}-${s.kind}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(s);
+    }
+    return out;
+  }, [data?.steps, liveSteps]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !stickTop.current) return;
+    el.scrollTop = 0;
+  }, [mergedSteps.length]);
 
   return (
     <section className="rounded-lg border border-border bg-card/80 shadow-sm">
@@ -56,18 +89,26 @@ export function AttestationTracePanel({ caseId }: { caseId: string }) {
         <div className="flex items-center gap-2">
           <FileWarning className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold">Attestation trace</h2>
-          <span className="text-[10px] text-muted-foreground">Phase 7 · workbench-api</span>
+          <span className="text-[10px] text-muted-foreground">
+            HTTP replay + live · WS {wsStatus}
+          </span>
         </div>
         <button
           type="button"
-          onClick={refresh}
+          onClick={load}
           className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-secondary"
         >
           <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
           Refresh
         </button>
       </header>
-      <div className="p-3">
+      <div
+        ref={scrollRef}
+        className="max-h-[min(24rem,40vh)] overflow-auto p-3"
+        onScroll={(e) => {
+          stickTop.current = e.currentTarget.scrollTop <= 8;
+        }}
+      >
         {loading && !data ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -75,15 +116,13 @@ export function AttestationTracePanel({ caseId }: { caseId: string }) {
           </div>
         ) : data?.error ? (
           <p className="text-xs text-amber-600 dark:text-amber-400">{data.error}</p>
-        ) : !data?.steps?.length ? (
+        ) : !mergedSteps.length ? (
           <p className="text-xs text-muted-foreground">
             No attestation rows found for <code className="rounded bg-secondary px-1">{caseId}</code>.
-            Ensure orchestrator writes to the same <code className="rounded bg-secondary px-1">ATTEST_LOG_PATH</code> as
-            workbench-api.
           </p>
         ) : (
           <ol className="space-y-2">
-            {data.steps.map((s, i) => (
+            {mergedSteps.map((s, i) => (
               <li
                 key={`${s.agent_action_id}-${i}`}
                 className="rounded-md border border-border/60 bg-background/50 px-2 py-1.5 text-xs"

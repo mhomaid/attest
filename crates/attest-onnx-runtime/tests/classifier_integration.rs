@@ -16,7 +16,11 @@ fn artifacts_dir() -> Option<PathBuf> {
         .parent()? // crates/
         .parent()? // workspace root
         .join("ml/triager/artifacts");
-    if candidate.join("model.onnx").exists() { Some(candidate) } else { None }
+    if candidate.join("model.onnx").exists() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 #[test]
@@ -51,7 +55,10 @@ fn classifier_predicts_tp_for_brute_force_pattern() {
 
     let (score, shap) = classifier.predict(&features).expect("prediction failed");
 
-    assert!(score > 0.80, "brute-force should have P(TP) > 0.80; got {score:.4}");
+    assert!(
+        score > 0.80,
+        "brute-force should have P(TP) > 0.80; got {score:.4}"
+    );
     assert_eq!(shap.len(), 8, "SHAP must have 8 entries");
     println!("Brute-force P(TP)={score:.4}, SHAP={shap:?}");
 }
@@ -64,10 +71,12 @@ fn classifier_predicts_benign_for_routine_login() {
     };
 
     let model_path = dir.join("model.onnx");
-    if !model_path.exists() { return; }
+    if !model_path.exists() {
+        return;
+    }
 
-    let classifier = OnnxClassifier::load(&model_path, None::<&str>)
-        .expect("failed to load classifier");
+    let classifier =
+        OnnxClassifier::load(&model_path, None::<&str>).expect("failed to load classifier");
 
     let features = FeatureExtractor::extract_from_json(&serde_json::json!({
         "severity_score": 0.10,
@@ -82,7 +91,10 @@ fn classifier_predicts_benign_for_routine_login() {
 
     let (score, _) = classifier.predict(&features).expect("prediction failed");
 
-    assert!(score < 0.20, "benign login should have P(TP) < 0.20; got {score:.4}");
+    assert!(
+        score < 0.20,
+        "benign login should have P(TP) < 0.20; got {score:.4}"
+    );
     println!("Benign P(TP)={score:.4}");
 }
 
@@ -97,7 +109,9 @@ fn novelty_detector_scores_ood_higher_than_in_distribution() {
     let inv_cov_path = dir.join("novelty_inv_cov.npy");
     let threshold_path = dir.join("novelty_threshold.txt");
 
-    if !mean_path.exists() { return; }
+    if !mean_path.exists() {
+        return;
+    }
 
     let detector = NoveltyDetector::load(&mean_path, &inv_cov_path, &threshold_path)
         .expect("failed to load novelty detector");

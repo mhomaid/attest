@@ -11,7 +11,10 @@ use tracing::info;
 use writer::ParquetBatchWriter;
 
 #[derive(Parser, Debug)]
-#[command(name = "attest-storage-iceberg", about = "Redpanda → Parquet/Iceberg writer")]
+#[command(
+    name = "attest-storage-iceberg",
+    about = "Redpanda → Parquet/Iceberg writer"
+)]
 struct Cli {
     #[arg(long, env = "KAFKA_BROKERS", default_value = "localhost:9092")]
     kafka_brokers: String,

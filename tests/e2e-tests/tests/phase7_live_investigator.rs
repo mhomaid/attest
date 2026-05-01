@@ -164,7 +164,9 @@ async fn poll_trace_has_investigator(
     loop {
         let trace = get_trace(client, wb, case_id).await;
         let steps = trace["steps"].as_array().cloned().unwrap_or_default();
-        let has_inv = steps.iter().any(|s| s["kind"].as_str() == Some("investigator"));
+        let has_inv = steps
+            .iter()
+            .any(|s| s["kind"].as_str() == Some("investigator"));
         if has_inv {
             return trace;
         }
@@ -219,10 +221,9 @@ async fn phase7_live_triage_investigator_and_trace() {
             continue;
         }
 
-        let inv = resp
-            .get("investigation")
-            .filter(|v| !v.is_null())
-            .expect("needs_investigation must include investigation summary when LLM is configured");
+        let inv = resp.get("investigation").filter(|v| !v.is_null()).expect(
+            "needs_investigation must include investigation summary when LLM is configured",
+        );
 
         if let Some(err) = inv["error"].as_str() {
             panic!("investigator error: {err} — full response: {resp}");

@@ -6,7 +6,7 @@
 use crate::shadow_check::ShadowChecker;
 use attest_attestation::{
     AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, EvidenceBlock,
-    ExecutionPathKind, Signer, ShadowCheckDecision, TimingBlock, Verdict,
+    ExecutionPathKind, ShadowCheckDecision, Signer, TimingBlock, Verdict,
 };
 use chrono::Utc;
 use serde_json::Value;
@@ -41,9 +41,17 @@ fn is_auto_closeable(verdict: &Verdict) -> bool {
 /// Extract the principal from an alert JSON.
 /// Falls back through a priority list of common field names.
 pub fn extract_principal(alert: &Value) -> String {
-    for key in &["principal", "actor_user_name", "actor_user", "user", "subject"] {
+    for key in &[
+        "principal",
+        "actor_user_name",
+        "actor_user",
+        "user",
+        "subject",
+    ] {
         if let Some(s) = alert[key].as_str() {
-            if !s.is_empty() { return s.to_string(); }
+            if !s.is_empty() {
+                return s.to_string();
+            }
         }
     }
     "unknown".into()
@@ -53,7 +61,9 @@ pub fn extract_principal(alert: &Value) -> String {
 pub fn extract_action_class(alert: &Value) -> String {
     for key in &["event_type", "action_class", "action", "activity_name"] {
         if let Some(s) = alert[key].as_str() {
-            if !s.is_empty() { return s.to_ascii_lowercase(); }
+            if !s.is_empty() {
+                return s.to_ascii_lowercase();
+            }
         }
     }
     "unknown".into()
@@ -88,7 +98,11 @@ pub async fn try_auto_close(
             format!("verdict '{verdict:?}' is not auto-closeable"),
             vec!["verdict_allowlist".into()],
         );
-        return AutoCloseResult { case_state: CaseState::PendingHumanReview, shadow_check: sc, envelope: None };
+        return AutoCloseResult {
+            case_state: CaseState::PendingHumanReview,
+            shadow_check: sc,
+            envelope: None,
+        };
     }
 
     // Gate 2: confidence floor
@@ -97,7 +111,11 @@ pub async fn try_auto_close(
             format!("calibrated_confidence {calibrated_confidence:.3} < threshold {threshold:.3}"),
             vec!["confidence_floor".into()],
         );
-        return AutoCloseResult { case_state: CaseState::PendingHumanReview, shadow_check: sc, envelope: None };
+        return AutoCloseResult {
+            case_state: CaseState::PendingHumanReview,
+            shadow_check: sc,
+            envelope: None,
+        };
     }
 
     // Gate 3: shadow check (do-not-touch, action class, policy engine)
@@ -112,7 +130,11 @@ pub async fn try_auto_close(
             reason = %sc.reason,
             "auto-close denied by shadow check"
         );
-        return AutoCloseResult { case_state: CaseState::PendingHumanReview, shadow_check: sc, envelope: None };
+        return AutoCloseResult {
+            case_state: CaseState::PendingHumanReview,
+            shadow_check: sc,
+            envelope: None,
+        };
     }
 
     // All gates passed — build and sign the auto-close envelope
@@ -139,7 +161,11 @@ pub async fn try_auto_close(
         execution_path: ExecutionPathKind::Classifier,
         verdict: verdict.clone(),
         evidence: EvidenceBlock::AutoClose(evidence),
-        timing: TimingBlock { started_at, finished_at, total_ms },
+        timing: TimingBlock {
+            started_at,
+            finished_at,
+            total_ms,
+        },
         signature: String::new(),
         signed_at: finished_at,
     };
@@ -162,5 +188,9 @@ pub async fn try_auto_close(
 }
 
 fn make_denied_decision(reason: String, policies: Vec<String>) -> ShadowCheckDecision {
-    ShadowCheckDecision { allowed: false, reason, policies_evaluated: policies }
+    ShadowCheckDecision {
+        allowed: false,
+        reason,
+        policies_evaluated: policies,
+    }
 }

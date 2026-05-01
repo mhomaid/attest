@@ -70,12 +70,18 @@ impl AlertFeatures {
         let mut m = HashMap::new();
         m.insert("severity_score".into(), self.severity_score);
         m.insert("source_class_id".into(), self.source_class_id);
-        m.insert("entity_reputation_score".into(), self.entity_reputation_score);
+        m.insert(
+            "entity_reputation_score".into(),
+            self.entity_reputation_score,
+        );
         m.insert("baseline_deviation".into(), self.baseline_deviation);
         m.insert("threat_intel_hit_count".into(), self.threat_intel_hit_count);
         m.insert("hour_of_day".into(), self.hour_of_day);
         m.insert("asset_criticality".into(), self.asset_criticality);
-        m.insert("prior_disposition_ratio".into(), self.prior_disposition_ratio);
+        m.insert(
+            "prior_disposition_ratio".into(),
+            self.prior_disposition_ratio,
+        );
         m
     }
 }
@@ -104,14 +110,56 @@ impl FeatureExtractor {
     }
 
     /// Build features from a raw JSON alert payload (used by the orchestrator HTTP API).
+    ///
+    /// Accepts two formats transparently:
+    /// 1. **Pre-computed** – JSON already contains `severity_score`, `source_class_id`, etc.
+    /// 2. **OCSF flat** – JSON contains `severity` (string), `class_uid` (string), `time`
+    ///    (ISO-8601 string) as produced by the collector.  Fields missing from either format
+    ///    fall back to safe defaults.
     pub fn extract_from_json(alert: &serde_json::Value) -> AlertFeatures {
+        // ── severity_score ────────────────────────────────────────────────────
+        let severity_score = alert["severity_score"].as_f64().unwrap_or_else(|| {
+            match alert["severity"].as_str().unwrap_or("").to_lowercase().as_str() {
+                "informational" => 0.1,
+                "low"           => 0.3,
+                "medium"        => 0.5,
+                "high"          => 0.8,
+                "critical" | "fatal" => 1.0,
+                _               => 0.5,
+            }
+        });
+
+        // ── source_class_id ──────────────────────────────────────────────────
+        let source_class_id = alert["source_class_id"].as_f64().unwrap_or_else(|| {
+            alert["class_uid"]
+                .as_str()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(6003.0)
+        });
+
+        // ── hour_of_day ───────────────────────────────────────────────────────
+        // Prefer an explicit `hour_of_day` field; otherwise parse `time` / `eventTime`.
+        let hour_of_day = alert["hour_of_day"].as_f64().unwrap_or_else(|| {
+            let ts = alert["time"]
+                .as_str()
+                .or_else(|| alert["eventTime"].as_str())
+                .unwrap_or("");
+            // Take the HH component from "YYYY-MM-DDTHH:…" or "YYYY-MM-DD HH:…"
+            ts.chars()
+                .skip(11)
+                .take(2)
+                .collect::<String>()
+                .parse::<f64>()
+                .unwrap_or(12.0)
+        });
+
         AlertFeatures {
-            severity_score: alert["severity_score"].as_f64().unwrap_or(0.5),
-            source_class_id: alert["source_class_id"].as_f64().unwrap_or(6003.0),
+            severity_score,
+            source_class_id,
             entity_reputation_score: alert["entity_reputation_score"].as_f64().unwrap_or(0.0),
             baseline_deviation: alert["baseline_deviation"].as_f64().unwrap_or(0.0),
             threat_intel_hit_count: alert["threat_intel_hit_count"].as_f64().unwrap_or(0.0),
-            hour_of_day: alert["hour_of_day"].as_f64().unwrap_or(12.0),
+            hour_of_day,
             asset_criticality: alert["asset_criticality"].as_f64().unwrap_or(0.5),
             prior_disposition_ratio: alert["prior_disposition_ratio"].as_f64().unwrap_or(0.5),
         }

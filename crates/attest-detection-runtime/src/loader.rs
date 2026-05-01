@@ -1,7 +1,7 @@
 //! Load and parse all `.heliql` rule files from a directory.
 
 use anyhow::{Context, Result};
-use attest_heliql::{Detection, parse};
+use attest_heliql::{parse, Detection};
 use std::path::Path;
 use tracing::{info, warn};
 
@@ -15,7 +15,7 @@ pub fn load_rules(rules_dir: &Path) -> Result<Vec<Detection>> {
 
     for entry in entries {
         let entry = entry?;
-        let path  = entry.path();
+        let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("heliql") {
             continue;
         }

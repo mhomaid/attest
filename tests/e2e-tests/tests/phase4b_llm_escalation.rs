@@ -18,7 +18,9 @@ fn orchestrator_url() -> String {
 }
 
 fn is_local_llm_available() -> bool {
-    std::env::var("ATTEST_LLM_PROVIDER").map(|v| v == "local").unwrap_or(false)
+    std::env::var("ATTEST_LLM_PROVIDER")
+        .map(|v| v == "local")
+        .unwrap_or(false)
 }
 
 fn anthropic_key_available() -> bool {
@@ -151,7 +153,13 @@ async fn phase4b_ood_alert_produces_hybrid_envelope() {
         "Phase 4b must produce a real verdict (not escalated_stub); got {verdict}\nresponse: {resp}"
     );
     assert!(
-        ["true_positive", "false_positive", "benign", "needs_investigation"].contains(&verdict),
+        [
+            "true_positive",
+            "false_positive",
+            "benign",
+            "needs_investigation"
+        ]
+        .contains(&verdict),
         "verdict must be a recognised value; got {verdict}"
     );
 
@@ -167,9 +175,7 @@ async fn phase4b_ood_alert_produces_hybrid_envelope() {
         "LLM escalation took {elapsed:?} — must be <= 15s for local Qwen"
     );
 
-    println!(
-        "PASS: hybrid path, verdict={verdict}, latency={elapsed:?}"
-    );
+    println!("PASS: hybrid path, verdict={verdict}, latency={elapsed:?}");
 }
 
 // ── Test 3: Latency — 5 sequential high-confidence requests, P99 < 200ms ──────
@@ -212,8 +218,12 @@ async fn phase4b_classifier_p99_unaffected_by_llm_config() {
     }
 
     latencies_ms.sort_unstable();
-    let p99 = latencies_ms[((latencies_ms.len() as f64 * 0.99) as usize).min(latencies_ms.len() - 1)];
-    println!("Classifier P99 latency (Phase 4b): {p99}ms (n={})", latencies_ms.len());
+    let p99 =
+        latencies_ms[((latencies_ms.len() as f64 * 0.99) as usize).min(latencies_ms.len() - 1)];
+    println!(
+        "Classifier P99 latency (Phase 4b): {p99}ms (n={})",
+        latencies_ms.len()
+    );
 
     assert!(
         p99 < 200,
@@ -258,8 +268,14 @@ async fn phase4b_anthropic_escalation_produces_hybrid_envelope() {
     let elapsed = t0.elapsed();
 
     let verdict = resp["verdict"].as_str().unwrap_or("");
-    assert_ne!(verdict, "escalated_stub", "Anthropic path must not return escalated_stub; got {verdict}\nresponse: {resp}");
-    assert!(resp["classifier_evidence"].is_object(), "missing classifier_evidence");
+    assert_ne!(
+        verdict, "escalated_stub",
+        "Anthropic path must not return escalated_stub; got {verdict}\nresponse: {resp}"
+    );
+    assert!(
+        resp["classifier_evidence"].is_object(),
+        "missing classifier_evidence"
+    );
 
     println!("PASS: Anthropic hybrid path, verdict={verdict}, latency={elapsed:?}");
 }

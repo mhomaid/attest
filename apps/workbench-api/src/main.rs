@@ -27,8 +27,8 @@ struct TraceStep {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let service_name = std::env::var("OTEL_SERVICE_NAME")
-        .unwrap_or_else(|_| "attest-workbench-api".into());
+    let service_name =
+        std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "attest-workbench-api".into());
     let _otel = attest_telemetry::init_subscriber_with_otel(&service_name)?;
 
     let port: u16 = std::env::var("WORKBENCH_API_PORT")
@@ -44,7 +44,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/healthz", get(|| async { "ok" }))
         .route("/v1/cases/{case_id}/trace", get(case_trace))
         .with_state(log_path)
-        .layer(middleware::from_fn(attest_telemetry::axum_trace_propagation));
+        .layer(middleware::from_fn(
+            attest_telemetry::axum_trace_propagation,
+        ));
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("workbench-api listening on {addr}");
@@ -127,5 +129,6 @@ fn summarize_envelope(env: &AttestationEnvelope) -> (usize, usize, String) {
         ),
         EvidenceBlock::EscalatedStub { .. } => (0, 0, kind),
         EvidenceBlock::AutoClose(_) => (0, 0, kind),
+        EvidenceBlock::Override(_) => (0, 0, "human_override".into()),
     }
 }

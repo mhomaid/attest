@@ -21,8 +21,12 @@ impl Signer {
     /// Load from a 32-byte hex-encoded seed (for deterministic test keys).
     pub fn from_hex_seed(hex_seed: &str) -> Result<Self> {
         let bytes = hex::decode(hex_seed).context("invalid hex seed")?;
-        let arr: [u8; 32] = bytes.try_into().map_err(|_| anyhow::anyhow!("seed must be 32 bytes"))?;
-        Ok(Self { signing_key: SigningKey::from_bytes(&arr) })
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("seed must be 32 bytes"))?;
+        Ok(Self {
+            signing_key: SigningKey::from_bytes(&arr),
+        })
     }
 
     /// Export the verifying (public) key as hex.
@@ -42,11 +46,15 @@ impl Signer {
     /// Verify an envelope's signature given the hex-encoded verifying key.
     pub fn verify(envelope: &AttestationEnvelope, verifying_key_hex: &str) -> Result<bool> {
         let vk_bytes = hex::decode(verifying_key_hex).context("invalid verifying key hex")?;
-        let vk_arr: [u8; 32] = vk_bytes.try_into().map_err(|_| anyhow::anyhow!("verifying key must be 32 bytes"))?;
+        let vk_arr: [u8; 32] = vk_bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("verifying key must be 32 bytes"))?;
         let vk = VerifyingKey::from_bytes(&vk_arr).context("invalid verifying key")?;
 
         let sig_bytes = hex::decode(&envelope.signature).context("invalid signature hex")?;
-        let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| anyhow::anyhow!("signature must be 64 bytes"))?;
+        let sig_arr: [u8; 64] = sig_bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("signature must be 64 bytes"))?;
         let sig = Signature::from_bytes(&sig_arr);
 
         // Re-compute canonical bytes with empty signature field.

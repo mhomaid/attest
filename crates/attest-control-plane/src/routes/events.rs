@@ -2,10 +2,10 @@
 //! Looks up a specific event by event_id from the `recent_events` materialized view.
 
 use axum::{
-    Json,
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -29,6 +29,12 @@ pub struct EventRow {
     pub cloud_region: String,
     pub cloud_account_uid: String,
     pub severity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_operation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_service: Option<String>,
 }
 
 /// Fetch a recent OCSF event by ID from the RisingWave hot tier.
@@ -52,16 +58,20 @@ pub async fn get_recent_event(
 ) -> Response {
     let db = match state.get_db() {
         Some(db) => db,
-        None => return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "service starting up"})),
-        ).into_response(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error": "service starting up"})),
+            )
+                .into_response()
+        }
     };
 
     let rows = match db
         .query(
             "SELECT event_id, class_uid, time::TEXT, tenant_id, \
-             actor_user_name, actor_user_uid, cloud_region, cloud_account_uid, severity \
+             actor_user_name, actor_user_uid, cloud_region, cloud_account_uid, severity, \
+             auth_status, api_operation, api_service \
              FROM recent_events WHERE event_id = $1 LIMIT 1",
             &[&params.id],
         )
@@ -73,7 +83,8 @@ pub async fn get_recent_event(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": e.to_string()})),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -81,20 +92,24 @@ pub async fn get_recent_event(
         return (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "event not found"})),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let row = &rows[0];
     let event = EventRow {
-        event_id:         row.get(0),
-        class_uid:        row.get(1),
-        time:             row.get(2),
-        tenant_id:        row.get(3),
-        actor_user_name:  row.get(4),
-        actor_user_uid:   row.get(5),
-        cloud_region:     row.get(6),
-        cloud_account_uid:row.get(7),
-        severity:         row.get(8),
+        event_id: row.get(0),
+        class_uid: row.get(1),
+        time: row.get(2),
+        tenant_id: row.get(3),
+        actor_user_name: row.get(4),
+        actor_user_uid: row.get(5),
+        cloud_region: row.get(6),
+        cloud_account_uid: row.get(7),
+        severity: row.get(8),
+        auth_status: row.get(9),
+        api_operation: row.get(10),
+        api_service: row.get(11),
     };
 
     (StatusCode::OK, Json(serde_json::to_value(event).unwrap())).into_response()

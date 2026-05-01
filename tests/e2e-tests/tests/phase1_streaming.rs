@@ -137,10 +137,7 @@ async fn cloudtrail_event_appears_in_baseline_within_10s() {
         event["actor_user_name"].as_str().unwrap_or(""),
         "alice@example.com"
     );
-    assert_eq!(
-        event["cloud_region"].as_str().unwrap_or(""),
-        "us-west-2"
-    );
+    assert_eq!(event["cloud_region"].as_str().unwrap_or(""), "us-west-2");
 
     eprintln!("Event found in recent_events ✓");
 

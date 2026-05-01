@@ -48,10 +48,15 @@ impl ScriptedChatClient {
 impl ChatClient for ScriptedChatClient {
     async fn chat(&self, _req: ChatRequest) -> Result<ChatResponse> {
         let mut q = self.responses.lock().unwrap();
-        q.pop_front().ok_or_else(|| anyhow::anyhow!("ScriptedChatClient: no more responses"))
+        q.pop_front()
+            .ok_or_else(|| anyhow::anyhow!("ScriptedChatClient: no more responses"))
     }
-    fn provider(&self) -> &str { self.provider }
-    fn model_id(&self) -> &str { self.model_id }
+    fn provider(&self) -> &str {
+        self.provider
+    }
+    fn model_id(&self) -> &str {
+        self.model_id
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,7 +66,11 @@ fn plain_response(content: impl Into<String>) -> ChatResponse {
         content: content.into(),
         tool_calls: vec![],
         finish_reason: FinishReason::Stop,
-        usage: Usage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        usage: Usage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        },
         latency: Duration::from_millis(10),
     }
 }
@@ -75,7 +84,11 @@ fn tool_call_response(id: &str, name: &str, args: serde_json::Value) -> ChatResp
             arguments: args,
         }],
         finish_reason: FinishReason::ToolCalls,
-        usage: Usage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        usage: Usage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        },
         latency: Duration::from_millis(10),
     }
 }
@@ -181,7 +194,10 @@ async fn guardrail_no_retrieval_forces_needs_investigation() {
         Uuid::new_v4(),
         Some(EnforcementMode::On),
         Some(2),
-    ).await.expect("loop should not error — should produce NeedsInvestigation");
+        None,
+    )
+    .await
+    .expect("loop should not error — should produce NeedsInvestigation");
 
     assert_eq!(
         result.verdict,
@@ -204,7 +220,11 @@ async fn guardrail_orphan_citation_forces_needs_investigation() {
     // First: tool call (allowed, so retrieval check passes)
     // Then: verdict with fabricated citation (3 times to exhaust retries with cap=2)
     let responses = vec![
-        tool_call_response("real_call_001", "get_user_baseline", json!({"principal": "alice"})),
+        tool_call_response(
+            "real_call_001",
+            "get_user_baseline",
+            json!({"principal": "alice"}),
+        ),
         plain_response(verdict_json(
             "true_positive",
             "IP was malicious [evidence:invented_id_xyz].",
@@ -236,7 +256,10 @@ async fn guardrail_orphan_citation_forces_needs_investigation() {
         Uuid::new_v4(),
         Some(EnforcementMode::On),
         Some(2),
-    ).await.expect("should not hard-error");
+        None,
+    )
+    .await
+    .expect("should not hard-error");
 
     assert_eq!(
         result.verdict,
@@ -253,7 +276,11 @@ async fn guardrail_passes_when_tool_called_and_citation_real() {
 
     let responses = vec![
         // LLM calls a tool first
-        tool_call_response("call_001", "get_user_baseline", json!({"principal": "alice"})),
+        tool_call_response(
+            "call_001",
+            "get_user_baseline",
+            json!({"principal": "alice"}),
+        ),
         // Then emits a verdict citing the real tool call ID
         plain_response(verdict_json(
             "true_positive",
@@ -276,7 +303,10 @@ async fn guardrail_passes_when_tool_called_and_citation_real() {
         Uuid::new_v4(),
         Some(EnforcementMode::On),
         Some(3),
-    ).await.expect("should complete successfully");
+        None,
+    )
+    .await
+    .expect("should complete successfully");
 
     assert_eq!(result.verdict, Verdict::TruePositive);
     assert_eq!(result.evidence.llm_final.validation_retries, 0);
@@ -293,7 +323,11 @@ async fn guardrail_retry_then_pass() {
         // First response: jumps straight to verdict (no tool call) — rejected
         plain_response(verdict_json("true_positive", "Suspicious login.", &[])),
         // Re-prompted: now calls tool
-        tool_call_response("call_002", "lookup_threat_intel", json!({"indicator": "1.2.3.4", "indicator_type": "ip"})),
+        tool_call_response(
+            "call_002",
+            "lookup_threat_intel",
+            json!({"indicator": "1.2.3.4", "indicator_type": "ip"}),
+        ),
         // Then emits proper verdict
         plain_response(verdict_json(
             "true_positive",
@@ -316,8 +350,14 @@ async fn guardrail_retry_then_pass() {
         Uuid::new_v4(),
         Some(EnforcementMode::On),
         Some(3),
-    ).await.expect("should complete successfully after retry");
+        None,
+    )
+    .await
+    .expect("should complete successfully after retry");
 
     assert_eq!(result.verdict, Verdict::TruePositive);
-    assert_eq!(result.evidence.llm_final.validation_retries, 1, "should record 1 retry");
+    assert_eq!(
+        result.evidence.llm_final.validation_retries, 1,
+        "should record 1 retry"
+    );
 }

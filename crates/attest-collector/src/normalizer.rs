@@ -83,10 +83,7 @@ pub fn normalize_cloudtrail(
     Ok(events)
 }
 
-fn normalize_record(
-    val: &serde_json::Value,
-    tenant_id: &str,
-) -> Result<OcsfEvent, CollectorError> {
+fn normalize_record(val: &serde_json::Value, tenant_id: &str) -> Result<OcsfEvent, CollectorError> {
     let rec: CloudTrailRecord = serde_json::from_value(val.clone())?;
 
     let event_id = Uuid::new_v4();
@@ -136,10 +133,7 @@ fn normalize_record(
             raw: Some(val.clone()),
         })
     } else {
-        let service = rec
-            .event_source
-            .clone()
-            .unwrap_or_else(|| "aws".into());
+        let service = rec.event_source.clone().unwrap_or_else(|| "aws".into());
         let resources = rec
             .resources
             .unwrap_or_default()

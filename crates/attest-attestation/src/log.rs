@@ -18,20 +18,22 @@ pub struct AttestationLog {
 impl AttestationLog {
     /// Create (or open) the log file at the given path.
     pub fn new(path: impl AsRef<Path>) -> Self {
-        Self { path: path.as_ref().to_path_buf() }
+        Self {
+            path: path.as_ref().to_path_buf(),
+        }
     }
 
     /// Open from `ATTEST_LOG_PATH` env var, falling back to `./attestations.ndjson`.
     pub fn from_env() -> Self {
-        let path = std::env::var("ATTEST_LOG_PATH")
-            .unwrap_or_else(|_| "./attestations.ndjson".into());
+        let path =
+            std::env::var("ATTEST_LOG_PATH").unwrap_or_else(|_| "./attestations.ndjson".into());
         Self::new(path)
     }
 
     /// Append an envelope as a single JSON line.
     pub async fn append(&self, envelope: &AttestationEnvelope) -> Result<()> {
-        let mut line = serde_json::to_string(envelope)
-            .context("failed to serialise attestation envelope")?;
+        let mut line =
+            serde_json::to_string(envelope).context("failed to serialise attestation envelope")?;
         line.push('\n');
 
         let mut file = OpenOptions::new()
@@ -52,13 +54,16 @@ impl AttestationLog {
         if !self.path.exists() {
             return Ok(vec![]);
         }
-        let content = tokio::fs::read_to_string(&self.path).await
+        let content = tokio::fs::read_to_string(&self.path)
+            .await
             .context("failed to read attestation log")?;
         let mut out = Vec::new();
         for line in content.lines() {
-            if line.is_empty() { continue; }
-            let env: AttestationEnvelope = serde_json::from_str(line)
-                .context("failed to deserialise attestation envelope")?;
+            if line.is_empty() {
+                continue;
+            }
+            let env: AttestationEnvelope =
+                serde_json::from_str(line).context("failed to deserialise attestation envelope")?;
             out.push(env);
         }
         Ok(out)

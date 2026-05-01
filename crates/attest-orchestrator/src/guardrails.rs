@@ -54,9 +54,7 @@ pub fn max_validation_retries() -> u8 {
 /// (was not denied by policy and did not return an error).
 pub fn has_retrieved_evidence(tool_calls: &[ToolCallRecord]) -> bool {
     tool_calls.iter().any(|t| {
-        t.policy_decision == "allow"
-            && t.policy_decision != "error"
-            && t.policy_decision != "deny"
+        t.policy_decision == "allow" && t.policy_decision != "error" && t.policy_decision != "deny"
     })
 }
 
@@ -93,13 +91,55 @@ pub struct CitationReport {
 
 /// Security-relevant nouns that mark a sentence as a factual claim requiring citation.
 static CLAIM_KEYWORDS: &[&str] = &[
-    "ip", "address", "user", "principal", "arn", "hostname", "host", "login",
-    "attempt", "threat", "malicious", "attack", "indicator", "reputation",
-    "baseline", "anomal", "suspicious", "hash", "md5", "sha", "domain", "url",
-    "account", "credential", "password", "token", "session", "geo", "location",
-    "country", "region", "api", "service", "role", "privilege", "permission",
-    "exploit", "payload", "command", "process", "binary", "file", "registry",
-    "port", "protocol", "packet", "traffic", "connection", "socket",
+    "ip",
+    "address",
+    "user",
+    "principal",
+    "arn",
+    "hostname",
+    "host",
+    "login",
+    "attempt",
+    "threat",
+    "malicious",
+    "attack",
+    "indicator",
+    "reputation",
+    "baseline",
+    "anomal",
+    "suspicious",
+    "hash",
+    "md5",
+    "sha",
+    "domain",
+    "url",
+    "account",
+    "credential",
+    "password",
+    "token",
+    "session",
+    "geo",
+    "location",
+    "country",
+    "region",
+    "api",
+    "service",
+    "role",
+    "privilege",
+    "permission",
+    "exploit",
+    "payload",
+    "command",
+    "process",
+    "binary",
+    "file",
+    "registry",
+    "port",
+    "protocol",
+    "packet",
+    "traffic",
+    "connection",
+    "socket",
 ];
 
 /// Returns `true` if the sentence contains a security-relevant noun that
@@ -203,14 +243,22 @@ pub fn validate_citations(
         })
         .map(|s| {
             // Truncate to keep re-prompts short
-            if s.len() > 120 { format!("{}…", &s[..120]) } else { s.to_string() }
+            if s.len() > 120 {
+                format!("{}…", &s[..120])
+            } else {
+                s.to_string()
+            }
         })
         .take(5) // cap at 5 to keep re-prompts readable
         .collect();
 
     let passed = all_orphans.is_empty() && missing_citations.is_empty();
 
-    CitationReport { passed, missing_citations, orphan_citations: all_orphans }
+    CitationReport {
+        passed,
+        missing_citations,
+        orphan_citations: all_orphans,
+    }
 }
 
 /// Human-readable re-prompt for citation failures.
@@ -227,7 +275,9 @@ pub fn citation_reprompt(report: &CitationReport) -> String {
     if !report.orphan_citations.is_empty() {
         msg.push_str("\nOrphan citations (no matching tool call in this session):\n");
         for id in &report.orphan_citations {
-            msg.push_str(&format!("  - [evidence:{id}] — this ID was not a tool call in this session\n"));
+            msg.push_str(&format!(
+                "  - [evidence:{id}] — this ID was not a tool call in this session\n"
+            ));
         }
         msg.push_str("\nOnly use tool call IDs that appeared in the tool results you received.\n");
     }
@@ -241,14 +291,16 @@ mod tests {
     use super::*;
 
     fn make_records(ids: &[&str]) -> Vec<ToolCallRecord> {
-        ids.iter().map(|_id| ToolCallRecord {
-            tool_id: "get_user_baseline".into(),
-            args_hash: "aa".into(),
-            result_hash: "bb".into(),
-            latency_ms: 10,
-            policy_decision: "allow".into(),
-            timestamp: chrono::Utc::now(),
-        }).collect()
+        ids.iter()
+            .map(|_id| ToolCallRecord {
+                tool_id: "get_user_baseline".into(),
+                args_hash: "aa".into(),
+                result_hash: "bb".into(),
+                latency_ms: 10,
+                policy_decision: "allow".into(),
+                timestamp: chrono::Utc::now(),
+            })
+            .collect()
     }
 
     // ── has_retrieved_evidence ────────────────────────────────────────────────
@@ -327,7 +379,8 @@ mod tests {
 
     #[test]
     fn passes_when_reasoning_has_inline_citations_matching_real() {
-        let reasoning = "Login from unusual geo [evidence:call_xyz]. IP reputation high [evidence:call_xyz].";
+        let reasoning =
+            "Login from unusual geo [evidence:call_xyz]. IP reputation high [evidence:call_xyz].";
         let declared = vec!["call_xyz".into()];
         let real = vec!["call_xyz".into()];
         let report = validate_citations(reasoning, &declared, &real);

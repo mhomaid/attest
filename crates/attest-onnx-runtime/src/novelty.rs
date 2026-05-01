@@ -34,7 +34,9 @@ impl NoveltyDetector {
         anyhow::ensure!(
             inv_cov_flat.len() == n_features * n_features,
             "inv_cov has unexpected size {} (expected {}×{})",
-            inv_cov_flat.len(), n_features, n_features
+            inv_cov_flat.len(),
+            n_features,
+            n_features
         );
 
         let inv_cov: Vec<Vec<f64>> = inv_cov_flat
@@ -44,10 +46,17 @@ impl NoveltyDetector {
 
         let threshold_str = std::fs::read_to_string(threshold_path.as_ref())
             .context("failed to read novelty_threshold.txt")?;
-        let threshold: f64 = threshold_str.trim().parse()
+        let threshold: f64 = threshold_str
+            .trim()
+            .parse()
             .context("failed to parse novelty threshold")?;
 
-        Ok(Self { mean, inv_cov, threshold, n_features })
+        Ok(Self {
+            mean,
+            inv_cov,
+            threshold,
+            n_features,
+        })
     }
 
     /// Return a novelty score in [0, 1].
@@ -58,7 +67,11 @@ impl NoveltyDetector {
         let feat = features.to_vec_f32();
         let dist = self.mahalanobis_distance(&feat);
         // sigmoid((dist - threshold) / (threshold * 0.3))
-        let k = if self.threshold > 0.0 { self.threshold * 0.3 } else { 1.0 };
+        let k = if self.threshold > 0.0 {
+            self.threshold * 0.3
+        } else {
+            1.0
+        };
         let logit = (dist - self.threshold) / k;
         let sigmoid = 1.0 / (1.0 + (-logit).exp());
         sigmoid as f32
@@ -105,12 +118,15 @@ fn load_npy_1d_f64(path: &Path) -> Result<Vec<f64>> {
         .unwrap_or("")
         .to_lowercase();
 
-    let is_f64 = header.contains("float64") || header.contains("'<f8'") || header.contains("\"<f8\"");
+    let is_f64 =
+        header.contains("float64") || header.contains("'<f8'") || header.contains("\"<f8\"");
     let elem_size = if is_f64 { 8 } else { 4 };
 
     let mut values = Vec::with_capacity(data_bytes.len() / elem_size);
     for chunk in data_bytes.chunks(elem_size) {
-        if chunk.len() < elem_size { break; }
+        if chunk.len() < elem_size {
+            break;
+        }
         let v = if is_f64 {
             f64::from_le_bytes(chunk.try_into().unwrap())
         } else {
@@ -135,7 +151,12 @@ mod tests {
         for (i, row) in inv_cov.iter_mut().enumerate().take(n) {
             row[i] = 1.0;
         }
-        let det = NoveltyDetector { mean, inv_cov, threshold: 3.0, n_features: n };
+        let det = NoveltyDetector {
+            mean,
+            inv_cov,
+            threshold: 3.0,
+            n_features: n,
+        };
         let features = FeatureExtractor::extract_from_json(&serde_json::json!({
             "severity_score": 1.0,
             "source_class_id": 0.0,

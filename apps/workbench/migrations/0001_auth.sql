@@ -1,0 +1,1 @@
+../../../infra/db/sql/0001_auth.sql

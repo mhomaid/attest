@@ -8,18 +8,21 @@
 //!   GET  /docs              — Scalar interactive API docs
 
 use crate::triage::{TriageEngine, TriageRequest};
+use attest_attestation::Verdict;
 use axum::{
-    extract::State,
-    http::StatusCode,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
     middleware::from_fn,
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
+use chrono::{DateTime, Utc};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable as _};
+use uuid::Uuid;
 
 const LATENCY_WINDOW: usize = 200;
 
@@ -54,15 +57,37 @@ pub struct OrchestratorMetrics {
     pub p99_ms: f64,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct CaseOverrideRequest {
+    /// Target `Verdict` label (`snake_case`, e.g. `false_positive`).
+    pub label: String,
+    pub reason: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct CaseOverrideResponse {
+    pub agent_action_id: Uuid,
+    pub latency_ms: u64,
+    pub signed_at: DateTime<Utc>,
+}
+
 // ── OpenAPI spec ─────────────────────────────────────────────────────────────
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(healthz, handle_triage, handle_agent_info, handle_metrics),
+    paths(
+        healthz,
+        handle_triage,
+        handle_agent_info,
+        handle_metrics,
+        handle_case_override,
+    ),
     components(schemas(
         HealthOk,
         AgentInfo,
         OrchestratorMetrics,
+        CaseOverrideRequest,
+        CaseOverrideResponse,
         crate::triage::TriageRequest,
         crate::triage::TriageVerdict,
         crate::triage::InvestigationSummary,
@@ -84,10 +109,11 @@ pub fn build_router(engine: TriageEngine) -> Router {
         latencies: Arc::new(Mutex::new(VecDeque::with_capacity(LATENCY_WINDOW))),
     };
     let api = Router::new()
-        .route("/healthz",  get(healthz))
-        .route("/triage",   post(handle_triage))
-        .route("/agent",    get(handle_agent_info))
-        .route("/metrics",  get(handle_metrics))
+        .route("/healthz", get(healthz))
+        .route("/triage", post(handle_triage))
+        .route("/agent", get(handle_agent_info))
+        .route("/metrics", get(handle_metrics))
+        .route("/v1/cases/{case_id}/override", post(handle_case_override))
         .with_state(state);
 
     Router::new()
@@ -137,7 +163,10 @@ async fn handle_triage(
                 }
                 w.push_back(verdict.latency_ms);
             }
-            (StatusCode::OK, Json(serde_json::to_value(&verdict).unwrap()))
+            (
+                StatusCode::OK,
+                Json(serde_json::to_value(&verdict).unwrap()),
+            )
         }
         Err(e) => {
             tracing::error!(error = %e, "triage failed");
@@ -145,6 +174,90 @@ async fn handle_triage(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": e.to_string() })),
             )
+        }
+    }
+}
+
+/// Analyst override — append a signed `EvidenceBlock::Override` envelope and emit a trace step.
+#[utoipa::path(
+    post,
+    path = "/v1/cases/{case_id}/override",
+    params(
+        ("case_id" = Uuid, Path, description = "Case UUID"),
+    ),
+    request_body = CaseOverrideRequest,
+    responses(
+        (status = 200, description = "Signed override envelope appended", body = CaseOverrideResponse),
+        (status = 400, description = "Bad request (missing headers or invalid verdict label)"),
+        (status = 404, description = "No prior envelope for case"),
+        (status = 500, description = "Internal error"),
+    ),
+    tag = "cases"
+)]
+async fn handle_case_override(
+    State(state): State<OrchestratorState>,
+    Path(case_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(body): Json<CaseOverrideRequest>,
+) -> impl IntoResponse {
+    let actor_id = headers
+        .get("x-actor-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let actor_email = headers
+        .get("x-actor-email")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let (Some(actor_id), Some(actor_email)) = (actor_id, actor_email) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "missing X-Actor-Id or X-Actor-Email",
+            })),
+        )
+            .into_response();
+    };
+
+    let corrected: Verdict = match serde_json::from_value(serde_json::Value::String(body.label)) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("invalid label: {e}") })),
+            )
+                .into_response();
+        }
+    };
+
+    match state
+        .engine
+        .append_human_override(case_id, corrected, body.reason, actor_id, actor_email)
+        .await
+    {
+        Ok((agent_action_id, latency_ms, signed_at)) => (
+            StatusCode::OK,
+            Json(CaseOverrideResponse {
+                agent_action_id,
+                latency_ms,
+                signed_at,
+            }),
+        )
+            .into_response(),
+        Err(e) if e.to_string().contains("no attestation envelope") => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "case override failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
         }
     }
 }

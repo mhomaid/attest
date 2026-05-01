@@ -2,30 +2,64 @@
 
 import {
   CheckCircle2,
-  Clock3,
   Database,
   FileSignature,
+  LoaderCircle,
   ShieldAlert,
   ThumbsDown,
   ThumbsUp,
   X,
 } from "lucide-react";
-import { useState } from "react";
-import { ClassifierEvidencePanel } from "@/components/workbench/classifier-evidence-panel";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  InvestigatorTraceStepper,
+  TriagePipelineStepper,
+} from "@/components/workbench/investigator-trace-stepper";
+import {
+  ReasoningTraceViewer,
+  type HttpTraceStep,
+} from "@/components/workbench/reasoning-trace-viewer";
 import { StatusBadge } from "@/components/workbench/status-badge";
+import { analytics } from "@/lib/analytics";
 import type { CaseRecord, Severity } from "@/lib/mock-data";
+import { useCaseStore, selectDisposition } from "@/lib/stores/case-store";
 import { cn } from "@/lib/utils";
+import type { KafkaTraceStep } from "@/hooks/use-case-trace-ws";
 
 const severityTone: Record<Severity, "critical" | "high" | "medium" | "low"> = {
   critical: "critical",
-  high:     "high",
-  medium:   "medium",
-  low:      "low",
+  high: "high",
+  medium: "medium",
+  low: "low",
 };
 
-// ── Verdict override dialog ───────────────────────────────────────────────────
-
 type OverrideLabel = "true_positive" | "false_positive" | "benign" | "needs_investigation";
+
+function httpTraceToKafkaStep(caseId: string, step: HttpTraceStep): KafkaTraceStep {
+  return {
+    case_id: caseId,
+    tenant_id: "default",
+    agent_action_id: step.agent_action_id,
+    agent_id: step.agent_id,
+    execution_path: step.execution_path,
+    step_kind: step.kind,
+    summary: step.verdict,
+    ts: 0,
+  };
+}
+
+function mergeTraceSteps(caseId: string, liveSteps: KafkaTraceStep[], httpSteps: HttpTraceStep[]) {
+  const seen = new Set<string>();
+  const merged: KafkaTraceStep[] = [];
+  for (const step of [...liveSteps, ...httpSteps.map((s) => httpTraceToKafkaStep(caseId, s))]) {
+    const key = `${step.agent_action_id}:${step.step_kind}:${step.ts}:${step.summary}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(step);
+  }
+  return merged;
+}
 
 function VerdictDialog({
   onClose,
@@ -34,24 +68,25 @@ function VerdictDialog({
   onClose: () => void;
   onSubmit: (label: OverrideLabel, reason: string) => void;
 }) {
-  const [label, setLabel]   = useState<OverrideLabel>("true_positive");
+  const [label, setLabel] = useState<OverrideLabel>("true_positive");
   const [reason, setReason] = useState("");
-  const [busy, setBusy]     = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const labels: { value: OverrideLabel; display: string }[] = [
-    { value: "true_positive",      display: "True Positive" },
-    { value: "false_positive",     display: "False Positive" },
-    { value: "benign",             display: "Benign" },
-    { value: "needs_investigation",display: "Needs Investigation" },
+    { value: "true_positive", display: "True Positive" },
+    { value: "false_positive", display: "False Positive" },
+    { value: "benign", display: "Benign" },
+    { value: "needs_investigation", display: "Needs Investigation" },
   ];
 
   const handleSubmit = async () => {
     if (!reason.trim()) return;
     setBusy(true);
-    // Simulate a brief network round-trip for now; Phase 4b wires real API.
-    await new Promise((r) => setTimeout(r, 300));
-    onSubmit(label, reason);
-    setBusy(false);
+    try {
+      await Promise.resolve(onSubmit(label, reason));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -60,6 +95,7 @@ function VerdictDialog({
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Override Verdict</h2>
           <button
+            type="button"
             onClick={onClose}
             className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:text-foreground"
           >
@@ -76,6 +112,7 @@ function VerdictDialog({
               {labels.map((l) => (
                 <button
                   key={l.value}
+                  type="button"
                   onClick={() => setLabel(l.value)}
                   className={cn(
                     "rounded-md border px-3 py-2 text-left text-xs transition-colors",
@@ -105,12 +142,14 @@ function VerdictDialog({
 
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={onClose}
               className="flex-1 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-secondary/50"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleSubmit}
               disabled={!reason.trim() || busy}
               className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity disabled:opacity-40"
@@ -124,72 +163,136 @@ function VerdictDialog({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
-export function CaseWorkbench({ caseRecord }: { caseRecord: CaseRecord }) {
-  const [overrideOpen,    setOverrideOpen]    = useState(false);
-  const [overrideApplied, setOverrideApplied] = useState<{
-    label: OverrideLabel;
-    reason: string;
-  } | null>(null);
+export function CaseWorkbench({
+  caseRecord,
+  orchestratorCaseId,
+  liveSteps = [],
+  triageLoading = false,
+}: {
+  caseRecord: CaseRecord;
+  orchestratorCaseId?: string;
+  liveSteps?: KafkaTraceStep[];
+  /** True while the client-side triage fetch is in flight. */
+  triageLoading?: boolean;
+}) {
+  const [overrideOpen, setOverrideOpen] = useState(false);
   const [approved, setApproved] = useState(false);
+  const [httpSteps, setHttpSteps] = useState<HttpTraceStep[]>([]);
 
-  const handleApprove = () => setApproved(true);
+  const oid = orchestratorCaseId ?? "";
+  const disposition = useCaseStore(selectDisposition(oid));
+  const storeSetApproved = useCaseStore((s) => s.setApproved);
+  const storeSetOverride = useCaseStore((s) => s.setOverride);
+
+  const loadTrace = useCallback(() => {
+    if (!oid) return;
+    void fetch(`/api/cases/${encodeURIComponent(oid)}/trace`)
+      .then((r) => r.json())
+      .then((j) => setHttpSteps((j?.steps as HttpTraceStep[]) ?? []))
+      .catch(() => setHttpSteps([]));
+  }, [oid]);
+
+  useEffect(() => {
+    loadTrace();
+  }, [loadTrace]);
+
+  useEffect(() => {
+    if (!triageLoading) loadTrace();
+  }, [loadTrace, triageLoading]);
+
+  const overrideApplied = disposition === "override";
+  const approvedUi = approved || disposition === "approved";
+
+  const handleApprove = () => {
+    setApproved(true);
+    if (oid) storeSetApproved(oid);
+    analytics.verdict_approved();
+    toast.success("Verdict approved");
+  };
 
   const handleOverrideSubmit = (label: OverrideLabel, reason: string) => {
-    setOverrideApplied({ label, reason });
+    if (!oid) return;
     setOverrideOpen(false);
+    storeSetOverride(oid, label);
+    analytics.verdict_overridden();
+    toast.success("Override submitted");
+
+    void fetch(`/api/cases/${encodeURIComponent(oid)}/override`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, reason }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          toast.error(typeof j?.error === "string" ? j.error : "Override failed");
+        } else {
+          loadTrace();
+        }
+      })
+      .catch(() => toast.error("Override failed"));
   };
+
+  const overrideLabel = useCaseStore((s) => s.cases[oid]?.overrideLabel ?? "");
+  const statusLabel = overrideApplied
+    ? `Override: ${overrideLabel.replace(/_/g, " ")}`
+    : approvedUi
+      ? "Approved"
+      : caseRecord.state.replace("-", " ");
+  const traceSteps = useMemo(
+    () => mergeTraceSteps(oid || caseRecord.id, liveSteps, httpSteps),
+    [caseRecord.id, httpSteps, liveSteps, oid],
+  );
 
   return (
     <>
-      {overrideOpen && (
-        <VerdictDialog
-          onClose={() => setOverrideOpen(false)}
-          onSubmit={handleOverrideSubmit}
-        />
-      )}
+      {overrideOpen ? (
+        <VerdictDialog onClose={() => setOverrideOpen(false)} onSubmit={handleOverrideSubmit} />
+      ) : null}
 
       <div className="grid min-h-full gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        {/* ── Left column ── */}
         <div className="min-w-0 space-y-3">
-          {/* Case header */}
           <section className="rounded-lg border border-border bg-card/80 p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <StatusBadge tone={severityTone[caseRecord.severity]}>
-                    {caseRecord.severity}
-                  </StatusBadge>
-                  <StatusBadge tone="medium">
-                    {overrideApplied
-                      ? `Override: ${overrideApplied.label.replace(/_/g, " ")}`
-                      : approved
-                      ? "Approved"
-                      : caseRecord.state.replace("-", " ")}
-                  </StatusBadge>
+                  <StatusBadge tone={severityTone[caseRecord.severity]}>{caseRecord.severity}</StatusBadge>
+                  <StatusBadge tone="medium">{statusLabel}</StatusBadge>
                   <StatusBadge tone="info">{caseRecord.executionPath}</StatusBadge>
                 </div>
                 <h1 className="text-xl font-semibold tracking-tight">{caseRecord.title}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {caseRecord.entity} · {caseRecord.source}
+                  <span data-customer-data>
+                    {caseRecord.entity} · {caseRecord.source}
+                  </span>
                 </p>
               </div>
 
               <div className="rounded-md border border-border bg-background/70 px-3 py-2 text-right">
-                <div className="metric-tabular font-mono text-2xl font-semibold">
-                  {Math.round(caseRecord.confidence * 100)}%
-                </div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  calibrated confidence
-                </div>
+                {triageLoading ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <LoaderCircle className="h-6 w-6 animate-spin text-primary" aria-hidden />
+                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      analysing…
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="metric-tabular font-mono text-2xl font-semibold">
+                      {Math.round(caseRecord.confidence * 100)}%
+                    </div>
+                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      calibrated confidence
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Analyst action buttons */}
-            {!overrideApplied && !approved && (
+            {!oid ? null : !overrideApplied && !approvedUi ? (
               <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
                 <button
+                  type="button"
                   onClick={handleApprove}
                   className="inline-flex items-center gap-1.5 rounded-md bg-signal-good/10 px-3 py-1.5 text-xs font-medium text-signal-good ring-1 ring-signal-good/30 transition-colors hover:bg-signal-good/20"
                 >
@@ -197,6 +300,7 @@ export function CaseWorkbench({ caseRecord }: { caseRecord: CaseRecord }) {
                   Approve verdict
                 </button>
                 <button
+                  type="button"
                   onClick={() => setOverrideOpen(true)}
                   className="inline-flex items-center gap-1.5 rounded-md bg-severity-medium/10 px-3 py-1.5 text-xs font-medium text-severity-medium ring-1 ring-severity-medium/30 transition-colors hover:bg-severity-medium/20"
                 >
@@ -204,61 +308,52 @@ export function CaseWorkbench({ caseRecord }: { caseRecord: CaseRecord }) {
                   Override verdict
                 </button>
               </div>
-            )}
+            ) : null}
 
-            {/* Post-action confirmation */}
-            {(overrideApplied || approved) && (
+            {(overrideApplied || approvedUi) && (
               <div className="mt-3 flex items-start gap-2 rounded-md border border-signal-good/30 bg-signal-good/10 px-3 py-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-signal-good" />
                 <div className="text-xs">
                   <span className="font-medium text-signal-good">
                     {overrideApplied ? "Override recorded" : "Verdict approved"}
                   </span>
-                  {overrideApplied && (
-                    <p className="mt-0.5 text-muted-foreground">
-                      {overrideApplied.label.replace(/_/g, " ")} — {overrideApplied.reason}
-                    </p>
-                  )}
                   <p className="mt-0.5 text-muted-foreground">
-                    A new signed attestation envelope has been recorded. Original verdict preserved.
+                    A new signed attestation envelope has been recorded where applicable. Original
+                    verdict preserved in the log.
                   </p>
                 </div>
               </div>
             )}
           </section>
 
-          {/* Reasoning trace */}
           <section className="rounded-lg border border-border bg-card/80">
-            <header className="flex items-center justify-between border-b border-border px-3 py-2">
-              <div className="flex items-center gap-2">
-                <FileSignature className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">Reasoning Trace</h2>
-              </div>
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                signed envelope replay
-              </span>
+            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+              <FileSignature className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Reasoning &amp; evidence</h2>
             </header>
-            <div className="divide-y divide-border/80">
-              {caseRecord.timeline.map((item, i) => (
-                <div
-                  key={`${i}-${item.time}-${item.actor}`}
-                  className="grid gap-3 px-3 py-3 md:grid-cols-[5rem_8rem_minmax(0,1fr)]"
-                >
-                  <div className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-                    <Clock3 className="h-3 w-3" />
-                    {item.time}
-                  </div>
-                  <div className="text-xs font-medium">{item.actor}</div>
-                  <div className="text-sm text-muted-foreground">{item.event}</div>
-                </div>
-              ))}
-            </div>
+
+            {triageLoading ? (
+              /* ── Centered pipeline stepper while triage is in flight ── */
+              <TriagePipelineStepper liveSteps={traceSteps} caseId={oid || caseRecord.id} />
+            ) : (
+              <div className="p-3">
+                <InvestigatorTraceStepper
+                  liveSteps={traceSteps}
+                  executionPath={caseRecord.executionPath}
+                  verdict={caseRecord.verdict}
+                />
+                <ReasoningTraceViewer
+                  executionPath={caseRecord.executionPath}
+                  featureImpacts={caseRecord.featureImpacts}
+                  httpSteps={httpSteps}
+                  liveSteps={traceSteps}
+                />
+              </div>
+            )}
           </section>
         </div>
 
-        {/* ── Right sidebar ── */}
         <aside className="space-y-3">
-          {/* Evidence */}
           <section className="rounded-lg border border-border bg-card/80">
             <header className="flex items-center gap-2 border-b border-border px-3 py-2">
               <Database className="h-4 w-4 text-muted-foreground" />
@@ -271,30 +366,27 @@ export function CaseWorkbench({ caseRecord }: { caseRecord: CaseRecord }) {
                     <span className="text-xs font-medium">{item.label}</span>
                     <StatusBadge tone="muted">{item.type}</StatusBadge>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.value}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    <span data-customer-data>{item.value}</span>
+                  </p>
                 </div>
               ))}
             </div>
           </section>
 
-          {/* SHAP feature attribution */}
-          <ClassifierEvidencePanel features={caseRecord.featureImpacts} />
-
-          {/* Attestation status */}
           <section className="rounded-lg border border-signal-good/30 bg-signal-good/10 p-3">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="mt-0.5 h-4 w-4 text-signal-good" />
               <div>
                 <h2 className="text-sm font-semibold text-signal-good">Attestation Valid</h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Classifier envelope signature verified. Original verdict is immutable; analyst
-                  overrides create a new signed envelope.
+                  Classifier envelope signature verified. Analyst overrides create a new signed
+                  envelope.
                 </p>
               </div>
             </div>
           </section>
 
-          {/* Edge state notice */}
           <section className="rounded-lg border border-severity-medium/30 bg-severity-medium/10 p-3">
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-4 w-4 text-severity-medium" />

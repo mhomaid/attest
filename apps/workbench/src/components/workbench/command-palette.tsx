@@ -25,6 +25,8 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
+import { analytics } from "@/lib/analytics";
+import { useCommandPalette } from "@/lib/stores/command-palette-store";
 
 const pages = [
   { href: "/workbench/queue",      label: "Queue",      description: "Real-time alert queue",            icon: Siren,      shortcut: "Q" },
@@ -47,8 +49,6 @@ const externalLinks = [
   { href: "http://localhost:8081",       label: "Redpanda Console",        shortcut: null },
 ];
 
-import { useCommandPalette } from "@/lib/stores/command-palette-store";
-
 export function CommandPalette() {
   const { open, setOpen } = useCommandPalette();
   const router = useRouter();
@@ -65,6 +65,7 @@ export function CommandPalette() {
   }, [setOpen]);
 
   function navigate(href: string) {
+    analytics.command_palette_used();
     setOpen(false);
     if (href.startsWith("http")) {
       window.open(href, "_blank", "noopener,noreferrer");

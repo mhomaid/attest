@@ -39,9 +39,7 @@ impl EventProducer {
 
         self.inner
             .send(
-                FutureRecord::to("cloudtrail")
-                    .key(&key)
-                    .payload(&payload),
+                FutureRecord::to("cloudtrail").key(&key).payload(&payload),
                 Duration::from_secs(5),
             )
             .await

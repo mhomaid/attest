@@ -20,6 +20,7 @@ export type Alert = {
   verdict: "benign" | "suspicious" | "malicious" | "investigating";
   confidence: number;
   executionPath: ExecutionPath;
+  /** ISO-8601 timestamp — rendered as a live relative time in the UI. */
   updatedAt: string;
   technique: string;
   summary: string;

@@ -321,7 +321,11 @@ async fn arroyo_etl_pipeline_writes_parquet_to_minio() {
     // Wait up to 90s (30s interval + startup + pipeline lag) for at least 1 Parquet file.
     println!("Waiting for Arroyo ETL to flush Parquet to MinIO (≤ 90 s) …");
     let count = poll_until(
-        || async { count_arroyo_parquet("arroyo/cloudtrail").await.filter(|&n| n > 0) },
+        || async {
+            count_arroyo_parquet("arroyo/cloudtrail")
+                .await
+                .filter(|&n| n > 0)
+        },
         Duration::from_secs(90),
     )
     .await;
@@ -332,7 +336,10 @@ async fn arroyo_etl_pipeline_writes_parquet_to_minio() {
          Check that the cloudtrail_to_parquet Arroyo pipeline is Running and \
          that the s3::http://minio:9000 path is reachable from Arroyo."
     );
-    println!("✓ Arroyo ETL: {} rows confirmed in MinIO under arroyo/cloudtrail/", count.unwrap());
+    println!(
+        "✓ Arroyo ETL: {} rows confirmed in MinIO under arroyo/cloudtrail/",
+        count.unwrap()
+    );
 }
 
 /// Test 4: CEP pipeline — login → S3 access within 5 min fires an alert on `alerts` topic.
@@ -355,7 +362,10 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
     // miss the message.
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", kafka_brokers())
-        .set("group.id", format!("arroyo-cep-e2e-{}", uuid::Uuid::new_v4()))
+        .set(
+            "group.id",
+            format!("arroyo-cep-e2e-{}", uuid::Uuid::new_v4()),
+        )
         .set("auto.offset.reset", "latest")
         // Trigger an immediate metadata fetch so partition assignment happens now,
         // not on the first recv() call (avoids missing early alerts).
@@ -419,9 +429,7 @@ async fn arroyo_cep_pipeline_fires_sequence_alert() {
                         let det_id = body["detection_id"].as_str().unwrap_or("");
                         let actor = body["actor_user_name"].as_str().unwrap_or("");
                         println!("  alert: detection_id={det_id} actor={actor}");
-                        if det_id == "aws_login_then_s3_access_sequence"
-                            && actor == test_user
-                        {
+                        if det_id == "aws_login_then_s3_access_sequence" && actor == test_user {
                             found = true;
                         }
                     }

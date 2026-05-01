@@ -88,3 +88,106 @@ jobs:
           docker compose ps
           curl -sf http://localhost:9092 || true
           curl -sf http://localhost:8123/ping || echo "ClickHouse not yet ready (acceptable in scaffold)"
+
+  workbench-e2e:
+    name: Workbench (Playwright)
+    runs-on: ubuntu-latest
+    needs: [typescript]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: attest
+          POSTGRES_PASSWORD: attest
+          POSTGRES_DB: attest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.x"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Apply Postgres schema (Alembic / UV)
+        working-directory: infra/db
+        env:
+          DATABASE_URL: postgresql://attest:attest@localhost:5432/attest
+        run: uv sync --frozen && uv run alembic upgrade head
+
+      - name: Install workspace deps
+        run: bun install
+
+      - name: Install Playwright browsers
+        working-directory: apps/workbench
+        run: bunx playwright install --with-deps chromium firefox webkit
+
+      - name: Run Playwright E2E
+        working-directory: apps/workbench
+        env:
+          DATABASE_URL: postgres://attest:attest@localhost:5432/attest
+          ALLOW_AUTH_SEED: "1"
+          AUTH_SEED_SECRET: ci-auth-seed-secret
+          BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
+        run: bun run e2e
+
+  lighthouse:
+    name: Workbench Lighthouse (queue)
+    runs-on: ubuntu-latest
+    needs: [typescript]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: attest
+          POSTGRES_PASSWORD: attest
+          POSTGRES_DB: attest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.x"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Apply Postgres schema (Alembic / UV)
+        working-directory: infra/db
+        env:
+          DATABASE_URL: postgresql://attest:attest@localhost:5432/attest
+        run: uv sync --frozen && uv run alembic upgrade head
+
+      - name: Install workspace deps
+        run: bun install
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Lighthouse CI
+        env:
+          DATABASE_URL: postgres://attest:attest@localhost:5432/attest
+          ALLOW_AUTH_SEED: "1"
+          AUTH_SEED_SECRET: ci-auth-seed-secret
+          BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
+        run: npx --yes @lhci/cli@0.14.0 autorun --config=apps/workbench/lighthouserc.cjs

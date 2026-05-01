@@ -12,13 +12,14 @@
 
 use crate::agent::{AgentDefinition, ExecutionPath};
 use crate::guardrails::{
-    citation_reprompt, has_retrieved_evidence, max_validation_retries,
-    retrieval_reprompt, validate_citations, EnforcementMode,
+    citation_reprompt, has_retrieved_evidence, max_validation_retries, retrieval_reprompt,
+    validate_citations, EnforcementMode,
 };
 use crate::mcp_client::McpClient;
+use crate::trace_kafka::TraceEmit;
 use attest_attestation::{
-    CrossReviewBlock, EscalationReason, HybridEvidence, IntermediateBelief, LlmEvidence,
-    ToolCallRecord, ClassifierEvidence,
+    ClassifierEvidence, CrossReviewBlock, EscalationReason, HybridEvidence, IntermediateBelief,
+    LlmEvidence, ToolCallRecord,
 };
 use attest_inference_router::{ChatClient, ChatMessage, ChatRequest, ToolCall, ToolDef};
 use chrono::Utc;
@@ -136,7 +137,9 @@ pub(crate) fn investigator_tools() -> Vec<ToolDef> {
     });
     tools.push(ToolDef {
         name: "analyze_code_snippet".into(),
-        description: "Static analysis stub for code referenced in an alert (MVP returns synthetic findings).".into(),
+        description:
+            "Static analysis stub for code referenced in an alert (MVP returns synthetic findings)."
+                .into(),
         parameters: json!({
             "type": "object",
             "properties": {
@@ -148,7 +151,8 @@ pub(crate) fn investigator_tools() -> Vec<ToolDef> {
     });
     tools.push(ToolDef {
         name: "sandbox_detonate".into(),
-        description: "Sandbox detonation stub for suspicious payloads (MVP — no real detonation).".into(),
+        description: "Sandbox detonation stub for suspicious payloads (MVP — no real detonation)."
+            .into(),
         parameters: json!({
             "type": "object",
             "properties": {
@@ -198,10 +202,14 @@ fn build_llm_evidence(
 ) -> LlmEvidence {
     let (provider, model_id) = match &agent.execution {
         ExecutionPath::Hybrid { escalation, .. } => match escalation.as_ref() {
-            ExecutionPath::Llm { provider, model_id, .. } => (provider.as_str(), model_id.as_str()),
+            ExecutionPath::Llm {
+                provider, model_id, ..
+            } => (provider.as_str(), model_id.as_str()),
             _ => ("unknown", "unknown"),
         },
-        ExecutionPath::Llm { provider, model_id, .. } => (provider.as_str(), model_id.as_str()),
+        ExecutionPath::Llm {
+            provider, model_id, ..
+        } => (provider.as_str(), model_id.as_str()),
         _ => ("unknown", "unknown"),
     };
     build_llm_evidence_for_model(
@@ -258,6 +266,7 @@ pub struct ReviewOutcome {
 /// * `action_id` — Shared action ID for MCP audit log correlation.
 /// * `enforcement` — Guardrail enforcement mode (read from env if not supplied).
 /// * `guardrail_retries_cap` — Max per-check re-prompts (read from env if `None`).
+/// * `trace` — Optional Kafka stream for live workbench steps (Phase 8).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_llm_loop(
     client: &dyn ChatClient,
@@ -272,6 +281,7 @@ pub async fn run_llm_loop(
     action_id: Uuid,
     enforcement: Option<EnforcementMode>,
     guardrail_retries_cap: Option<u8>,
+    trace: Option<TraceEmit>,
 ) -> Result<LlmLoopResult, LlmLoopError> {
     let enforcement = enforcement.unwrap_or_else(EnforcementMode::from_env);
     let guardrail_retries_cap = guardrail_retries_cap.unwrap_or_else(max_validation_retries);
@@ -279,8 +289,13 @@ pub async fn run_llm_loop(
     let mut messages: Vec<ChatMessage> = vec![
         ChatMessage::system(system_prompt),
         ChatMessage::user(format!(
-            "Triage the following security alert. The ONNX classifier was uncertain (calibrated confidence: {:.3}, novelty score: {:.3}). \
-             Use the available tools to gather evidence, then emit a final JSON verdict.\n\nAlert:\n{}",
+            "Triage the following security alert. The ONNX classifier was uncertain \
+             (calibrated confidence: {:.3}, novelty score: {:.3}).\n\n\
+             STEP 1 — You MUST call at least one tool (get_user_baseline, query_hot_tier, \
+             lookup_threat_intel, or get_asset_context) NOW, before writing any verdict. \
+             Do NOT produce a verdict in this turn.\n\
+             STEP 2 — After receiving tool results, emit the final JSON verdict block.\n\n\
+             Alert:\n{}",
             classifier_draft.calibrated_confidence,
             classifier_draft.novelty_score,
             serde_json::to_string_pretty(alert).unwrap_or_else(|_| alert.to_string())
@@ -310,6 +325,7 @@ pub async fn run_llm_loop(
             None
         } else {
             parse_synthetic_tool_calls_from_content(&resp.content)
+                .or_else(|| parse_python_tool_calls(&resp.content))
         };
 
         let tool_round: Vec<ToolCall> = if resp.has_tool_calls() {
@@ -338,6 +354,11 @@ pub async fn run_llm_loop(
                 self_reported_confidence: None,
                 timestamp: Utc::now(),
             });
+            if let Some(ref t) = trace {
+                if let Some(b) = intermediate_beliefs.last() {
+                    t.step("intermediate_belief", b.content_summary.clone());
+                }
+            }
 
             // Append assistant message with tool calls
             messages.push(ChatMessage::Assistant {
@@ -347,18 +368,21 @@ pub async fn run_llm_loop(
 
             // Execute each tool call through the MCP gateway
             for tc in &tool_round {
-                let result = mcp.invoke(
-                    &agent.id,
-                    action_id,
-                    "triager",
-                    &tc.name,
-                    &tc.arguments,
-                    classifier_draft.calibrated_confidence,
-                ).await;
+                let result = mcp
+                    .invoke(
+                        &agent.id,
+                        action_id,
+                        "triager",
+                        &tc.name,
+                        &tc.arguments,
+                        classifier_draft.calibrated_confidence,
+                    )
+                    .await;
 
                 let (tool_output, record) = match result {
                     Ok(r) => {
-                        let output = r.result
+                        let output = r
+                            .result
                             .map(|v| v.to_string())
                             .unwrap_or_else(|| r.error.unwrap_or_else(|| "tool denied".into()));
                         (output, r.record)
@@ -372,7 +396,7 @@ pub async fn run_llm_loop(
                         let dummy_record = ToolCallRecord {
                             tool_id: tc.name.clone(),
                             args_hash: hex::encode(Sha256::digest(
-                                serde_json::to_string(&tc.arguments).unwrap_or_default()
+                                serde_json::to_string(&tc.arguments).unwrap_or_default(),
                             )),
                             result_hash: hex::encode(Sha256::digest(e.to_string().as_bytes())),
                             latency_ms: 0,
@@ -384,11 +408,30 @@ pub async fn run_llm_loop(
                 };
 
                 tool_call_records.push(record);
+                if let Some(ref t) = trace {
+                    t.step("tool_call", tc.name.clone());
+                }
                 // Track this call ID if the MCP allowed the call
-                if tool_call_records.last().map(|r| r.policy_decision == "allow").unwrap_or(false) {
+                if tool_call_records
+                    .last()
+                    .map(|r| r.policy_decision == "allow")
+                    .unwrap_or(false)
+                {
                     successful_call_ids.push(tc.id.clone());
                 }
                 messages.push(ChatMessage::tool_result(tc.id.clone(), tool_output));
+            }
+
+            // Nudge: force verdict emission when approaching the iteration cap.
+            let iterations_remaining = (max_iterations as i16) - (iteration as i16) - 1;
+            if iterations_remaining <= 2 && !successful_call_ids.is_empty() {
+                messages.push(ChatMessage::user(
+                    "You have gathered sufficient evidence. \
+                     Do NOT call any more tools. \
+                     You MUST now emit ONLY the final JSON verdict block — nothing else:\n\
+                     {\"verdict\":\"...\",\"confidence\":0.0-1.0,\"summary\":\"...\",\"recommended_action\":\"...\"}"
+                        .to_string(),
+                ));
             }
         } else {
             // No tool calls — this is the final verdict response
@@ -404,15 +447,14 @@ pub async fn run_llm_loop(
 
             // Parse JSON verdict — try to extract from markdown fence if needed
             let json_str = extract_json_block(&raw_content);
-            let model_verdict: ModelVerdict = serde_json::from_str(&json_str)
-                .map_err(|e| LlmLoopError::InvalidVerdict(
-                    format!("could not parse verdict JSON: {e}\nraw: {json_str}")
-                ))?;
+            let model_verdict: ModelVerdict = serde_json::from_str(&json_str).map_err(|e| {
+                LlmLoopError::InvalidVerdict(format!(
+                    "could not parse verdict JSON: {e}\nraw: {json_str}"
+                ))
+            })?;
 
             // ── Phase 5 Guardrail 1: Retrieval-before-reasoning ──────────────
-            if enforcement == EnforcementMode::On
-                && !has_retrieved_evidence(&tool_call_records)
-            {
+            if enforcement == EnforcementMode::On && !has_retrieved_evidence(&tool_call_records) {
                 if validation_retries >= guardrail_retries_cap {
                     tracing::warn!(
                         action_id = %action_id,
@@ -426,10 +468,22 @@ pub async fn run_llm_loop(
                         timestamp: Utc::now(),
                     });
                     let llm_evidence = build_llm_evidence(
-                        agent, system_prompt_hash, tool_call_records,
-                        intermediate_beliefs, vec![], iteration + 1, validation_retries,
+                        agent,
+                        system_prompt_hash,
+                        tool_call_records,
+                        intermediate_beliefs,
+                        vec![],
+                        iteration + 1,
+                        validation_retries,
                     );
-                    let hybrid = HybridEvidence { classifier_draft, llm_final: llm_evidence, escalation_reason };
+                    let hybrid = HybridEvidence {
+                        classifier_draft,
+                        llm_final: llm_evidence,
+                        escalation_reason,
+                    };
+                    if let Some(ref tr) = trace {
+                        tr.step("final_verdict", "NeedsInvestigation");
+                    }
                     return Ok(LlmLoopResult {
                         evidence: hybrid,
                         verdict: attest_attestation::Verdict::NeedsInvestigation,
@@ -474,11 +528,22 @@ pub async fn run_llm_loop(
                         timestamp: Utc::now(),
                     });
                     let llm_evidence = build_llm_evidence(
-                        agent, system_prompt_hash, tool_call_records,
-                        intermediate_beliefs, model_verdict.evidence_citations,
-                        iteration + 1, validation_retries,
+                        agent,
+                        system_prompt_hash,
+                        tool_call_records,
+                        intermediate_beliefs,
+                        model_verdict.evidence_citations,
+                        iteration + 1,
+                        validation_retries,
                     );
-                    let hybrid = HybridEvidence { classifier_draft, llm_final: llm_evidence, escalation_reason };
+                    let hybrid = HybridEvidence {
+                        classifier_draft,
+                        llm_final: llm_evidence,
+                        escalation_reason,
+                    };
+                    if let Some(ref tr) = trace {
+                        tr.step("final_verdict", "NeedsInvestigation");
+                    }
                     return Ok(LlmLoopResult {
                         evidence: hybrid,
                         verdict: attest_attestation::Verdict::NeedsInvestigation,
@@ -534,7 +599,14 @@ pub async fn run_llm_loop(
                 escalation_reason,
             };
 
-            return Ok(LlmLoopResult { evidence: hybrid, verdict });
+            if let Some(ref tr) = trace {
+                tr.step("final_verdict", format!("{verdict:?}"));
+            }
+
+            return Ok(LlmLoopResult {
+                evidence: hybrid,
+                verdict,
+            });
         }
     }
 
@@ -563,6 +635,7 @@ pub async fn run_investigator_llm_loop(
     action_id: Uuid,
     enforcement: Option<EnforcementMode>,
     guardrail_retries_cap: Option<u8>,
+    trace: Option<TraceEmit>,
 ) -> Result<InvestigatorLlmResult, LlmLoopError> {
     use crate::guardrails::investigator_retrieval_reprompt;
 
@@ -598,6 +671,7 @@ pub async fn run_investigator_llm_loop(
             None
         } else {
             parse_synthetic_tool_calls_from_content(&resp.content)
+                .or_else(|| parse_python_tool_calls(&resp.content))
         };
 
         let tool_round: Vec<ToolCall> = if resp.has_tool_calls() {
@@ -626,6 +700,12 @@ pub async fn run_investigator_llm_loop(
                 self_reported_confidence: None,
                 timestamp: Utc::now(),
             });
+
+            if let Some(ref t) = trace {
+                if let Some(b) = intermediate_beliefs.last() {
+                    t.step("intermediate_belief", b.content_summary.clone());
+                }
+            }
 
             messages.push(ChatMessage::Assistant {
                 content: resp.content.clone(),
@@ -669,6 +749,9 @@ pub async fn run_investigator_llm_loop(
                 };
 
                 tool_call_records.push(record);
+                if let Some(ref t) = trace {
+                    t.step("tool_call", tc.name.clone());
+                }
                 if tool_call_records
                     .last()
                     .map(|r| r.policy_decision == "allow")
@@ -677,6 +760,20 @@ pub async fn run_investigator_llm_loop(
                     successful_call_ids.push(tc.id.clone());
                 }
                 messages.push(ChatMessage::tool_result(tc.id.clone(), tool_output));
+            }
+
+            // After each tool round: if we're 2 iterations from the cap and have
+            // gathered evidence, inject a forcing message so the LLM stops calling
+            // tools and emits the final verdict on the next turn.
+            let iterations_remaining = (max_iterations as i16) - (iteration as i16) - 1;
+            if iterations_remaining <= 2 && !successful_call_ids.is_empty() {
+                messages.push(ChatMessage::user(
+                    "You have gathered sufficient evidence. \
+                     Do NOT call any more tools. \
+                     You MUST now emit ONLY the final JSON verdict block — nothing else:\n\
+                     {\"verdict\":\"...\",\"confidence\":0.0-1.0,\"summary\":\"...\",\"recommended_action\":\"...\"}"
+                        .to_string(),
+                ));
             }
         } else {
             let raw_content = resp.content.trim().to_string();
@@ -699,6 +796,9 @@ pub async fn run_investigator_llm_loop(
                         iteration + 1,
                         validation_retries,
                     );
+                    if let Some(ref tr) = trace {
+                        tr.step("final_verdict", "NeedsInvestigation");
+                    }
                     return Ok(InvestigatorLlmResult {
                         evidence: llm_evidence,
                         verdict: attest_attestation::Verdict::NeedsInvestigation,
@@ -711,7 +811,9 @@ pub async fn run_investigator_llm_loop(
                     self_reported_confidence: Some(0.0),
                     timestamp: Utc::now(),
                 });
-                messages.push(ChatMessage::user(investigator_retrieval_reprompt().to_string()));
+                messages.push(ChatMessage::user(
+                    investigator_retrieval_reprompt().to_string(),
+                ));
                 continue;
             }
 
@@ -733,6 +835,9 @@ pub async fn run_investigator_llm_loop(
                         iteration + 1,
                         validation_retries,
                     );
+                    if let Some(ref tr) = trace {
+                        tr.step("final_verdict", "NeedsInvestigation");
+                    }
                     return Ok(InvestigatorLlmResult {
                         evidence: llm_evidence,
                         verdict: attest_attestation::Verdict::NeedsInvestigation,
@@ -774,6 +879,10 @@ pub async fn run_investigator_llm_loop(
                 total_iterations,
                 validation_retries,
             );
+
+            if let Some(ref tr) = trace {
+                tr.step("final_verdict", format!("{verdict:?}"));
+            }
 
             return Ok(InvestigatorLlmResult {
                 evidence: llm_evidence,
@@ -821,7 +930,11 @@ pub async fn run_review(
         Ok(resp) => {
             let raw = extract_json_block(resp.content.trim());
             #[derive(Deserialize)]
-            struct ReviewJson { agrees: bool, #[serde(default)] reason: String }
+            struct ReviewJson {
+                agrees: bool,
+                #[serde(default)]
+                reason: String,
+            }
             match serde_json::from_str::<ReviewJson>(&raw) {
                 Ok(r) => ReviewOutcome {
                     agrees: r.agrees,
@@ -872,7 +985,13 @@ pub fn build_cross_review_block(
 /// structured `tool_calls` field. Accept those shapes so the loop can execute MCP and continue.
 fn parse_synthetic_tool_calls_from_content(content: &str) -> Option<Vec<ToolCall>> {
     let v = parse_value_loose_json(content)?;
-    let arr = if let Some(a) = v.get("tool_calls").and_then(|x| x.as_array()) {
+
+    // Shape 1: {"tool_calls": [...]}
+    // Shape 2: [{"tool":"...", "arguments":{}} ...]   (array at root)
+    // Shape 3: {"tool":"...", "arguments":{}}          (single-object — Qwen3 / local models)
+    // Shape 4: {"name":"...", "arguments":{}}          (alternate single-object)
+    let arr_owned: Vec<Value>;
+    let arr: &[Value] = if let Some(a) = v.get("tool_calls").and_then(|x| x.as_array()) {
         if a.is_empty() {
             return None;
         }
@@ -882,6 +1001,16 @@ fn parse_synthetic_tool_calls_from_content(content: &str) -> Option<Vec<ToolCall
             return None;
         }
         a
+    } else if let Some(obj) = v.as_object() {
+        // Single tool-call object — must have a tool/name key but NOT a verdict key,
+        // to avoid misidentifying a valid verdict as a tool call.
+        let has_tool_key = obj.contains_key("tool") || obj.contains_key("name");
+        let is_verdict = obj.contains_key("verdict");
+        if !has_tool_key || is_verdict {
+            return None;
+        }
+        arr_owned = vec![v.clone()];
+        &arr_owned
     } else {
         return None;
     };
@@ -916,6 +1045,111 @@ fn parse_value_loose_json(content: &str) -> Option<Value> {
         .or_else(|| serde_json::from_str(&extract_json_block(t)).ok())
 }
 
+/// Parse Qwen3/llama-cpp Python function-call notation emitted in code blocks:
+///
+/// ```python
+/// tool_name(arg1="val1", arg2="val2")
+/// ```
+///
+/// Returns `None` if the content does not look like a function call.
+fn parse_python_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
+    // Strip <think>…</think> blocks first.
+    let stripped = {
+        let s = if let (Some(open), Some(close)) = (content.find("<think>"), content.rfind("</think>")) {
+            if close > open {
+                let before = &content[..open];
+                let after = &content[close + "</think>".len()..];
+                format!("{before}{after}")
+            } else {
+                content.to_string()
+            }
+        } else {
+            content.to_string()
+        };
+        s
+    };
+
+    // Look for ``` … ``` fenced blocks and bare lines that match `func_name(...)`.
+    // Pattern: an identifier immediately followed by `(`, up to `)`.
+    let code = {
+        let s = stripped.trim();
+        // Extract content inside any ``` fence
+        if let Some(start) = s.find("```") {
+            let inner_start = start + 3;
+            // Skip optional language tag
+            let inner_start = s[inner_start..]
+                .find('\n')
+                .map(|n| inner_start + n + 1)
+                .unwrap_or(inner_start);
+            let end = s[inner_start..].find("```").map(|n| inner_start + n).unwrap_or(s.len());
+            s[inner_start..end].trim().to_string()
+        } else {
+            s.to_string()
+        }
+    };
+
+    // Match `tool_name(…)` — find first `(` and last `)`.
+    let open = code.find('(')?;
+    let close = code.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+
+    let func_name = code[..open].trim();
+    if func_name.is_empty() || func_name.contains(' ') || func_name.contains('\n') {
+        return None;
+    }
+
+    // Only match known tool names to avoid false positives from verdict JSON.
+    const KNOWN_TOOLS: &[&str] = &[
+        "get_user_baseline",
+        "query_hot_tier",
+        "lookup_threat_intel",
+        "get_asset_context",
+        "query_warm_tier",
+        "analyze_code_snippet",
+        "sandbox_detonate",
+    ];
+    if !KNOWN_TOOLS.contains(&func_name) {
+        return None;
+    }
+
+    // Parse keyword arguments: key="val" or key='val' or key=number
+    let args_str = &code[open + 1..close];
+    let mut arguments = serde_json::Map::new();
+    // Simple regex-free parser: split on `,` then parse key=value pairs.
+    for part in args_str.split(',') {
+        let part = part.trim();
+        if let Some(eq) = part.find('=') {
+            let key = part[..eq].trim();
+            let val_raw = part[eq + 1..].trim();
+            // Strip surrounding quotes
+            let val: Value = if (val_raw.starts_with('"') && val_raw.ends_with('"'))
+                || (val_raw.starts_with('\'') && val_raw.ends_with('\''))
+            {
+                Value::String(val_raw[1..val_raw.len() - 1].to_string())
+            } else if let Ok(n) = val_raw.parse::<f64>() {
+                json!(n)
+            } else if val_raw == "true" {
+                json!(true)
+            } else if val_raw == "false" {
+                json!(false)
+            } else {
+                Value::String(val_raw.to_string())
+            };
+            if !key.is_empty() {
+                arguments.insert(key.to_string(), val);
+            }
+        }
+    }
+
+    Some(vec![ToolCall {
+        id: "call_synth_py_000".to_string(),
+        name: func_name.to_string(),
+        arguments: Value::Object(arguments),
+    }])
+}
+
 /// Extract the first JSON object from a string.
 ///
 /// Handles:
@@ -925,7 +1159,8 @@ fn parse_value_loose_json(content: &str) -> Option<Value> {
 /// - Bare `{ ... }` objects
 fn extract_json_block(text: &str) -> String {
     // 1. Strip Qwen3-style <think>…</think> blocks before looking for JSON
-    let stripped = if let (Some(open), Some(close)) = (text.find("<think>"), text.rfind("</think>")) {
+    let stripped = if let (Some(open), Some(close)) = (text.find("<think>"), text.rfind("</think>"))
+    {
         if close > open {
             let before = &text[..open];
             let after = &text[close + "</think>".len()..];
@@ -974,15 +1209,14 @@ fn truncate_summary(s: &str, max: usize) -> String {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn extract_json_from_fence() {
-        let text = "Let me analyze this.\n```json\n{\"verdict\": \"benign\", \"confidence\": 0.9}\n```\n";
+        let text =
+            "Let me analyze this.\n```json\n{\"verdict\": \"benign\", \"confidence\": 0.9}\n```\n";
         let extracted = extract_json_block(text);
         assert!(extracted.contains("benign"));
     }
@@ -1014,8 +1248,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_synthetic_tool_calls_single_object_tool_key() {
+        // Qwen3 / local-model format: bare single-object with "tool" key
+        let raw = r#"{"tool":"get_user_baseline","arguments":{"user_id":"mallory@acme.com"}}"#;
+        let t = parse_synthetic_tool_calls_from_content(raw).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "get_user_baseline");
+        assert_eq!(t[0].arguments["user_id"], "mallory@acme.com");
+    }
+
+    #[test]
+    fn parse_synthetic_tool_calls_single_object_name_key() {
+        let raw = r#"{"name":"query_hot_tier","arguments":{"filter":"src_ip=1.2.3.4"}}"#;
+        let t = parse_synthetic_tool_calls_from_content(raw).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "query_hot_tier");
+    }
+
+    #[test]
     fn parse_synthetic_tool_calls_rejects_verdict_only() {
         let raw = r#"{"verdict":"benign","confidence":0.9}"#;
+        assert!(parse_synthetic_tool_calls_from_content(raw).is_none());
+    }
+
+    #[test]
+    fn parse_synthetic_tool_calls_rejects_single_object_with_verdict() {
+        // A response that has both "tool" and "verdict" should NOT be treated as a tool call
+        let raw = r#"{"tool":"get_user_baseline","verdict":"benign"}"#;
         assert!(parse_synthetic_tool_calls_from_content(raw).is_none());
     }
 
@@ -1025,8 +1284,14 @@ mod tests {
         assert_eq!(parse_verdict("true_positive"), Verdict::TruePositive);
         assert_eq!(parse_verdict("false_positive"), Verdict::FalsePositive);
         assert_eq!(parse_verdict("benign"), Verdict::Benign);
-        assert_eq!(parse_verdict("needs_investigation"), Verdict::NeedsInvestigation);
-        assert_eq!(parse_verdict("unknown_garbage"), Verdict::NeedsInvestigation);
+        assert_eq!(
+            parse_verdict("needs_investigation"),
+            Verdict::NeedsInvestigation
+        );
+        assert_eq!(
+            parse_verdict("unknown_garbage"),
+            Verdict::NeedsInvestigation
+        );
     }
 
     #[test]

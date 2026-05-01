@@ -12,8 +12,8 @@ use axum::{
     Json, Router,
 };
 use serde_json::json;
-use tokio::sync::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::generator::{start_run, RunConfig, RunHandle, RunStatus};
 
@@ -25,7 +25,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(brokers: String, orchestrator_url: Option<String>) -> Self {
-        AppState { brokers, orchestrator_url, run: None }
+        AppState {
+            brokers,
+            orchestrator_url,
+            run: None,
+        }
     }
 }
 
@@ -34,9 +38,9 @@ pub type SharedState = Arc<RwLock<AppState>>;
 pub fn build_router(state: SharedState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/run",     post(run_handler))
-        .route("/stop",    post(stop_handler))
-        .route("/status",  get(status_handler))
+        .route("/run", post(run_handler))
+        .route("/stop", post(stop_handler))
+        .route("/status", get(status_handler))
         .with_state(state)
 }
 
@@ -57,8 +61,8 @@ async fn run_handler(
             );
         }
     }
-    let brokers        = s.brokers.clone();
-    let orchestrator   = s.orchestrator_url.clone();
+    let brokers = s.brokers.clone();
+    let orchestrator = s.orchestrator_url.clone();
     drop(s);
 
     match start_run(brokers, cfg, orchestrator).await {
@@ -81,7 +85,10 @@ async fn stop_handler(State(state): State<SharedState>) -> impl IntoResponse {
             handle.stop();
             (StatusCode::OK, Json(json!({ "stopped": true })))
         }
-        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "no active run" }))),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "no active run" })),
+        ),
     }
 }
 

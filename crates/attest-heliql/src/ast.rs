@@ -46,8 +46,8 @@ impl Duration {
         match self.unit {
             DurationUnit::Seconds => self.value,
             DurationUnit::Minutes => self.value * 60,
-            DurationUnit::Hours   => self.value * 3600,
-            DurationUnit::Days    => self.value * 86_400,
+            DurationUnit::Hours => self.value * 3600,
+            DurationUnit::Days => self.value * 86_400,
         }
     }
 
@@ -56,8 +56,8 @@ impl Duration {
         match self.unit {
             DurationUnit::Seconds => format!("INTERVAL '{} seconds'", self.value),
             DurationUnit::Minutes => format!("INTERVAL '{} minutes'", self.value),
-            DurationUnit::Hours   => format!("INTERVAL '{} hours'", self.value),
-            DurationUnit::Days    => format!("INTERVAL '{} days'", self.value),
+            DurationUnit::Hours => format!("INTERVAL '{} hours'", self.value),
+            DurationUnit::Days => format!("INTERVAL '{} days'", self.value),
         }
     }
 }
@@ -82,8 +82,8 @@ pub enum Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Str(s)   => write!(f, "'{s}'"),
-            Value::Int(i)   => write!(f, "{i}"),
+            Value::Str(s) => write!(f, "'{s}'"),
+            Value::Int(i) => write!(f, "{i}"),
             Value::Float(v) => write!(f, "{v}"),
             Value::Field(s) => write!(f, "{s}"),
         }
@@ -103,10 +103,10 @@ pub enum CmpOp {
 impl std::fmt::Display for CmpOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            CmpOp::Eq  => "=",
-            CmpOp::Ne  => "!=",
-            CmpOp::Gt  => ">",
-            CmpOp::Lt  => "<",
+            CmpOp::Eq => "=",
+            CmpOp::Ne => "!=",
+            CmpOp::Gt => ">",
+            CmpOp::Lt => "<",
             CmpOp::Gte => ">=",
             CmpOp::Lte => "<=",
         };
@@ -132,13 +132,22 @@ pub enum InRhs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ConditionAtom {
     /// `field = value`
-    Cmp { field: String, op: CmpOp, value: Value },
+    Cmp {
+        field: String,
+        op: CmpOp,
+        value: Value,
+    },
     /// `field IN [values]` or `field IN baseline(...)`
     In { field: String, rhs: InRhs },
     /// `field NOT IN [values]` or `field NOT IN baseline(...)`
     NotIn { field: String, rhs: InRhs },
     /// `unique(field, window: 90d) > 0`
-    Unique { field: String, window: Duration, op: CmpOp, threshold: i64 },
+    Unique {
+        field: String,
+        window: Duration,
+        op: CmpOp,
+        threshold: i64,
+    },
 }
 
 /// Combined boolean expression.
