@@ -51,4 +51,7 @@ eval/reports/*
 ml/triager/artifacts/
 ml/.venv/
 ml/uv.lock
-attestations.ndjson
+# Attestation logs — local run artifacts, never commit
+*.ndjson
+# Scratch / debug JSON dumps
+test.json

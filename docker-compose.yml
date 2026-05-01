@@ -287,6 +287,12 @@ services:
       dockerfile: infra/docker/orchestrator.Dockerfile
     ports:
       - "4300:4300"
+    # Load `ATTEST_LLM_*`, guardrails, etc. from repo `.env`. Overrides below win (Compose merge order).
+    env_file:
+      - .env
+    extra_hosts:
+      # Linux: map host gateway (Docker Desktop already provides host.docker.internal on Mac/Win).
+      - "host.docker.internal:host-gateway"
     environment:
       ORCHESTRATOR_PORT: "4300"
       ARTIFACTS_DIR: /artifacts
@@ -300,6 +306,8 @@ services:
       INVESTIGATOR_PROMPT_PATH: /agents/investigator/system_prompt_v1.md
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-orchestrator
+      # Must override `.env` (which uses 127.0.0.1 for native runs). Unsloth runs on the host.
+      ATTEST_LLM_BASE_URL: ${ATTEST_LLM_DOCKER_BASE_URL:-http://host.docker.internal:8888/v1}
     volumes:
       - ./ml/triager/artifacts:/artifacts:ro
       - ./agents:/agents:ro

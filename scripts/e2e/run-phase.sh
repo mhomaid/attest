@@ -33,6 +33,13 @@ case "$PHASE" in
   7)
     exec cargo test -p attest-orchestrator --test investigator_loop -- "$@"
     ;;
+  7-live|7live)
+    set -a
+    [ -f "$ROOT/.env" ] && . "$ROOT/.env"
+    set +a
+    exec env ATTEST_E2E=1 ATTEST_PHASE7_LIVE=1 \
+      cargo test -p e2e-tests --test phase7_live_investigator -- "$@"
+    ;;
   arroyo)
     exec make e2e-arroyo
     ;;
@@ -60,13 +67,15 @@ Usage: scripts/e2e/run-phase.sh <phase> [extra cargo args]
 
   1 | 2 | 3       Platform E2E (set ATTEST_E2E=1 via script for 1–3)
   4a | 4b | 5 | 6 Makefile targets (start/stop services as defined there)
-  7               Investigator loop test (no Docker)
+  7               Investigator loop test (no Docker; WireMock + scripted LLM)
+  7-live          Live HTTP: POST /triage → investigator → GET …/trace (see README)
   arroyo          make e2e-arroyo
   all-platform    Phases 1, 2, 3 serially
   all-offline     cargo test workspace + phase7 + ml pytest
 
 Examples:
   ./scripts/e2e/run-phase.sh 7 -- --nocapture
+  ./scripts/e2e/run-phase.sh 7-live -- --nocapture
   ATTEST_E2E=1 ./scripts/e2e/run-phase.sh all-platform
 EOF
     exit 0

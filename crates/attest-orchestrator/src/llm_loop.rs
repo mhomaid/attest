@@ -20,7 +20,7 @@ use attest_attestation::{
     CrossReviewBlock, EscalationReason, HybridEvidence, IntermediateBelief, LlmEvidence,
     ToolCallRecord, ClassifierEvidence,
 };
-use attest_inference_router::{ChatClient, ChatMessage, ChatRequest, ToolDef};
+use attest_inference_router::{ChatClient, ChatMessage, ChatRequest, ToolCall, ToolDef};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -306,12 +306,32 @@ pub async fn run_llm_loop(
             "LLM loop iteration"
         );
 
-        if resp.has_tool_calls() {
+        let synthetic_tools = if resp.has_tool_calls() {
+            None
+        } else {
+            parse_synthetic_tool_calls_from_content(&resp.content)
+        };
+
+        let tool_round: Vec<ToolCall> = if resp.has_tool_calls() {
+            resp.tool_calls.clone()
+        } else if let Some(t) = synthetic_tools {
+            tracing::info!(
+                action_id = %action_id,
+                iteration,
+                count = t.len(),
+                "LLM returned tool_calls as JSON in message body (not native API tool_calls)"
+            );
+            t
+        } else {
+            vec![]
+        };
+
+        if !tool_round.is_empty() {
             // Record an intermediate belief before executing tool calls
             intermediate_beliefs.push(IntermediateBelief {
                 iteration,
                 content_summary: if resp.content.is_empty() {
-                    format!("requesting {} tool calls", resp.tool_calls.len())
+                    format!("requesting {} tool calls", tool_round.len())
                 } else {
                     truncate_summary(&resp.content, 200)
                 },
@@ -322,17 +342,11 @@ pub async fn run_llm_loop(
             // Append assistant message with tool calls
             messages.push(ChatMessage::Assistant {
                 content: resp.content.clone(),
-                tool_calls: Some(resp.tool_calls.iter().map(|tc| {
-                    attest_inference_router::ToolCall {
-                        id: tc.id.clone(),
-                        name: tc.name.clone(),
-                        arguments: tc.arguments.clone(),
-                    }
-                }).collect()),
+                tool_calls: Some(tool_round.clone()),
             });
 
             // Execute each tool call through the MCP gateway
-            for tc in &resp.tool_calls {
+            for tc in &tool_round {
                 let result = mcp.invoke(
                     &agent.id,
                     action_id,
@@ -580,11 +594,32 @@ pub async fn run_investigator_llm_loop(
             "Investigator LLM iteration"
         );
 
-        if resp.has_tool_calls() {
+        let synthetic_tools = if resp.has_tool_calls() {
+            None
+        } else {
+            parse_synthetic_tool_calls_from_content(&resp.content)
+        };
+
+        let tool_round: Vec<ToolCall> = if resp.has_tool_calls() {
+            resp.tool_calls.clone()
+        } else if let Some(t) = synthetic_tools {
+            tracing::info!(
+                action_id = %action_id,
+                iteration,
+                phase = "investigator",
+                count = t.len(),
+                "Investigator: tool_calls in message JSON (not native API tool_calls)"
+            );
+            t
+        } else {
+            vec![]
+        };
+
+        if !tool_round.is_empty() {
             intermediate_beliefs.push(IntermediateBelief {
                 iteration,
                 content_summary: if resp.content.is_empty() {
-                    format!("requesting {} tool calls", resp.tool_calls.len())
+                    format!("requesting {} tool calls", tool_round.len())
                 } else {
                     truncate_summary(&resp.content, 200)
                 },
@@ -594,16 +629,10 @@ pub async fn run_investigator_llm_loop(
 
             messages.push(ChatMessage::Assistant {
                 content: resp.content.clone(),
-                tool_calls: Some(resp.tool_calls.iter().map(|tc| {
-                    attest_inference_router::ToolCall {
-                        id: tc.id.clone(),
-                        name: tc.name.clone(),
-                        arguments: tc.arguments.clone(),
-                    }
-                }).collect()),
+                tool_calls: Some(tool_round.clone()),
             });
 
-            for tc in &resp.tool_calls {
+            for tc in &tool_round {
                 let result = mcp
                     .invoke(
                         investigator_agent_id,
@@ -838,6 +867,55 @@ pub fn build_cross_review_block(
     }
 }
 
+/// Some OpenAI-compat servers return `finish_reason: stop` with tool intents only in **message
+/// text** as JSON (`{"tool_calls":[...]}` or `[{"tool":"...","arguments":{}}]`), not in the API's
+/// structured `tool_calls` field. Accept those shapes so the loop can execute MCP and continue.
+fn parse_synthetic_tool_calls_from_content(content: &str) -> Option<Vec<ToolCall>> {
+    let v = parse_value_loose_json(content)?;
+    let arr = if let Some(a) = v.get("tool_calls").and_then(|x| x.as_array()) {
+        if a.is_empty() {
+            return None;
+        }
+        a
+    } else if let Some(a) = v.as_array() {
+        if a.is_empty() {
+            return None;
+        }
+        a
+    } else {
+        return None;
+    };
+
+    let mut out = Vec::new();
+    for (i, item) in arr.iter().enumerate() {
+        let obj = item.as_object()?;
+        let id = obj
+            .get("id")
+            .and_then(|x| x.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| format!("call_synth_{i:03}"));
+        let name = obj
+            .get("name")
+            .and_then(|x| x.as_str())
+            .or_else(|| obj.get("tool").and_then(|x| x.as_str()))?
+            .to_string();
+        let arguments = obj.get("arguments").cloned().unwrap_or_else(|| json!({}));
+        out.push(ToolCall {
+            id,
+            name,
+            arguments,
+        });
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn parse_value_loose_json(content: &str) -> Option<Value> {
+    let t = content.trim();
+    serde_json::from_str(t)
+        .ok()
+        .or_else(|| serde_json::from_str(&extract_json_block(t)).ok())
+}
+
 /// Extract the first JSON object from a string.
 ///
 /// Handles:
@@ -915,6 +993,30 @@ mod tests {
         let extracted = extract_json_block(text);
         let v: Value = serde_json::from_str(&extracted).unwrap();
         assert_eq!(v["verdict"], "true_positive");
+    }
+
+    #[test]
+    fn parse_synthetic_tool_calls_wrapped_object() {
+        let raw = r#"{"tool_calls":[{"id":"call_001","name":"get_user_baseline","arguments":{"principal":"a@b.c"}}]}"#;
+        let t = parse_synthetic_tool_calls_from_content(raw).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "get_user_baseline");
+        assert_eq!(t[0].arguments["principal"], "a@b.c");
+    }
+
+    #[test]
+    fn parse_synthetic_tool_calls_array_form() {
+        let raw = r#"[{"tool":"lookup_threat_intel","arguments":{"ip":"1.2.3.4"}}]"#;
+        let t = parse_synthetic_tool_calls_from_content(raw).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].id, "call_synth_000");
+        assert_eq!(t[0].name, "lookup_threat_intel");
+    }
+
+    #[test]
+    fn parse_synthetic_tool_calls_rejects_verdict_only() {
+        let raw = r#"{"verdict":"benign","confidence":0.9}"#;
+        assert!(parse_synthetic_tool_calls_from_content(raw).is_none());
     }
 
     #[test]

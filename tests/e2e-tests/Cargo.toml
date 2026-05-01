@@ -42,6 +42,10 @@ path = "tests/phase5_guardrails.rs"
 name = "phase6_auto_close"
 path = "tests/phase6_auto_close.rs"
 
+[[test]]
+name = "phase7_live_investigator"
+path = "tests/phase7_live_investigator.rs"
+
 [dev-dependencies]
 chrono = { workspace = true }
 rdkafka = { workspace = true }

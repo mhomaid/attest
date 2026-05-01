@@ -3,6 +3,8 @@
 //! Endpoint: `POST /invoke`
 //! Body: `{ "agent_id": "...", "action_id": "...", "agent_role": "...", "tool_id": "...", "args": {...} }`
 //! Response: `{ "result": {...}, "call_log": {...} }`
+//!
+//! `GET /healthz` returns `200` with body `ok` for load balancers / compose checks.
 
 use crate::registry::ToolRegistry;
 use crate::tools;
@@ -12,7 +14,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use chrono::Utc;
@@ -110,6 +112,7 @@ pub fn build_router_with_warm_limiter(registry: ToolRegistry, warm_limiter: Warm
         .with_state(state);
 
     Router::new()
+        .route("/healthz", get(|| async { "ok" }))
         .merge(api)
         .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
 }

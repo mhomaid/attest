@@ -1,5 +1,9 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
+
+# Source repo-root `.env` in native `make run-*` / E2E recipes below.
+# Docker Compose loads `.env` by default; a bare shell does not — without this, values only exist in `.env`, not in the process environment.
+DOTENV_SH := set -a; [ -f "$(CURDIR)/.env" ] && . "$(CURDIR)/.env"; set +a;
 
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -42,11 +46,13 @@ run-calibration: ## Run calibration sidecar natively (port 5001); unsets VIRTUAL
 	cd ml && env -u VIRTUAL_ENV CALIBRATION_PORT=5001 uv run python triager/calibrate.py --serve
 
 run-mcp-gateway: ## Run MCP gateway natively (port 4242) — set CONTROL_PLANE_URL if not localhost:8080
+	$(DOTENV_SH) \
 	CONTROL_PLANE_URL=$${CONTROL_PLANE_URL:-http://localhost:8080} \
 	  MCP_GATEWAY_PORT=4242 \
 	  cargo run -p attest-mcp-gateway
 
 run-control-plane: ## Run control-plane API natively (port 8080) — requires RisingWave, ClickHouse, Kafka reachable via env
+	$(DOTENV_SH) \
 	RISINGWAVE_HOST=$${RISINGWAVE_HOST:-localhost} \
 	  RISINGWAVE_PORT=$${RISINGWAVE_PORT:-4566} \
 	  CLICKHOUSE_URL=$${CLICKHOUSE_URL:-http://localhost:8123} \
@@ -55,11 +61,13 @@ run-control-plane: ## Run control-plane API natively (port 8080) — requires Ri
 	  cargo run -p attest-control-plane
 
 run-workbench-api: ## Run workbench trace API (port 4400) — reads ATTEST_LOG_PATH (default ./attestations.ndjson)
+	$(DOTENV_SH) \
 	WORKBENCH_API_PORT=$${WORKBENCH_API_PORT:-4400} \
 	  ATTEST_LOG_PATH=$${ATTEST_LOG_PATH:-$(CURDIR)/attestations.ndjson} \
 	  cargo run -p workbench-api
 
 run-orchestrator: ## Run orchestrator natively (local Unsloth LLM path — requires calibration sidecar on :5001 and Unsloth Studio on :8888)
+	$(DOTENV_SH) \
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
 	  CALIBRATION_URL=http://localhost:5001 \
@@ -69,14 +77,15 @@ run-orchestrator: ## Run orchestrator natively (local Unsloth LLM path — requi
 	  ATTEST_LLM_PROVIDER=local \
 	  ATTEST_LLM_BASE_URL=http://127.0.0.1:8888/v1 \
 	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
-	  ATTEST_LLM_API_KEY=$(ATTEST_LLM_API_KEY) \
+	  ATTEST_LLM_API_KEY=$${ATTEST_LLM_API_KEY} \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
 	  cargo run -p attest-orchestrator
 
 run-orchestrator-local: run-orchestrator ## Alias for run-orchestrator (local Unsloth LLM path)
 
 run-orchestrator-cloud: ## Run orchestrator natively (Anthropic Sonnet LLM path — requires ANTHROPIC_API_KEY)
-	@test -n "$$ANTHROPIC_API_KEY" || (echo "ERROR: ANTHROPIC_API_KEY is not set"; exit 1)
+	$(DOTENV_SH) \
+	test -n "$$ANTHROPIC_API_KEY" || (echo "ERROR: ANTHROPIC_API_KEY is not set (add to .env or export)"; exit 1); \
 	ARTIFACTS_DIR=$(CURDIR)/ml/triager/artifacts \
 	  ORCHESTRATOR_PORT=4300 \
 	  CALIBRATION_URL=http://localhost:5001 \
@@ -243,8 +252,14 @@ e2e-phase7: ## Phase 7 — Investigator loop (integration test; wiremock + scrip
 	@echo "==> Running Phase 7 investigator integration tests..."
 	cargo test -p attest-orchestrator --test investigator_loop -- --nocapture
 
-e2e-run-phase: ## Usage: make e2e-run-phase P=7  — shell driver (see scripts/e2e/README.md)
-	@test -n "$(P)" || (echo "Set P to 1,2,3,4a,4b,5,6,7,arroyo,all-platform,all-offline,help"; exit 1)
+e2e-phase7-live: ## Phase 7 — live stack: POST /triage → investigator → GET …/trace (see scripts/e2e/README.md)
+	@echo "==> Phase 7 live E2E (orchestrator + workbench-api + shared ATTEST_LOG_PATH)..."
+	$(DOTENV_SH) \
+	ATTEST_E2E=1 ATTEST_PHASE7_LIVE=1 \
+	  cargo test -p e2e-tests --test phase7_live_investigator -- --nocapture
+
+e2e-run-phase: ## Usage: make e2e-run-phase P=7|7-live — shell driver (see scripts/e2e/README.md)
+	@test -n "$(P)" || (echo "Set P to 1,2,3,4a,4b,5,6,7,7-live,arroyo,all-platform,all-offline,help"; exit 1)
 	@scripts/e2e/run-phase.sh $(P)
 
 e2e-all-offline: ## Rust workspace + Phase7 investigator test + ML pytest (no Docker)
