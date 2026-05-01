@@ -42,31 +42,54 @@ export default async function CasePage({
 }) {
   const { id } = await params;
 
-  const liveEvent = await fetchEvent(id);
+  // Fetch the live event and the persisted snapshot in parallel — both are
+  // independent queries and each navigation needs both to decide whether to
+  // re-upsert. Doing them sequentially used to double the time-to-first-paint.
+  const [liveEvent, persisted] = await Promise.all([
+    fetchEvent(id),
+    getCase(id).catch(() => null),
+  ]);
 
   if (!liveEvent) {
-    const persisted = await getCase(id);
     if (persisted?.event) {
       return (
         <CaseInvestigationClient
           eventId={id}
           ocsfEvent={persisted.event as OcsfEvent}
-          liveBaseline={persisted.baseline as { regions_seen_30d?: string[] } | null}
+          liveBaseline={
+            persisted.baseline as { regions_seen_30d?: string[] } | null
+          }
         />
       );
     }
     return <CaseStoreFallback caseId={id} />;
   }
 
-  const liveBaseline = liveEvent.actor_user_name
-    ? await fetchBaseline(liveEvent.actor_user_name)
-    : null;
+  // Skip baseline + upsert when the persisted snapshot already matches the
+  // live event — most navigations back to a previously-viewed case fall into
+  // this path and were doing 2 unnecessary writes/fetches before.
+  const persistedEvent = persisted?.event as Record<string, unknown> | undefined;
+  const eventUnchanged =
+    persistedEvent?.event_id !== undefined &&
+    String(persistedEvent.event_id) === String(liveEvent.event_id);
 
-  await upsertCaseSnapshot({
-    caseId: id,
-    event: liveEvent,
-    baseline: liveBaseline,
-  });
+  const liveBaseline = eventUnchanged
+    ? (persisted?.baseline as { regions_seen_30d?: string[] } | null) ?? null
+    : liveEvent.actor_user_name
+      ? await fetchBaseline(liveEvent.actor_user_name)
+      : null;
+
+  if (!eventUnchanged) {
+    // Fire-and-forget: the snapshot is for fallback rendering only, so a
+    // failed upsert must not block the page render or stall the route.
+    void upsertCaseSnapshot({
+      caseId: id,
+      event: liveEvent,
+      baseline: liveBaseline,
+    }).catch((err) => {
+      console.error("[case-page] upsertCaseSnapshot failed", err);
+    });
+  }
 
   return (
     <CaseInvestigationClient

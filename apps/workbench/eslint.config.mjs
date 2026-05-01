@@ -6,6 +6,7 @@ const tanstackTableOverride = {
   files: [
     "src/components/data-table.tsx",
     "src/components/workbench/alert-queue.tsx",
+    "src/components/workbench/attestation-trace-panel.tsx",
   ],
   rules: {
     "react-hooks/incompatible-library": "off",

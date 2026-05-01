@@ -51,6 +51,12 @@ struct ModelVerdict {
     /// Free-form reasoning text.
     #[serde(default)]
     reasoning: String,
+    /// Short model-provided summary of the decision.
+    #[serde(default)]
+    summary: String,
+    /// Suggested analyst or automation follow-up.
+    #[serde(default)]
+    recommended_action: String,
     /// `[evidence:ocsf_event_id]` tags extracted from the text.
     #[serde(default)]
     evidence_citations: Vec<String>,
@@ -355,9 +361,10 @@ pub async fn run_llm_loop(
                 timestamp: Utc::now(),
             });
             if let Some(ref t) = trace {
-                if let Some(b) = intermediate_beliefs.last() {
-                    t.step("intermediate_belief", b.content_summary.clone());
-                }
+                t.step(
+                    "intermediate_belief",
+                    summarize_tool_request_round(iteration, &resp.content, &tool_round),
+                );
             }
 
             // Append assistant message with tool calls
@@ -409,7 +416,8 @@ pub async fn run_llm_loop(
 
                 tool_call_records.push(record);
                 if let Some(ref t) = trace {
-                    t.step("tool_call", tc.name.clone());
+                    let record = tool_call_records.last().expect("record just pushed");
+                    t.step("tool_call", summarize_tool_call(tc, &tool_output, record));
                 }
                 // Track this call ID if the MCP allowed the call
                 if tool_call_records
@@ -580,7 +588,7 @@ pub async fn run_llm_loop(
             });
 
             let verdict = parse_verdict(&model_verdict.verdict);
-            let evidence_citations = model_verdict.evidence_citations;
+            let evidence_citations = model_verdict.evidence_citations.clone();
             let total_iterations = iteration + 1;
 
             let llm_evidence = build_llm_evidence(
@@ -600,7 +608,10 @@ pub async fn run_llm_loop(
             };
 
             if let Some(ref tr) = trace {
-                tr.step("final_verdict", format!("{verdict:?}"));
+                tr.step(
+                    "final_verdict",
+                    summarize_final_verdict(&model_verdict, &verdict),
+                );
             }
 
             return Ok(LlmLoopResult {
@@ -702,9 +713,10 @@ pub async fn run_investigator_llm_loop(
             });
 
             if let Some(ref t) = trace {
-                if let Some(b) = intermediate_beliefs.last() {
-                    t.step("intermediate_belief", b.content_summary.clone());
-                }
+                t.step(
+                    "intermediate_belief",
+                    summarize_tool_request_round(iteration, &resp.content, &tool_round),
+                );
             }
 
             messages.push(ChatMessage::Assistant {
@@ -750,7 +762,8 @@ pub async fn run_investigator_llm_loop(
 
                 tool_call_records.push(record);
                 if let Some(ref t) = trace {
-                    t.step("tool_call", tc.name.clone());
+                    let record = tool_call_records.last().expect("record just pushed");
+                    t.step("tool_call", summarize_tool_call(tc, &tool_output, record));
                 }
                 if tool_call_records
                     .last()
@@ -866,7 +879,7 @@ pub async fn run_investigator_llm_loop(
             });
 
             let verdict = parse_verdict(&model_verdict.verdict);
-            let evidence_citations = model_verdict.evidence_citations;
+            let evidence_citations = model_verdict.evidence_citations.clone();
             let total_iterations = iteration + 1;
 
             let llm_evidence = build_llm_evidence_for_model(
@@ -881,7 +894,10 @@ pub async fn run_investigator_llm_loop(
             );
 
             if let Some(ref tr) = trace {
-                tr.step("final_verdict", format!("{verdict:?}"));
+                tr.step(
+                    "final_verdict",
+                    summarize_final_verdict(&model_verdict, &verdict),
+                );
             }
 
             return Ok(InvestigatorLlmResult {
@@ -1055,7 +1071,9 @@ fn parse_value_loose_json(content: &str) -> Option<Value> {
 fn parse_python_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
     // Strip <think>…</think> blocks first.
     let stripped = {
-        let s = if let (Some(open), Some(close)) = (content.find("<think>"), content.rfind("</think>")) {
+        let s = if let (Some(open), Some(close)) =
+            (content.find("<think>"), content.rfind("</think>"))
+        {
             if close > open {
                 let before = &content[..open];
                 let after = &content[close + "</think>".len()..];
@@ -1081,7 +1099,10 @@ fn parse_python_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
                 .find('\n')
                 .map(|n| inner_start + n + 1)
                 .unwrap_or(inner_start);
-            let end = s[inner_start..].find("```").map(|n| inner_start + n).unwrap_or(s.len());
+            let end = s[inner_start..]
+                .find("```")
+                .map(|n| inner_start + n)
+                .unwrap_or(s.len());
             s[inner_start..end].trim().to_string()
         } else {
             s.to_string()
@@ -1207,6 +1228,69 @@ fn truncate_summary(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max])
     }
+}
+
+fn summarize_tool_request_round(iteration: u8, content: &str, tool_round: &[ToolCall]) -> String {
+    let requested = tool_round
+        .iter()
+        .map(|tc| format!("{}({})", tc.name, compact_json(&tc.arguments, 180)))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let raw_note = if content.trim().is_empty() {
+        "The model emitted structured tool calls without additional prose.".to_string()
+    } else {
+        truncate_summary(content.trim(), 500)
+    };
+    format!(
+        "Iteration {iteration}: model requested {} tool call(s).\nRequested: {requested}\nModel note: {raw_note}",
+        tool_round.len(),
+    )
+}
+
+fn summarize_tool_call(tc: &ToolCall, tool_output: &str, record: &ToolCallRecord) -> String {
+    format!(
+        "{}\nArguments: {}\nPolicy: {} · latency {}ms\nResult: {}",
+        tc.name,
+        compact_json(&tc.arguments, 260),
+        record.policy_decision,
+        record.latency_ms,
+        truncate_summary(tool_output.trim(), 700),
+    )
+}
+
+fn summarize_final_verdict(
+    model_verdict: &ModelVerdict,
+    verdict: &attest_attestation::Verdict,
+) -> String {
+    let confidence = model_verdict
+        .confidence
+        .map(|c| format!(" · confidence {c:.2}"))
+        .unwrap_or_default();
+    let citations = if model_verdict.evidence_citations.is_empty() {
+        "no citations".to_string()
+    } else {
+        format!("{} citation(s)", model_verdict.evidence_citations.len())
+    };
+    let summary = if model_verdict.summary.trim().is_empty() {
+        truncate_summary(&model_verdict.reasoning, 700)
+    } else {
+        truncate_summary(&model_verdict.summary, 700)
+    };
+    let action = if model_verdict.recommended_action.trim().is_empty() {
+        "No recommended action supplied.".to_string()
+    } else {
+        truncate_summary(&model_verdict.recommended_action, 300)
+    };
+    format!(
+        "{verdict:?}{confidence} · {citations}\nSummary: {summary}\nRecommended action: {action}"
+    )
+}
+
+fn compact_json(value: &Value, max: usize) -> String {
+    truncate_summary(
+        &serde_json::to_string(value).unwrap_or_else(|_| value.to_string()),
+        max,
+    )
 }
 
 #[cfg(test)]

@@ -7,7 +7,8 @@ import {
   upsertCaseSnapshot,
 } from "@/lib/server/case-repository";
 
-const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL ?? "http://localhost:4300";
+const ORCHESTRATOR_URL =
+  process.env.ORCHESTRATOR_URL ?? "http://localhost:4300";
 const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
 
 // Dev/runtime-local idempotency cache. This prevents browser refreshes or
@@ -19,13 +20,91 @@ const TRIAGE_IN_FLIGHT = new Map<string, Promise<unknown>>();
 /** Severity string → 0-1 score (mirrors the Rust feature extractor). */
 function severityScore(s: string): number {
   switch (s.toLowerCase()) {
-    case "informational": return 0.1;
-    case "low": return 0.3;
-    case "medium": return 0.5;
-    case "high": return 0.8;
+    case "informational":
+      return 0.1;
+    case "low":
+      return 0.3;
+    case "medium":
+      return 0.5;
+    case "high":
+      return 0.8;
     case "critical":
-    case "fatal": return 1.0;
-    default: return 0.5;
+    case "fatal":
+      return 1.0;
+    default:
+      return 0.5;
+  }
+}
+
+type FeatureDefaults = Partial<
+  Record<
+    | "severity_score"
+    | "entity_reputation_score"
+    | "baseline_deviation"
+    | "threat_intel_hit_count"
+    | "asset_criticality"
+    | "prior_disposition_ratio",
+    number
+  >
+>;
+
+function hasNumericFeature(
+  alert: Record<string, unknown>,
+  key: string,
+): boolean {
+  return typeof alert[key] === "number" && Number.isFinite(alert[key]);
+}
+
+function setFeatureDefault(
+  alert: Record<string, unknown>,
+  key: keyof FeatureDefaults,
+  value: number | undefined,
+) {
+  if (value === undefined || hasNumericFeature(alert, key)) return;
+  alert[key] = value;
+}
+
+function applyOperationFeatureDefaults(alert: Record<string, unknown>) {
+  const operation = String(
+    alert.api_operation ?? alert.eventName ?? "",
+  ).toLowerCase();
+  const service = String(
+    alert.api_service ?? alert.eventSource ?? "",
+  ).toLowerCase();
+  const actor = String(alert.actor_user_name ?? "").toLowerCase();
+
+  const defaults: FeatureDefaults = {};
+
+  if (
+    operation.includes("putbucketacl") ||
+    operation.includes("putbucketpolicy")
+  ) {
+    defaults.severity_score = 0.85;
+    defaults.baseline_deviation = 0.7;
+    defaults.threat_intel_hit_count = 1;
+    defaults.asset_criticality = 0.9;
+    defaults.prior_disposition_ratio = 0.8;
+  } else if (operation.includes("createaccesskey") || actor === "root") {
+    defaults.severity_score = 1.0;
+    defaults.baseline_deviation = 0.9;
+    defaults.asset_criticality = 1.0;
+    defaults.prior_disposition_ratio = 0.9;
+  } else if (operation.includes("consolelogin")) {
+    defaults.asset_criticality = 0.5;
+    defaults.prior_disposition_ratio = 0.35;
+  } else if (service.includes("okta") || operation.includes("session.start")) {
+    defaults.severity_score = 0.75;
+    defaults.entity_reputation_score = 0.6;
+    defaults.baseline_deviation = 0.6;
+    defaults.threat_intel_hit_count = 1;
+    defaults.asset_criticality = 0.5;
+    defaults.prior_disposition_ratio = 0.7;
+  }
+
+  for (const [key, value] of Object.entries(defaults) as Array<
+    [keyof FeatureDefaults, number]
+  >) {
+    setFeatureDefault(alert, key, value);
   }
 }
 
@@ -113,7 +192,8 @@ export async function POST(
     try {
       return Response.json(await inFlight);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Triage request failed";
+      const message =
+        err instanceof Error ? err.message : "Triage request failed";
       return Response.json({ error: message }, { status: 502 });
     }
   }
@@ -122,17 +202,31 @@ export async function POST(
   // orchestrator's feature extractor produces meaningful non-zero values.
   const alert = body.alert as Record<string, unknown>;
   const enrichedAlert: Record<string, unknown> = { ...alert };
+  applyOperationFeatureDefaults(enrichedAlert);
 
   // severity_score
-  if (!enrichedAlert.severity_score && typeof enrichedAlert.severity === "string") {
-    enrichedAlert.severity_score = severityScore(enrichedAlert.severity);
+  if (typeof enrichedAlert.severity === "string") {
+    const score = severityScore(enrichedAlert.severity);
+    enrichedAlert.severity_score = Math.max(
+      hasNumericFeature(enrichedAlert, "severity_score")
+        ? Number(enrichedAlert.severity_score)
+        : 0,
+      score,
+    );
   }
   // source_class_id (class_uid is a string like "3002")
-  if (!enrichedAlert.source_class_id && typeof enrichedAlert.class_uid === "string") {
-    enrichedAlert.source_class_id = parseFloat(enrichedAlert.class_uid) || 6003.0;
+  if (
+    !hasNumericFeature(enrichedAlert, "source_class_id") &&
+    typeof enrichedAlert.class_uid === "string"
+  ) {
+    enrichedAlert.source_class_id =
+      parseFloat(enrichedAlert.class_uid) || 6003.0;
   }
   // hour_of_day
-  if (!enrichedAlert.hour_of_day && typeof enrichedAlert.time === "string") {
+  if (
+    !hasNumericFeature(enrichedAlert, "hour_of_day") &&
+    typeof enrichedAlert.time === "string"
+  ) {
     const h = enrichedAlert.time.slice(11, 13);
     enrichedAlert.hour_of_day = parseFloat(h) || 12.0;
   }
@@ -184,7 +278,8 @@ export async function POST(
     TRIAGE_RESULT_CACHE.set(caseId, data);
     return Response.json(data);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Triage request failed";
+    const message =
+      err instanceof Error ? err.message : "Triage request failed";
     await markTriageFailed(caseId, message);
     return Response.json({ error: message }, { status: 502 });
   } finally {

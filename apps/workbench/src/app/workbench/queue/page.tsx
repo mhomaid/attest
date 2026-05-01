@@ -3,25 +3,26 @@ import Link from "next/link";
 import { AlertQueueLive } from "@/components/workbench/alert-queue";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { parseFiredDetections } from "@/lib/detection-to-alert";
-import { getCase } from "@/lib/server/case-repository";
+import { enrichAlertsWithPersisted } from "@/lib/server/enrich-alert";
 import type { Alert } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
-const CP_URL          = process.env.CONTROL_PLANE_URL  ?? "http://localhost:8080";
-const ARROYO_URL      = process.env.ARROYO_URL         ?? "http://localhost:5115";
-const ARROYO_UI_URL   = process.env.ARROYO_UI_URL      ?? "http://localhost:5115";
+const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
+const ARROYO_URL = process.env.ARROYO_URL ?? "http://localhost:5115";
+const ARROYO_UI_URL = process.env.ARROYO_UI_URL ?? "http://localhost:5115";
 
 /** "cloudtrail_to_parquet" → "Cloudtrail to Parquet" */
 function formatPipelineName(raw: string): string {
-  return raw
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 type LiveStatus = "live" | "connected" | "offline";
 
-async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; status: LiveStatus }> {
+async function fetchLiveAlerts(): Promise<{
+  alerts: Alert[];
+  status: LiveStatus;
+}> {
   try {
     const res = await fetch(`${CP_URL}/v1/detections/fired`, {
       cache: "no-store",
@@ -30,32 +31,18 @@ async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; status: LiveStatus 
     if (!res.ok) return { alerts: [], status: "offline" };
     const data = await res.json();
     const parsed = parseFiredDetections(data);
-    const availability = await Promise.all(
-      parsed.map(async (alert) => isCaseAvailable(alert.caseId)),
-    );
-    const alerts = parsed.filter((_, index) => availability[index]);
-    return { alerts, status: alerts.length > 0 ? "live" : "connected" };
+    if (parsed.length === 0) return { alerts: [], status: "connected" };
+
+    const alerts = await enrichAlertsWithPersisted(parsed);
+    return { alerts, status: "live" };
   } catch {
     return { alerts: [], status: "offline" };
   }
 }
 
-async function isCaseAvailable(caseId: string): Promise<boolean> {
-  const persisted = await getCase(caseId).catch(() => null);
-  if (persisted?.event) return true;
-
-  try {
-    const res = await fetch(`${CP_URL}/v1/events/recent?id=${encodeURIComponent(caseId)}`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(700),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function fetchArroyoPipelines(): Promise<{ name: string; state: string }[]> {
+async function fetchArroyoPipelines(): Promise<
+  { name: string; state: string }[]
+> {
   try {
     const res = await fetch(`${ARROYO_URL}/api/v1/pipelines`, {
       cache: "no-store",
@@ -63,7 +50,10 @@ async function fetchArroyoPipelines(): Promise<{ name: string; state: string }[]
     });
     if (!res.ok) return [];
     const body = await res.json();
-    return (body.data ?? []).map((p: { name: string }) => ({ name: p.name, state: "Running" }));
+    return (body.data ?? []).map((p: { name: string }) => ({
+      name: p.name,
+      state: "Running",
+    }));
   } catch {
     return [];
   }
@@ -102,25 +92,37 @@ export default async function QueuePage() {
             <div className="mb-2 flex items-center gap-2">
               <StatusBadge tone="info">Queue</StatusBadge>
               <StatusBadge
-                tone={status === "live" ? "good" : status === "connected" ? "info" : "muted"}
+                tone={
+                  status === "live"
+                    ? "good"
+                    : status === "connected"
+                      ? "info"
+                      : "muted"
+                }
               >
                 {status === "live"
                   ? "Live — HELIQL detections connected"
                   : status === "connected"
-                  ? "Connected — no detections yet"
-                  : "Offline — control-plane unreachable"}
+                    ? "Connected — no detections yet"
+                    : "Offline — control-plane unreachable"}
               </StatusBadge>
               {arroyoPipelines.length > 0 && (
                 <StatusBadge tone="good">
-                  Arroyo {arroyoPipelines.length} pipeline{arroyoPipelines.length !== 1 ? "s" : ""} running
+                  Arroyo {arroyoPipelines.length} pipeline
+                  {arroyoPipelines.length !== 1 ? "s" : ""} running
                 </StatusBadge>
               )}
             </div>
-            <h1 className="text-xl font-semibold tracking-tight">Alert Queue</h1>
+            <h1 className="text-xl font-semibold tracking-tight">
+              Alert Queue
+            </h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Real-time alerts fired by HELIQL detection rules. WebSocket pushes new matches as
-              they arrive on the stream. Arroyo CEP alerts are routed via the{" "}
-              <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[11px]">alerts</code>{" "}
+              Real-time alerts fired by HELIQL detection rules. WebSocket pushes
+              new matches as they arrive on the stream. Arroyo CEP alerts are
+              routed via the{" "}
+              <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[11px]">
+                alerts
+              </code>{" "}
               Kafka topic.
             </p>
           </div>
@@ -134,7 +136,9 @@ export default async function QueuePage() {
                 <div className="metric-tabular font-mono text-lg font-semibold">
                   {stat.value}
                 </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">{stat.label}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {stat.label}
+                </div>
               </div>
             ))}
           </div>
@@ -152,7 +156,9 @@ export default async function QueuePage() {
                 className="inline-flex items-center gap-1.5 rounded-md border border-signal-good/30 bg-signal-good/10 px-2 py-1 text-[11px] transition-colors hover:bg-signal-good/20"
               >
                 <Activity className="h-3 w-3 text-signal-good" />
-                <span className="font-medium text-signal-good">{formatPipelineName(p.name)}</span>
+                <span className="font-medium text-signal-good">
+                  {formatPipelineName(p.name)}
+                </span>
                 <span className="text-muted-foreground">{p.state}</span>
                 <ExternalLink className="h-2.5 w-2.5 text-muted-foreground" />
               </Link>
