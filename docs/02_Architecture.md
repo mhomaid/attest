@@ -104,10 +104,17 @@ The **agentic plane never reaches into the storage plane directly.** It calls in
 **Components:** Two Rust-native streaming runtimes, plus a custom-Rust escape hatch.
 
 - **RisingWave** (Rust, Postgres protocol, streaming SQL with materialized views) is the primary engine. It handles ~85% of detection patterns: temporal joins, windowed aggregations, per-entity baselines, threshold rules, sequence patterns up to 2–3 events. Detection engineers already know SQL; nobody knows Flink DataStream API.
-- **Arroyo** (Rust, SQL streaming, Cribl-acquired Flink replacement) handles stateful complex event processing — n-event sequence patterns with rich conditional logic that exceed RisingWave's expressiveness.
+- **Arroyo** (Rust, SQL streaming, Cribl-acquired Flink replacement) handles stateful complex event processing — n-event sequence patterns with rich conditional logic that exceed RisingWave's expressiveness, and the ETL path that lands events as Parquet on the warm tier.
+
+  Arroyo is deployed with declarative SQL pipeline definitions stored in `infra/arroyo/pipelines/`. Pipelines are deployed idempotently via the Arroyo REST API (see `infra/arroyo/deploy-pipelines.sh`). The Arroyo web UI is available on port **5115** (`make arroyo-ui`).
+
+  Active pipelines:
+  - `cloudtrail_to_parquet` — reads the Redpanda `cloudtrail` topic, writes date-partitioned Parquet to `s3://attest-warm/arroyo/cloudtrail/`. This is the Arroyo equivalent of `attest-storage-iceberg` (both run in parallel during migration).
+  - `cep_sequence_detection` — detects login → S3 access sequences within a 5-minute window; emits alerts to the `alerts` Redpanda topic consumed by the orchestrator and workbench.
+
 - **Custom Rust services on Redpanda** (Tokio + `rdkafka` or `fluvio`) cover the genuine ~5% of detection patterns neither engine expresses well. Typically 200–500 lines per detection class.
 
-**Why no Flink:** the all-Rust runtime stack eliminates the JVM, GC pauses, and operational complexity of Flink while covering ~95% of detection expressiveness. The detail of this trade-off, including what Flink uniquely gives that Rust alternatives don't fully match, is in `07_Stack_Revised.md` Section 2. The detection DSL compiles to whichever engine is appropriate per rule.
+**Why no Flink:** the all-Rust runtime stack eliminates the JVM, GC pauses, and operational complexity of Flink while covering ~95% of detection expressiveness. The detail of this trade-off, including what Flink uniquely gives that Rust alternatives don't fully match, is in `07_Stack_Revised.md` Section 2 and `docs/15_Streaming_Engine_Decision.md`. The detection DSL compiles to whichever engine is appropriate per rule.
 
 ### 3.4 Routing
 

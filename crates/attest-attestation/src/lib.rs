@@ -1,11 +1,21 @@
-pub const CRATE_NAME: &str = "attest-attestation";
+//! Attestation crate — signed, replayable evidence envelopes for every agent action.
+//!
+//! Three envelope variants share a common signed outer wrapper:
+//! - **Classifier** — SHAP feature attribution, XGBoost prediction, novelty score
+//! - **Llm** — reasoning trace, tool calls, intermediate beliefs, evidence citations
+//! - **Hybrid** — both classifier evidence + LLM evidence + escalation reason
+//!
+//! Ed25519 signing ensures tamper-evidence. The append-only `AttestationLog` writes
+//! newline-delimited JSON to `ATTEST_LOG_PATH` (default `./attestations.ndjson`).
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod envelope;
+pub mod log;
+pub mod signer;
 
-    #[test]
-    fn exposes_crate_name() {
-        assert_eq!(CRATE_NAME, "attest-attestation");
-    }
-}
+pub use envelope::{
+    AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, CrossReviewBlock,
+    EscalationReason, EvidenceBlock, ExecutionPathKind, HybridEvidence, IntermediateBelief,
+    LlmEvidence, ShadowCheckDecision, TimingBlock, ToolCallRecord, Verdict,
+};
+pub use log::AttestationLog;
+pub use signer::Signer;

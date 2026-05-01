@@ -1,8 +1,4 @@
 //! HTTP ingest endpoint for the collector.
-//!
-//! `POST /ingest` — accepts a CloudTrail JSON payload (either a bare record or
-//! the `{"Records": [...]}` envelope), normalizes it, and produces to Redpanda.
-//! Returns `{"event_ids": ["<uuid>", ...]}` for all events produced.
 
 use axum::{
     Json,
@@ -12,6 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{error::CollectorError, normalizer::normalize_cloudtrail, producer::EventProducer};
@@ -22,21 +19,55 @@ pub struct AppState {
     pub tenant_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct IngestResponse {
+    /// UUIDs of every event produced to Kafka.
     pub event_ids: Vec<Uuid>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[allow(dead_code)]
 pub struct ErrorResponse {
     pub error: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct HealthResponse {
+    pub status: String,
+}
+
+/// Liveness probe — returns `{"status":"ok"}` when the process is up.
+#[utoipa::path(
+    get,
+    path = "/healthz",
+    responses(
+        (status = 200, description = "Service healthy", body = HealthResponse),
+    ),
+    tag = "ops"
+)]
 pub async fn healthz() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({"status": "ok"})))
 }
 
+/// Ingest one or more CloudTrail records.
+///
+/// Accepts either a bare record object or the `{"Records": [...]}` envelope.
+/// Normalises every record to OCSF `FlatEvent` and produces to the
+/// `cloudtrail` Kafka topic.
+#[utoipa::path(
+    post,
+    path = "/ingest",
+    request_body(
+        content = serde_json::Value,
+        description = "CloudTrail record or {\"Records\":[...]} envelope",
+        content_type = "application/json"
+    ),
+    responses(
+        (status = 200, description = "Events accepted", body = IngestResponse),
+        (status = 400, description = "Malformed payload", body = ErrorResponse),
+    ),
+    tag = "ingest"
+)]
 pub async fn ingest(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,

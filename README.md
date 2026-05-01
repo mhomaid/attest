@@ -2,14 +2,18 @@
 
 Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer into Redpanda, are continuously aggregated by RisingWave materialized views, persisted as Parquet files in MinIO via Apache Iceberg, and queried at scale by ClickHouse — all exposed through a REST control-plane and a live Next.js SOC workbench.
 
+The agent layer runs on top of the data tier. A Hybrid Triager routes every alert through an XGBoost classifier (sub-30 ms) or escalates structurally novel cases to an LLM. Every agent decision produces a cryptographically signed `AttestationEnvelope` — not a black box.
+
 ## Documentation
 
 | File | What it covers |
 |---|---|
 | `docs/README.md` | Product and architecture overview |
 | `docs/01_PRD.md` | Product requirements document |
-| `docs/02_Architecture.md` | System architecture |
+| `docs/02_Architecture.md` | System architecture (six-plane model, principles, components) |
+| `docs/03_Architecture_Diagrams.md` | All Mermaid diagrams — C4, data flow, sequences, state machines |
 | `docs/07_Stack_Revised.md` | Canonical tech stack |
+| `docs/15_Streaming_Engine_Decision.md` | Arroyo vs. Flink vs. RisingWave — ADR + interview reference |
 | `docs/10_Build_Order.md` | Phase-by-phase implementation sequence |
 | `docs/11_Repo_Structure.md` | Repository layout |
 
@@ -196,6 +200,397 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 
 ---
 
+### Phase 4a — Hybrid Triager Agent (Classifier Path)
+
+**The problem it solves:** SIEM alerts arrive faster than humans can triage them. A rule-based classifier handles the 80 % of high-confidence, in-distribution alerts instantly. Low-confidence or structurally novel alerts are flagged for LLM escalation (Phase 4b). Every decision is cryptographically signed and logged — not a black box.
+
+#### Pillar 1 — ML Pipeline (`ml/triager/`)
+
+A Python pipeline (managed with `uv`) that trains the classifier artifacts the Rust runtime loads at startup:
+
+| Script | What it produces |
+|---|---|
+| `train.py` | XGBoost classifier → `model.onnx` + `shap_background.npy` + SHA-256 hashes |
+| `novelty.py` | Mahalanobis covariance parameters → `novelty_mean.npy` + `novelty_inv_cov.npy` + `novelty_threshold.txt` |
+| `calibrate.py` | Isotonic regression calibration → `calibration_models.pkl`; also serves a FastAPI HTTP sidecar on `:5001` |
+
+```
+ml/triager/golden_cases.json  (210 labelled alerts, 10 OOD)
+      ↓  train.py
+ml/triager/artifacts/model.onnx          (XGBoost, 8-feature binary classifier)
+ml/triager/artifacts/novelty_*.npy       (Mahalanobis covariance)
+ml/triager/artifacts/calibration_models.pkl  (isotonic regression per case class)
+```
+
+Run the full pipeline with:
+```sh
+make train-classifier
+```
+
+#### Pillar 2 — `attest-onnx-runtime` (In-Process Inference)
+
+Pure-Rust inference using `tract-onnx` — no Python or `ort` at runtime:
+
+- **`OnnxClassifier`** — loads `model.onnx`, runs forward pass, approximates per-feature SHAP contributions
+- **`NoveltyDetector`** — loads Mahalanobis parameters, computes distance score, classifies alerts as in-distribution or OOD
+
+#### Pillar 3 — `attest-feature-extractor`
+
+Converts an `OcsfEvent` into the 8-dimensional `AlertFeatures` vector the classifier expects:
+
+| Feature | Source |
+|---|---|
+| `severity_score` | OCSF severity enum → `[0.0, 1.0]` |
+| `source_class_id` | OCSF class ID (mapped) |
+| `entity_reputation_score` | stub → threat intel enrichment in Phase 7 |
+| `baseline_deviation` | stub → RisingWave baselines in Phase 7 |
+| `threat_intel_hit_count` | stub |
+| `hour_of_day` | event timestamp |
+| `asset_criticality` | stub |
+| `prior_disposition_ratio` | stub |
+
+#### Pillar 4 — `attest-attestation` (Signed Evidence Envelopes)
+
+Every agent decision produces a tamper-evident, replayable `AttestationEnvelope` signed with Ed25519:
+
+```
+AttestationEnvelope {
+  agent_action_id,    // unique per decision
+  case_id,
+  execution_path,     // Classifier | Hybrid | Llm
+  verdict,            // true_positive | benign | needs_investigation | escalated_stub
+  evidence: ClassifierEvidence | HybridEvidence | LlmEvidence,
+  timing,             // wall-clock start/end
+  signature,          // Ed25519 over canonical JSON, hex-encoded
+}
+```
+
+Envelopes are appended to `attestations.ndjson` (newline-delimited JSON). The verifying key is published at `GET /agent` so signatures can be verified offline.
+
+#### Pillar 5 — `attest-policy-engine` (Deterministic Auth)
+
+Hard-coded Rust policies that authorize every tool call before it executes. No network round-trip, no database lookup.
+
+```
+authorize(role, tool_id, PolicyContext) → Allow | Deny | Escalate
+```
+
+Roles: `Triager`, `Investigator`, `Responder`, `Auditor`. Read-only tools (`query_hot_tier`, `lookup_threat_intel`) are always allowed. Destructive actions (`idp_revoke_session`, `isolate_host`) require high confidence, non-protected targets, and pass blast-radius checks.
+
+#### Pillar 6 — `attest-mcp-gateway` (Tool Call Intercept)
+
+A standalone Axum service that intercepts every tool call, enforces policy, logs the interaction, and forwards to tool implementations. Built now as a foundation for the LLM escalation path in Phase 4b.
+
+```
+POST /invoke  { agent_role, tool_id, args, ... }
+      ↓  argument hash (SHA-256)
+      ↓  authorize() via attest-policy-engine
+      ↓  dispatch to tool stub (or external backend)
+      ↓  log ToolCallRecord
+      → { result, allowed, latency_ms, args_hash }
+
+GET /tools  → list of registered ToolDescriptors
+```
+
+#### Pillar 7 — `attest-orchestrator` (Hybrid Triage Loop)
+
+The agent runtime. On each `POST /triage` it runs the full Hybrid path:
+
+```
+POST /triage  { alert_json }
+      ↓  FeatureExtractor → AlertFeatures (8 f64 values)
+      ↓  OnnxClassifier → raw_score + shap_values
+      ↓  CalibrationClient → calibrated_score  (HTTP → Python sidecar)
+      ↓  NoveltyDetector → novelty_score
+      ↓  routing decision:
+         calibrated ≥ threshold AND in-distribution → Classifier path
+         otherwise                                  → EscalatedStub (Phase 4b wires LLM here)
+      ↓  build AttestationEnvelope + Ed25519 sign
+      ↓  append to attestations.ndjson
+      → TriageVerdict { verdict, confidence, action_id, latency_ms, ... }
+
+GET /agent  → agent definition + Ed25519 verifying key for offline signature verification
+GET /healthz
+```
+
+**E2E acceptance gate (all passing):**
+- Known brute-force pattern → `classifier` path, calibrated confidence ≥ 0.5, latency < 500 ms
+- OOD structurally novel alert → `hybrid` path, `escalated_stub` verdict, novelty score > 0
+- Classifier path P99 latency over HTTP < 200 ms (measured: **28 ms**)
+
+Run with `make e2e-phase4a` (automatically starts services, runs tests, cleans up).
+
+---
+
+### Phase 4b — Load Lab + Simulate Lab (Observability & Testing Tools)
+
+**The problem they solve:** It's not enough to build a streaming detection platform — you need to *see* it work at scale and verify every component independently. Phase 4b adds two complementary tools:
+
+#### Load Lab (`/workbench/load`)
+
+Exercises the **streaming rules path** (Kafka → RisingWave → Detection Runtime → alerts) at configurable throughput. Real-time metrics stream via WebSocket at 1 Hz.
+
+```
+Load Gen ──► Kafka cloudtrail ──► RisingWave (SQL rules) ──► Detection Runtime ──► Kafka alerts
+  :9100                                                                                    │
+                                                            also N% ──► Orchestrator :4300 │
+                                                            (sampled triage)               │
+Control Plane :8080  ◄── 1 Hz MetricsSnapshot (WS) ──────────────────────────────────────┘
+  │  events_per_sec     — Kafka cloudtrail HWM delta
+  │  consumer_lag       — RisingWave consumer group offset gap
+  │  detections_per_sec — Kafka alerts HWM delta (rules fired)
+  │  storage_rows_per_sec — ClickHouse warm-tier ingestion rate
+  └  triage_p95_ms      — ML orchestrator latency (only when sampled_triage_pct > 0)
+```
+
+**Presets:**
+
+| Preset | Rate | Duration | Triage sampling |
+|---|---|---|---|
+| Smoke | 1k/sec | 30s | 5% |
+| Sustained | 10k/sec | 60s | 5% |
+| Burst | 100k/sec | 60s | 1% |
+| 1M Challenge | 100k/sec | 120s | off |
+
+The **Sampled Triage** slider (0–20%) controls what percentage of load events are also sent to the ML orchestrator concurrently. This gives you real triage p95 latency under load without overwhelming the orchestrator. Set it to 0 for maximum streaming throughput.
+
+#### Simulate Lab (`/workbench/simulate`)
+
+Exercises the **ML hot-path** (Collector → Orchestrator ONNX → Calibration → Attestation) with a single event and shows every stage's result. Also includes **Batch Mode** (50 concurrent triage calls) to measure ML latency distribution under concurrency.
+
+```
+Single event ──► POST /api/simulate ──► Collector :4000 ──► Orchestrator :4300
+                                                                     │
+                                              FeatureExtractor → AlertFeatures
+                                              OnnxClassifier → raw_score + SHAP
+                                              CalibrationClient → calibrated_score
+                                              NoveltyDetector → novelty_score
+                                              AttestationEnvelope (Ed25519 signed)
+                                                     │
+                                         TriageVerdict → UI (verdict, confidence, SHAP panel)
+```
+
+**Batch Mode** fires 50 concurrent POST /triage calls and returns min/p50/p95/p99/max latency — tells you exactly where the orchestrator's latency envelope sits under real concurrency.
+
+---
+
+## Workbench UI — Page Guide
+
+The workbench is a Next.js 15 App Router application at `apps/workbench`. Every page is a React Server Component that fetches live data from the backend on each request. No mock data is used — if the backend is offline, pages show explicit offline states. Client components (Load Lab, Simulate Lab) use Zustand stores for cross-navigation state.
+
+### Page Map
+
+| Route | Live backend calls? | Purpose |
+|---|---|---|
+| `/workbench/queue` | `control-plane /v1/detections/fired` + `arroyo /api/v1/pipelines` + WS | Real-time alert queue |
+| `/workbench/cases` | `control-plane /v1/detections/fired` (via `/api/detections`) | All triaged cases |
+| `/workbench/cases/[id]` | event lookup + baseline + triage | Deep case investigation |
+| `/workbench/detections` | `control-plane /v1/detections/fired` (last-fired timestamps) | Detection rule catalogue |
+| `/workbench/simulate` | `/api/simulate` → collector + orchestrator | ML hot-path testing |
+| `/workbench/load` | `/api/load/start` + `control-plane WS /v1/metrics/stream` | Streaming throughput testing |
+| `/workbench/agents` | `orchestrator /metrics` | Agent roster + live latency |
+| `/workbench/hunt` | None — Phase 7 placeholder | Threat hunting query editor |
+| `/workbench/settings` | None — static | Integration & agent configuration status |
+| `/workbench/admin` | 4 health checks + Arroyo pipelines API | Platform health + API docs links |
+
+---
+
+### Queue (`/workbench/queue`) — default landing page
+
+Fetches all fired detections from `control-plane /v1/detections/fired` and the list of running Arroyo pipelines. A status badge shows one of three states:
+
+- **`Offline — control-plane unreachable`** — backend is down
+- **`Connected — no detections yet`** — backend is up but no rules have fired
+- **`Live — HELIQL detections connected`** — at least one detection is present
+
+Below the header, `AlertQueueLive` is a client component that connects to `control-plane /v1/ws/alerts` via WebSocket and pushes new detections in real time. Arroyo pipeline chips (clickable, link to Arroyo UI) show how many streaming pipelines are currently running.
+
+**What to watch during a test:** Run a simulation or load test → alerts appear in the queue within 2–10 seconds → pipeline chips turn green.
+
+---
+
+### Cases (`/workbench/cases`)
+
+Lists all fired alerts bucketed into **Open** and **Auto-Closed**. Calls `/api/detections` (a Next.js proxy to `control-plane /v1/detections/fired`) and maps each `FiredDetection` to an `Alert` via `detection-to-alert.ts`.
+
+Each row shows: severity badge, event title, actor username, region, data source, confidence %, and ML execution path. Clicking a row navigates to the case detail page using the event UUID as the route parameter.
+
+**When empty:** "No cases in this state. Run a load test or send events to generate detections."
+
+---
+
+### Case Detail (`/workbench/cases/[id]`)
+
+The most data-intensive page. Three backend calls run in parallel on every load:
+
+```
+1. control-plane  GET /v1/events/recent?id={id}        → raw OCSF event from RisingWave hot tier
+2. control-plane  GET /v1/baselines/user/{username}    → 30-day behavioural baseline (regions, event count)
+3. orchestrator   POST /triage { alert: <event> }      → live ML verdict + SHAP feature values
+```
+
+The page builds a `CaseRecord` entirely from live data and renders it in `CaseWorkbench`:
+
+- **Timeline** — each step the event traversed: Collector (OCSF normalization) → RisingWave (baseline fetch) → Orchestrator (ML verdict) → Attestation (Ed25519 signing)
+- **Evidence panel** — Event ID, API operation, region, baseline regions seen in 30 days, triage action ID, novelty score
+- **SHAP feature impact bars** — top 8 features that drove the ML classifier's decision
+
+If the event ID is not found in the hot tier (expired or backend offline): "Case not found — event may have expired from the hot tier."
+
+---
+
+### Detections (`/workbench/detections`)
+
+Displays the **10 bundled HELIQL detection rules** compiled into RisingWave as materialized views. The rule metadata (title, description, MITRE ATT&CK ID) is static in the UI. The `Last fired` column is live — it queries `/api/detections` and finds the most-recent `fired_at` timestamp per `detection_id`.
+
+Rows with a recent match glow green. The header shows "N rules fired" based on how many have at least one match in the backend.
+
+| Rule | Technique | Severity |
+|---|---|---|
+| Console Login from Anomalous Region | T1078.004 | medium |
+| CloudTrail Logging Disabled | T1562.001 | critical |
+| AWS Root Account Used | T1078 | critical |
+| Excessive IAM Privilege Granted | T1098 | high |
+| New IAM User + Access Keys Sequence | T1136.003 | high |
+| S3 Bucket Made Public | T1530 | high |
+| Okta Brute-Force Authentication | T1110 | high |
+| Okta MFA Bypass Attempt | T1556 | high |
+| M365 Mass External Sharing | T1567 | high |
+| M365 Inbox Auto-Forward Rule | T1114.003 | critical |
+
+---
+
+### Simulate Lab (`/workbench/simulate`)
+
+A client component. Tests the **ML hot path** with a single injected event and shows per-stage results in real time.
+
+**Left column** — 5 named attack scenarios (each with MITRE ID, severity, description).
+
+**Centre column** — Editable parameters: actor username, source IP, region, severity score slider. "Run Simulation" and "Batch (50× concurrent)" buttons.
+
+**Right column — Hot Path** shows 4 animated stage rows:
+
+| Stage | Service | What it proves |
+|---|---|---|
+| Collector | `attest-collector :4000` | CloudTrail → OCSF normalized + published to Kafka |
+| Orchestrator | `attest-orchestrator :4300` | Hybrid triage loop (XGBoost ONNX + Mahalanobis novelty) |
+| Calibration | `calibration-sidecar :5001` | Isotonic regression — raw score → calibrated probability |
+| Attestation | `attest-attestation` crate | Ed25519 signed envelope appended to `attestations.ndjson` |
+
+After the hot path completes, a **verdict card** shows benign/suspicious/malicious, calibrated confidence bar, and novelty score. The **SHAP panel** renders which features drove the decision.
+
+**Memory section** polls `/api/simulate/verify` every 2.5 seconds (up to 90 s) to confirm all four parallel sinks received the event:
+
+| Sink | What is verified |
+|---|---|
+| RisingWave | `recent_events` MV includes the event ID |
+| Detection + ClickHouse | A detection rule matched and the alert is in ClickHouse |
+| Iceberg / MinIO | Event flushed to warm Parquet (`s3://attest-warm`) |
+| MCP Gateway | Attestation envelope is queryable by external auditors |
+
+**Batch mode** fires 50 concurrent `POST /triage` calls and returns min/p50/p95/p99/max latency — use this to verify the orchestrator's latency envelope under concurrency.
+
+---
+
+### Load Lab (`/workbench/load`)
+
+A client component backed by the `load-store` Zustand store. Tests the **streaming rules path** (Kafka → RisingWave → Detection Runtime) at configurable throughput.
+
+Opens a WebSocket to `control-plane /v1/metrics/stream` on page load. The WS header shows **"WS live"** (green) when connected. Metrics arrive at 1 Hz as `MetricsSnapshot` frames.
+
+**Four preset profiles:**
+
+| Preset | Rate | Duration | Sampled triage | Purpose |
+|---|---|---|---|---|
+| Smoke | 1k/sec | 30s | 5% | Sanity check |
+| Sustained | 10k/sec | 60s | 5% | Normal load |
+| Burst | 100k/sec | 60s | 1% | Stress test |
+| 1M Challenge | 100k/sec | 120s | off | 12M events — proves 1M/10s goal |
+
+**Four live charts:**
+
+| Chart | Source field | What it tells you |
+|---|---|---|
+| Events / sec | `events_per_sec` | Kafka cloudtrail HWM delta |
+| Consumer lag | `consumer_lag` | Messages queued but not yet consumed by RisingWave |
+| Detections / sec | `detections_per_sec` | Kafka alerts HWM delta — rules firing |
+| Storage rows / sec | `clickhouse_rows_per_sec` | ClickHouse warm-tier ingestion rate |
+
+**Session totals panel** shows cumulative events sent, detections fired, actual rate, and consumer lag. If **Sampled triage** (0–20% slider) is enabled, a purple row shows the live ML triage p95 under load.
+
+**Key diagnostic:** if consumer lag grows unboundedly during a Burst run, RisingWave is falling behind. If it stays under ~50k messages, the pipeline is keeping up.
+
+---
+
+### Agents (`/workbench/agents`)
+
+Fetches `orchestrator /metrics` to get `triage_count`, `p50_ms`, `p95_ms`, `p99_ms`. Shows three header counters — Total verdicts, Classifier P99, Envelope coverage.
+
+Four agent cards in a 2×2 grid:
+
+| Agent | Status | Model | When |
+|---|---|---|---|
+| Triager | Live (if orchestrator up) | XGBoost + Claude Sonnet escalation | Phase 4b — deployed now |
+| Investigator | Phase 5 | Claude Opus / Qwen 3 32B (air-gapped) | Not yet built |
+| Hunter | Phase 7 | Claude Sonnet | Not yet built |
+| Detection Engineer | Phase 10 | Claude Sonnet | Not yet built |
+
+The Triager card shows real-time verdict count and p50/p95/p99 latency percentiles, plus an **"Attestation envelopes: Ed25519 signed"** confirmation badge when the orchestrator is online.
+
+---
+
+### Hunt (`/workbench/hunt`) — Phase 7 placeholder
+
+A HELIQL query text area with three buttons (Run against warm tier, Run against live stream, Save hypothesis). The buttons are not wired — this page is the UI shell for the Hunter agent in Phase 7. The warm-tier button will call `control-plane /v1/warm/query` when wired.
+
+---
+
+### Settings (`/workbench/settings`)
+
+Static page — no backend calls. Shows integration status across four sections: Integrations (CloudTrail, Okta, M365, Arroyo, MinIO, ClickHouse), Detection Rules, AI Agents, and Notifications. Status badges show "connected" (green) or "not configured" (muted). These reflect design intent, not live health checks (use the Admin page for live health).
+
+---
+
+### Admin (`/workbench/admin`)
+
+Four parallel health checks on every page load:
+
+```
+control-plane  GET /healthz               → ok | error
+arroyo         GET /api/v1/ping           → ok | error
+arroyo         GET /api/v1/pipelines      → list of running pipeline names
+collector      GET /healthz               → ok | error
+```
+
+**Service health table** — 7 rows, each linking to its API docs at `/docs`:
+
+| Service | Port | Type | Links to |
+|---|---|---|---|
+| control-plane | 8080 | HTTP | `/docs` — Scalar API explorer |
+| arroyo | 5115 | HTTP | Arroyo UI |
+| collector | 4000 | HTTP | `/docs` — Scalar API explorer |
+| orchestrator | 4300 | HTTP | `/docs` — Scalar API explorer |
+| mcp-gateway | 4242 | HTTP | `/docs` — Scalar API explorer |
+| storage-iceberg | — | Worker | No HTTP — background Kafka consumer |
+| detection-runtime | — | Worker | No HTTP — background HELIQL deployer |
+
+**Arroyo pipelines section** — clickable chips with human-readable names (snake_case converted to Title Case) linking to the Arroyo pipeline UI.
+
+---
+
+### OpenAPI Docs (`/docs` on each Rust service)
+
+Every Rust HTTP service serves an interactive [Scalar](https://scalar.com) API explorer at `/docs`. Annotations are generated from `utoipa` macros at compile time — no separate spec file to maintain.
+
+| Service | URL |
+|---|---|
+| `attest-collector` | `http://localhost:4000/docs` |
+| `attest-control-plane` | `http://localhost:8080/docs` |
+| `attest-orchestrator` | `http://localhost:4300/docs` |
+| `attest-mcp-gateway` | `http://localhost:4242/docs` |
+
+---
+
 ## Crates
 
 | Crate | Phase | Purpose |
@@ -206,6 +601,12 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 | `crates/attest-storage-iceberg` | 2 | Kafka consumer → Arrow/Parquet batch writer → MinIO via `object_store` |
 | `crates/attest-heliql` | 3 | HELIQL DSL — pest grammar, AST, RisingWave SQL compiler, Sigma importer |
 | `crates/attest-detection-runtime` | 3 | Loads `.heliql` rules, deploys as RisingWave views, polls and emits alerts to Redpanda |
+| `crates/attest-attestation` | 4a | Ed25519-signed envelopes — `ClassifierEvidence`, `LlmEvidence`, `HybridEvidence`, append-only log |
+| `crates/attest-policy-engine` | 4a | Hard-coded per-role tool authorization — `authorize(role, tool_id, ctx) → PolicyDecision` |
+| `crates/attest-mcp-gateway` | 4a | Tool call interception service — policy enforcement, argument hashing, call logging |
+| `crates/attest-feature-extractor` | 4a | `OcsfEvent` → `AlertFeatures` (8 numeric features) for ML classifiers |
+| `crates/attest-onnx-runtime` | 4a | `tract-onnx` inference — `OnnxClassifier` (XGBoost) + `NoveltyDetector` (Mahalanobis) |
+| `crates/attest-orchestrator` | 4a | Hybrid triage loop — feature extraction → classify → calibrate → route → attest |
 
 ---
 
@@ -213,8 +614,10 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 
 | Tool | Version | Install |
 |---|---|---|
-| Rust | 1.95+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Rust | 1.78+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Docker + Compose | 24+ | [docker.com](https://docs.docker.com/get-docker/) |
+| Python | 3.11+ | [python.org](https://www.python.org/downloads/) |
+| uv | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Bun | 1.3+ | `curl -fsSL https://bun.sh/install \| bash` |
 | Make | any | pre-installed on macOS/Linux |
 
@@ -225,7 +628,7 @@ Ten HELIQL rules in `detections/` covering the MITRE techniques most common in C
 ### 1. Start infrastructure
 
 ```sh
-make dev-up
+make dev-up-infra
 ```
 
 Starts Redpanda (`:9092`, `:19092`), RisingWave (`:4566`), Postgres (`:5432`), MinIO (`:9000`, console `:9001`), and ClickHouse (`:8123`) in Docker. The `minio-init` one-shot container creates the `attest-warm` bucket automatically and exits with code 0.
@@ -233,10 +636,19 @@ Starts Redpanda (`:9092`, `:19092`), RisingWave (`:4566`), Postgres (`:5432`), M
 ### 2. Start the full platform stack
 
 ```sh
-make dev-up-platform
+make dev-up-services
 ```
 
-Builds and starts `attest-collector` (`:4000`), `attest-control-plane` (`:8080`), and `attest-storage-iceberg` using the multi-stage Dockerfiles in `infra/docker/`.
+Builds and starts `attest-collector` (`:4000`), `attest-control-plane` (`:8080`), `attest-storage-iceberg`, `arroyo` (`:5115`), and `arroyo-pipeline-deployer` using the multi-stage Dockerfiles in `infra/docker/` and the pre-built Arroyo image.
+
+The `arroyo-pipeline-deployer` one-shot container waits for Arroyo to be healthy, then deploys the SQL pipeline definitions from `infra/arroyo/pipelines/` via the Arroyo REST API.
+
+Open the Arroyo web UI at **http://localhost:5115** to inspect running pipelines and view real-time metrics.
+
+```sh
+make arroyo-ui        # opens http://localhost:5115 in your browser
+make arroyo-deploy    # (re-)deploy pipelines to a running local Arroyo instance
+```
 
 ### 3. Verify services are healthy
 
@@ -256,9 +668,167 @@ bun run dev
 
 The queue page badge will show **"Live — control-plane connected"** when the backend is reachable.
 
+### 5. Train the classifier and run the Triager agent (Phase 4a)
+
+```sh
+# Install Python ML dependencies and train all artifacts (~30 s)
+make train-classifier
+
+# Run E2E tests — auto-starts orchestrator + calibration sidecar
+make e2e-phase4a
+
+# Or start services manually for interactive use:
+cd ml && uv run python triager/calibrate.py --serve &     # calibration sidecar :5001
+ARTIFACTS_DIR=ml/triager/artifacts ORCHESTRATOR_PORT=4300 \
+  cargo run -q -p attest-orchestrator &                   # orchestrator :4300
+
+# Triage an alert
+curl -s -X POST http://localhost:4300/triage \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "alert_json": {
+      "class_uid": 3002,
+      "severity_id": 4,
+      "time": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+      "actor": {"user": {"name": "alice@example.com"}},
+      "metadata": {"product": {"vendor_name": "AWS"}}
+    },
+    "case_id": "00000000-0000-0000-0000-000000000001",
+    "tenant_id": "local-dev"
+  }'
+# Returns: { "verdict": "...", "confidence": 0.97, "action_id": "...", "latency_ms": 28 }
+
+# Inspect the agent definition and Ed25519 verifying key
+curl -s http://localhost:4300/agent | jq .
+```
+
 ---
 
 ## Testing
+
+### Strategy — per-phase E2E, not one giant test
+
+Each phase has its own E2E acceptance gate. This is deliberate:
+- **Faster feedback** — a Phase 1 failure doesn't run Phase 4 tests
+- **Clearer blame** — a failing test tells you exactly which layer broke
+- **Incremental CI** — add phases to CI as they stabilise
+
+Phase 4b (Load Lab, Simulate Lab) is tested manually via the UI. Automated E2E for the load path is covered by Phase 3's detection test. The Simulate Lab's ML path is covered by Phase 4a's orchestrator tests.
+
+---
+
+### Step-by-Step Platform Test (do this after every significant change)
+
+**Prerequisites:** `make dev-up-services` is running, `make train-classifier` has been run once.
+
+#### 1. Verify the streaming substrate
+
+```sh
+# Post a single event
+curl -s -X POST http://localhost:4000/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "awsRegion":"us-east-1","recipientAccountId":"111111111111",
+    "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
+    "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+# Expected: {"event_ids":["<uuid>"]}
+
+# Wait 2s, then verify it's in the hot tier
+sleep 2 && curl -s "http://localhost:8080/v1/events/recent?id=<uuid>" | jq .
+# Expected: event JSON with actor_user_name: "alice@example.com"
+
+# Verify alice's baseline was updated
+curl -s "http://localhost:8080/v1/baselines/user/alice@example.com" | jq .
+# Expected: {"regions_seen_30d":["us-east-1"],...}
+```
+
+#### 2. Verify the detection rules fire
+
+```sh
+# Seed alice with 5 us-east-1 logins to build a baseline
+for i in $(seq 5); do
+  curl -s -X POST http://localhost:4000/ingest \
+    -H 'Content-Type: application/json' \
+    -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+      "awsRegion":"us-east-1","recipientAccountId":"111111111111",
+      "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
+      "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+  sleep 1
+done
+
+# Wait 30s for RisingWave to build the materialized view
+sleep 30
+
+# Inject a geo-anomaly login from an unexpected region
+curl -s -X POST http://localhost:4000/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "awsRegion":"ap-southeast-1","recipientAccountId":"111111111111",
+    "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
+    "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+
+# Wait up to 10s for the detection to fire on the alerts topic
+docker exec attest-redpanda-1 rpk topic consume alerts --brokers localhost:9092 -n 1
+# Expected: JSON with detection_id: "aws_console_login_from_anomalous_geolocation"
+```
+
+#### 3. Verify the ML hot-path (Simulate Lab)
+
+```sh
+# Start the orchestrator and calibration sidecar (if not running)
+cd ml && uv run python triager/calibrate.py --serve &
+ARTIFACTS_DIR=ml/triager/artifacts cargo run -p attest-orchestrator &
+sleep 5
+
+# Triage a known brute-force alert
+curl -s -X POST http://localhost:4300/triage \
+  -H 'Content-Type: application/json' \
+  -d '{"alert":{"severity_id":4,"class_uid":3002,"entity_reputation_score":0.8}}'
+# Expected: {"verdict":"true_positive","calibrated_confidence":>0.5,"latency_ms":<200}
+
+# Or use the Simulate Lab UI:
+# 1. Open http://localhost:3000/workbench/simulate
+# 2. Select "Brute Force Login" scenario
+# 3. Click "Run Simulation" — hot path should complete in < 5s
+# 4. Click "Batch (50× concurrent)" — observe p95 latency
+```
+
+#### 4. Load Lab — streaming rules at scale
+
+```sh
+# Open http://localhost:3000/workbench/load
+# Verify: WS live badge is green (control-plane WebSocket connected)
+
+# Click "Smoke" preset (1k/sec, 30s, 5% sampled triage) then Run
+# Expected within 5s:
+#   - Events/sec chart: ~1000/s
+#   - Consumer lag: spikes then drains as RisingWave keeps up
+#   - Detections/sec: non-zero after ~10s (geo-anomaly rules fire)
+#   - Storage rows/sec: non-zero after first Iceberg flush (~30s)
+#   - Triage p95: non-zero after a few seconds (5% sampled to orchestrator)
+
+# For a high-throughput test:
+# Click "Burst" preset (100k/sec, 60s, 1% sampled triage) then Run
+# Key question: does consumer lag grow unboundedly (RisingWave overloaded)?
+# or does it stay < ~50k messages (pipeline keeps up)?
+
+# CLI equivalent — runs without UI:
+make load-cli-smoke     # 10k/sec, 30s
+make load-cli-burst     # 100k/sec, 60s
+make load-cli-attack    # 100k/sec, 60s, attack scenario only
+```
+
+#### 5. Verify the full pipeline end-to-end
+
+```sh
+# Run all automated E2E tests in sequence
+make e2e-phase1    # Streaming substrate
+make e2e-phase2    # Iceberg warm tier
+make e2e-phase3    # HELIQL detection rules
+make e2e-phase4a   # ML triager (self-contained)
+```
+
+---
 
 ### Unit Tests (no Docker required)
 
@@ -266,7 +836,7 @@ The queue page badge will show **"Live — control-plane connected"** when the b
 cargo test --workspace --lib
 ```
 
-Covers OCSF type round-trips, CloudTrail normalizer, and serialization.
+Covers OCSF type round-trips, CloudTrail normalizer, HELIQL parser/compiler, and serialization.
 
 ### CLI — Ingest a CloudTrail file
 
@@ -317,24 +887,83 @@ curl -s -X POST http://localhost:8080/v1/warm/query \
   -d '{"sql": "SELECT cloud_region, count(*) FROM s3(\"http://minio:9000/attest-warm/cloudtrail/**/*.parquet\", \"minioadmin\", \"minioadmin\", \"Parquet\") GROUP BY cloud_region"}'
 ```
 
-### E2E Tests (require running stack)
+### Automated E2E Tests
 
 ```sh
-# Phase 1 — streaming substrate
+# Phase 1 — streaming substrate (requires running stack)
 make e2e-phase1
 # Posts a ConsoleLogin event → polls recent_events (≤ 5 s) → polls entity_baselines for user region (≤ 30 s).
 
-# Phase 2 — Iceberg warm tier
+# Phase 2 — Iceberg warm tier (requires running stack)
 make e2e-phase2
 # Seeds 10 000 events → waits for Iceberg flush to MinIO (≤ 90 s) → asserts ClickHouse count + GROUP BY aggregate (≤ 30 s).
 
-# Phase 3 — HELIQL detection engine
+# Phase 3 — HELIQL detection engine (requires running stack)
 make e2e-phase3
 # Seeds alice's US-region baseline → injects ap-southeast-1 login → asserts alert on `alerts` Kafka topic within 10 s.
 # Also tests: StopLogging event fires a critical alert for aws_cloudtrail_logging_disabled.
+
+# Phase 4a — Hybrid Triager (self-contained — starts and stops its own services)
+make e2e-phase4a
+# 1. Starts Python calibration sidecar on :5001
+# 2. Starts attest-orchestrator on :4300 (with ONNX artifacts from ml/triager/artifacts/)
+# 3. triager_classifier_path_produces_attested_verdict — known brute-force alert → classifier path, confidence ≥ 0.5, latency < 500 ms
+# 4. triager_classifier_escalates_when_out_of_distribution — OOD alert → hybrid path, escalated_stub verdict
+# 5. triager_classifier_p99_latency_under_200ms — 10 requests, P99 < 200 ms
+# 6. Stops both services
+#
+# Prerequisite: make train-classifier (only needed once, or when golden_cases.json changes)
 ```
 
-All targets require `make dev-up-platform` to be running first.
+Phases 1–3 require `make dev-up-services` to be running. Phase 4a is self-contained.
+
+---
+
+### Hard-won testing lessons (do not repeat)
+
+#### 1. rdkafka `subscribe()` does not assign partitions — the first `recv()` does
+
+**Context:** Any E2E test that creates a `StreamConsumer`, calls `subscribe(&["topic"])`, sleeps for a fixed duration, and then produces events it expects to read back.
+
+**Root cause:** In rdkafka (and the underlying librdkafka), `subscribe()` only registers *intent*. The actual partition assignment — including the commitment of the "latest" offset as the starting position — happens lazily on the first internal poll cycle, which is triggered by the first `recv()` call. A fixed `sleep(2s)` before producing events is not a reliable signal that assignment has completed. If the first `recv()` call happens *after* the message was already written to the broker, that message is silently skipped.
+
+This manifested in `arroyo_cep_pipeline_fires_sequence_alert`: the Arroyo CEP pipeline was working correctly and producing alerts to `alerts` within ~3 seconds, but the test consumer received zero messages for the full 30 s wait window because it was never assigned to any partition before the alert was produced.
+
+**Fix:** After `subscribe()`, call `recv()` with a short timeout to force partition assignment *before* producing the test events. This blocks until the rebalance completes and the consumer is fully seated at the latest offset:
+
+```rust
+consumer.subscribe(&["alerts"]).expect("subscribe failed");
+
+// Force eager partition assignment. subscribe() only registers intent;
+// the first recv() triggers the rebalance and commits the starting offset.
+let _ = tokio::time::timeout(Duration::from_secs(3), consumer.recv()).await;
+```
+
+**Broader rule:** Never rely on a fixed sleep after `subscribe()`. Always trigger at least one `recv()` (or `poll()`) before producing events the consumer is meant to read.
+
+#### 2. Arroyo streaming JOINs need continuous watermark advancement, not a one-shot burst
+
+**Context:** `arroyo_cep_pipeline_fires_sequence_alert` — CEP pipeline detecting `ConsoleLogin → GetObject` sequences.
+
+**Root cause:** Arroyo's interval JOIN emits results once the watermark advances past the join window boundary. Sending 5 watermark-advance events in a 500 ms burst and then waiting 30 s is fragile — if Arroyo's internal processing lags or the watermark does not advance enough from those 5 events, the join never emits inside the test window.
+
+**Fix:** Pump one watermark-advance event every 500 ms *throughout the entire polling loop*, not just before it. This guarantees the watermark keeps advancing regardless of pipeline lag:
+
+```rust
+let deadline = Instant::now() + Duration::from_secs(60);
+let mut pump_tick = Instant::now();
+let mut pump_idx: u32 = 0;
+
+while Instant::now() < deadline && !found {
+    if pump_tick.elapsed() >= Duration::from_millis(500) {
+        post_cloudtrail(&client, "ConsoleLogin",
+            &format!("watermark-advance-{}@example.com", pump_idx), "eu-west-1").await;
+        pump_idx += 1;
+        pump_tick = Instant::now();
+    }
+    // ... poll consumer.recv() with 200ms timeout ...
+}
+```
 
 ---
 
@@ -348,23 +977,49 @@ Attest/
 │   ├── attest-control-plane/     # Axum 0.8 REST API — hot + warm tier (Phase 1 + 2)
 │   ├── attest-storage-iceberg/   # Kafka → Parquet → MinIO writer (Phase 2)
 │   ├── attest-heliql/            # HELIQL DSL parser + RisingWave compiler (Phase 3)
-│   └── attest-detection-runtime/ # Detection deploy + poll + emit to alerts topic (Phase 3)
+│   ├── attest-detection-runtime/ # Detection deploy + poll + emit to alerts topic (Phase 3)
+│   ├── attest-attestation/       # Ed25519 envelopes + append-only log (Phase 4a)
+│   ├── attest-policy-engine/     # Per-role tool authorization policies (Phase 4a)
+│   ├── attest-mcp-gateway/       # Tool call intercept service :4242 (Phase 4a)
+│   ├── attest-feature-extractor/ # OcsfEvent → AlertFeatures vector (Phase 4a)
+│   ├── attest-onnx-runtime/      # tract-onnx classifier + Mahalanobis novelty (Phase 4a)
+│   └── attest-orchestrator/      # Hybrid triage loop :4300 (Phase 4a)
+├── ml/
+│   └── triager/                  # Python ML pipeline (uv-managed)
+│       ├── golden_cases.json     # 210 labelled alerts (200 in-dist + 10 OOD)
+│       ├── train.py              # XGBoost → model.onnx + shap_background.npy
+│       ├── novelty.py            # Mahalanobis → novelty_mean/inv_cov.npy + threshold
+│       ├── calibrate.py          # Isotonic regression → calibration_models.pkl + FastAPI sidecar
+│       ├── Makefile              # train / novelty / calibrate / serve-calibration targets
+│       └── artifacts/            # Generated — gitignored
+├── agents/
+│   ├── triager-hybrid-v1.json    # Versioned agent definition with artifact SHA-256 hashes
+│   └── triager.system_prompt.md  # LLM system prompt (Phase 4b)
+├── eval/
+│   ├── golden_cases/             # Evaluation datasets
+│   └── run_eval.py               # Calls POST /triage for each golden case, asserts metrics
 ├── detections/                   # 10 bundled HELIQL detection rules (Phase 3)
 ├── apps/
-│   └── workbench/              # Next.js 15 marketing site + SOC workbench UI
+│   └── workbench/                # Next.js 15 marketing site + SOC workbench UI
 ├── infra/
-│   ├── clickhouse/             # ClickHouse config (listen + S3/MinIO access)
-│   ├── docker/                 # Multi-stage Dockerfiles (collector, control-plane, storage-iceberg)
-│   ├── risingwave/             # RisingWave DDL (phase1_baseline.sql)
-│   └── terraform/              # IaC (Phase 5+)
+│   ├── arroyo/                   # Arroyo streaming engine
+│   │   ├── pipelines/            # SQL pipeline definitions deployed via REST API
+│   │   │   ├── cloudtrail_to_parquet.sql    # Redpanda → Parquet → MinIO ETL
+│   │   │   └── cep_sequence_detection.sql   # Login → S3-access sequence (CEP)
+│   │   └── deploy-pipelines.sh   # curl-based idempotent pipeline deployer
+│   ├── clickhouse/               # ClickHouse config (listen + S3/MinIO access)
+│   ├── docker/                   # Multi-stage Dockerfiles
+│   ├── risingwave/               # RisingWave DDL (phase1_baseline.sql)
+│   └── terraform/                # IaC (Phase 5+)
 ├── tests/
-│   └── e2e-tests/              # E2E tests (ATTEST_E2E=1 required)
+│   └── e2e-tests/                # E2E integration tests (ATTEST_E2E=1 required)
 │       └── tests/
 │           ├── phase1_streaming.rs
-│           └── phase2_iceberg.rs
-├── docs/                       # Source-of-truth documentation
-├── docker-compose.yml          # Local dev stack
-└── Makefile                    # Convenience targets
+│           ├── phase2_iceberg.rs
+│           └── phase4a_triager.rs
+├── docs/                         # Source-of-truth documentation
+├── docker-compose.yml            # Local dev stack
+└── Makefile                      # Convenience targets
 ```
 
 ---
@@ -373,13 +1028,161 @@ Attest/
 
 | Target | What it does |
 |---|---|
-| `make dev-up` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
-| `make dev-up-platform` | Start core infra + collector + control-plane + storage-iceberg |
-| `make dev-down` | Stop all containers |
+| `make dev-up-infra` | Start core infra (Redpanda, RisingWave, Postgres, MinIO + init, ClickHouse) |
+| `make dev-up-services` | Start app services only — assumes infra is already running |
+| `make dev-up-all` | ⭐ Start everything in order: infra → init → all services (clean fresh start) |
+| `make dev-down-infra` | Stop core infrastructure containers only |
+| `make dev-down-all` | Stop and remove ALL containers (infra + services) |
+| `make arroyo-ui` | Open Arroyo web UI at http://localhost:5115 |
+| `make arroyo-deploy` | (Re-)deploy SQL pipelines to a running local Arroyo instance |
+| `make e2e-arroyo` | Run Arroyo E2E tests — health, pipeline deploy, ETL Parquet, CEP alert (requires `dev-up-services`) |
+| `make train-classifier` | Run full ML pipeline — `train.py` + `novelty.py` + `calibrate.py` via `uv` |
 | `make e2e-phase1` | Run Phase 1 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase3` | Run Phase 3 E2E test (requires `ATTEST_E2E=1` + running stack) |
+| `make e2e-phase4a` | Start calibration sidecar + orchestrator, run Phase 4a E2E tests, stop services |
+| `make load-gen-up` | Start load-gen container (bench profile) |
+| `make load-cli-smoke` | CLI benchmark: 10k/sec · 30s · mixed · seed baselines |
+| `make load-cli-burst` | CLI benchmark: 100k/sec · 60s · mixed |
+| `make load-cli-attack` | CLI benchmark: 100k/sec · 60s · attack scenario |
+| `make load-status` | GET load-gen /status (running metrics) |
+| `make load-stop` | POST load-gen /stop |
 | `make fmt` | `cargo fmt --all` |
 | `make lint` | `cargo clippy` + `bun run lint` |
 | `make smoke` | Quick smoke check — cargo test + bun test + pytest |
 | `make dev-up-llm` | Start core infra + llama.cpp (requires Qwen GGUF volume-mounted) |
+
+---
+
+## Railway Deployment
+
+### Service Map
+
+| Railway service | Image / Builder | Internal hostname |
+|---|---|---|
+| `redpanda` | `confluentinc/cp-kafka:7.7.8` (KRaft mode — named `redpanda` so no app env vars change) | `redpanda.railway.internal:9092` |
+| `risingwave` | `risingwavelabs/risingwave:latest` | `risingwave.railway.internal:4566` |
+| `clickhouse` | `clickhouse/clickhouse-server:latest` | `clickhouse.railway.internal:8123` |
+| `minio` | `minio/minio:latest` | `minio.railway.internal:9000` |
+| `arroyo` | `ghcr.io/arroyosystems/arroyo:latest` | `arroyo.railway.internal:5115` |
+| `arroyo-deployer` | Dockerfile `infra/docker/arroyo-deployer.Dockerfile` | one-shot (exits after deploying pipelines) |
+| `collector` | Dockerfile `infra/docker/collector.Dockerfile` | — |
+| `control-plane` | Dockerfile `infra/docker/control-plane.Dockerfile` | `control-plane-production-b6e3.up.railway.app` |
+| `storage-iceberg` | Dockerfile `infra/docker/storage-iceberg.Dockerfile` | — |
+| `detection-runtime` | Dockerfile `infra/docker/detection-runtime.Dockerfile` | — |
+| `workbench` | Nixpacks (`nixpacks.toml`) | `workbench-production-6e86.up.railway.app` |
+
+### First-time setup
+
+```sh
+railway login
+make railway-infra        # create the 5 Docker-image infrastructure services (incl. Arroyo)
+make railway-infra-config # set start commands + env vars for infra services
+make railway-setup        # create the 5 app services and configure builders
+make railway-deploy       # upload source + trigger first build for all app services
+make railway-domain       # generate public HTTPS domains for control-plane + workbench
+```
+
+After `make railway-domain`, copy the two domains into workbench's Railway env vars:
+
+```sh
+railway variable set --service workbench \
+  CONTROL_PLANE_URL=https://<control-plane-domain> \
+  NEXT_PUBLIC_APP_URL=https://<workbench-domain> \
+  NEXT_PUBLIC_CP_WS_URL=wss://<control-plane-domain>
+```
+
+### Subsequent deploys
+
+```sh
+# Re-upload source + rebuild (needed when code changes)
+make railway-deploy
+
+# Or just restart the last build (when only env vars / config changed)
+make railway-redeploy
+```
+
+### Monitoring
+
+```sh
+make railway-status            # overview of all services
+make railway-logs              # tail all app services in parallel
+make railway-logs-collector    # tail a single service
+make railway-build-logs-workbench  # tail build output
+```
+
+---
+
+### Hard-won Railway lessons (do not repeat)
+
+#### 1. Redpanda cannot run on Railway
+Redpanda's Seastar I/O engine requires `perf_event_open` syscall and Linux AIO — both blocked in Railway's container sandbox. Redpanda starts, passes the health check, then crashes within ~10 seconds. **Use `confluentinc/cp-kafka:7.7.8` (KRaft mode) instead.** It uses standard Java I/O and runs fine. The service is still named `redpanda` so no app env vars need updating.
+
+KRaft requires a `CLUSTER_ID` (22-char base64 UUID). Generate one with:
+```sh
+python3 -c "import base64, uuid; print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))"
+```
+Required env vars for single-node KRaft:
+```
+CLUSTER_ID=<generated>
+KAFKA_NODE_ID=1
+KAFKA_PROCESS_ROLES=broker,controller
+KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://redpanda.railway.internal:9092
+KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+KAFKA_LOG_DIRS=/var/lib/kafka/data
+```
+
+#### 2. `railway.json` at repo root applies to ALL services
+Every service that has its root directory set to `/` reads the same `railway.json`. If that file contains a `deploy.startCommand` (e.g. `"cd apps/workbench && bun run start"`), **every service** will attempt to run it — Rust containers with minimal images will crash with `executable 'cd' not found`. Keep `railway.json` free of any `startCommand`; set start commands per-service via the Railway dashboard or `railway environment edit`.
+
+#### 3. `railway environment edit` is not interactive in CI — use JSON stdin
+The `--service-config <name> <path> <value>` flag works interactively (TTY prompt) but blocks in scripts. The reliable non-interactive method is to pipe a JSON patch to stdin:
+
+```sh
+python3 -c "import json; print(json.dumps({'services': {'<UUID>': {'deploy': {'startCommand': 'attest-collector serve'}}}}))" \
+  | railway environment edit --message "fix start command"
+```
+
+**Critical:** the JSON keys must be **service UUIDs**, not service names. Get UUIDs with:
+```sh
+railway environment config --json | python3 -c "
+import json,sys; data=json.load(sys.stdin)
+for uid,cfg in data['services'].items():
+    print(uid, cfg.get('build',{}).get('dockerfilePath',''), cfg.get('source',{}).get('image',''))
+"
+```
+
+#### 4. `${{ServiceName.VAR}}` interpolation is case-sensitive
+Railway variable references like `${{Risingwave.RAILWAY_PRIVATE_DOMAIN}}` only work if the service name casing matches exactly. Since all services here are lowercase (`risingwave`, `clickhouse`, `minio`, `redpanda`), use **literal hostnames** instead of interpolation:
+- `risingwave.railway.internal`
+- `clickhouse.railway.internal`
+- `minio.railway.internal`
+- `redpanda.railway.internal`
+
+#### 5. `railway service redeploy` re-runs the last deployment snapshot
+For source-built services, `railway service redeploy` re-runs the old build artifact with its original `railway.json` baked in. Config changes in `railway.json` are **not** picked up. You must run `railway up --service <name>` to push a new build that uses the current file. For Docker-image services, config changes (start command, env vars) ARE picked up by redeploy.
+
+#### 6. MinIO requires a persistent volume and the `minio` binary prefix
+MinIO's Docker entrypoint does not forward `CMD` arguments. Set the start command to `minio server /data --console-address :9001` (with the `minio` binary prefix). Without a volume, MinIO formats a new pool on every restart and exits cleanly — add a Railway persistent volume mounted at `/data`:
+```sh
+railway volume -s <minio-uuid> add -m /data
+```
+
+#### 7. Kafka topic pre-creation for RisingWave sources
+RisingWave's `CREATE TABLE ... WITH (connector='kafka')` fetches Kafka metadata but does **not** trigger Kafka's `auto.create.topics.enable`. The topic must already exist before the DDL runs. The `attest-control-plane` now creates the `cloudtrail` topic via the rdkafka admin client on startup (see `ensure_kafka_topic` in `main.rs`). Do not add `properties.allow.auto.create.topics = 'true'` to the RisingWave WITH clause — it is not a valid connector property and will cause `CREATE TABLE` to fail with "Unknown fields".
+
+#### 8. Workbench Node.js version
+Nixpacks `[variables] NODE_VERSION = "20"` in `nixpacks.toml` sets an environment variable but does **not** pin the Node.js version used during the build phase. The `.node-version` file at the repo root (containing `20`) is the correct signal that Nixpacks respects.
+
+#### 9. `bitnami/kafka` has no `latest` tag
+`bitnami/kafka:latest` does not exist — use `bitnami/kafka:3.9` or a specific version. Alternatively, use `confluentinc/cp-kafka:7.7.8` (which is what this project uses) or `apache/kafka:latest` (official image, does have `latest`).
+
+#### 10. Detection rules baked into the Docker image
+Railway does not support local volume mounts from the host. Detection rules (`.heliql` files) are copied into the `detection-runtime` image at build time via `COPY detections/ /rules/` in `infra/docker/detection-runtime.Dockerfile`. The `RULES_DIR=/rules` env var is set in the Dockerfile. This is intentional and correct for Railway deployments.

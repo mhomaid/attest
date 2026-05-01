@@ -16,6 +16,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY apps/ apps/
 COPY tests/ tests/
+COPY tools/ tools/
 COPY infra/risingwave/ infra/risingwave/
 
 RUN cargo build --release --bin attest-control-plane

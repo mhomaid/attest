@@ -12,15 +12,29 @@ mod producer;
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{Router, routing::{get, post}};
+use axum::{Router, middleware::from_fn, routing::{get, post}};
 use clap::{Parser, Subcommand};
-use tracing_subscriber::{fmt, EnvFilter};
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable as _};
 
 use crate::{
-    http::{AppState, healthz, ingest},
+    http::{AppState, ErrorResponse, HealthResponse, IngestResponse, healthz, ingest},
     normalizer::normalize_cloudtrail,
     producer::EventProducer,
 };
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(http::healthz, http::ingest),
+    components(schemas(IngestResponse, ErrorResponse, HealthResponse)),
+    info(
+        title = "Attest Collector",
+        version = "0.1.0",
+        description = "CloudTrail → OCSF → Redpanda edge collector. \
+            POST /ingest to send events; they are normalised and produced to the `cloudtrail` Kafka topic."
+    )
+)]
+struct ApiDoc;
 
 #[derive(Parser)]
 #[command(name = "attest-collector", about = "Attest edge collector")]
@@ -54,11 +68,9 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
+    let service_name =
+        std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "attest-collector".into());
+    let _otel = attest_telemetry::init_subscriber_with_otel(&service_name)?;
 
     let cli = Cli::parse();
 
@@ -87,10 +99,15 @@ async fn serve(
         tenant_id: tenant_id.to_string(),
     };
 
-    let app = Router::new()
+    let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/ingest", post(ingest))
         .with_state(state);
+
+    let app = Router::new()
+        .merge(api)
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
+        .layer(from_fn(attest_telemetry::axum_trace_propagation));
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("attest-collector listening on {addr}");

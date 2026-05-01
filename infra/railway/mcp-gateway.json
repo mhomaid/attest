@@ -1,0 +1,18 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "infra/docker/mcp-gateway.Dockerfile"
+  },
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE",
+    "healthcheckPath": "/healthz"
+  },
+  "environmentVariables": {
+    "MCP_GATEWAY_PORT": "4242",
+    "PORT": "4242",
+    "CONTROL_PLANE_URL": "http://${{ControlPlane.RAILWAY_PRIVATE_DOMAIN}}:8080",
+    "ATTEST_LOG_PATH": "/data/attestations.ndjson",
+    "RUST_LOG": "info"
+  }
+}

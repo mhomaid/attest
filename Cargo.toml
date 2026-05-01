@@ -4,6 +4,7 @@ members = [
     "apps/workbench-api",
     "apps/ws-gateway",
     "tests/e2e-tests",
+    "tools/load-gen",
 ]
 exclude = ["apps/workbench"]
 resolver = "2"
@@ -23,6 +24,7 @@ rdkafka = { version = "0.36", features = ["cmake-build"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
+
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "net"] }
 tokio-postgres = "0.7"
 tracing = "0.1"
@@ -39,3 +41,15 @@ pest = "2"
 pest_derive = "2"
 serde_yaml = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
+# Phase 4 — Agent harness
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+rand = "0.8"
+hex = "0.4"
+tract-onnx = "0.23.0-dev.5"
+ndarray = "0.17"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tokio-util = { version = "0.7", features = ["io"] }
+# OpenAPI docs
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-scalar = { version = "0.3", features = ["axum"] }

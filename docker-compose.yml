@@ -21,6 +21,18 @@ services:
     ports:
       - "9092:9092"
       - "19092:19092"
+    volumes:
+      # Persists topics/partitions across `docker compose down` (omit `down -v`).
+      - redpanda-data:/var/lib/redpanda/data
+
+  redpanda-console:
+    image: redpandadata/console:latest
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8081:8080"
+    depends_on:
+      - redpanda
 
   postgres:
     image: postgres:16-alpine
@@ -78,12 +90,26 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./infra/clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./infra/clickhouse/init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 10
 
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./infra/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  # Playground mode is in-memory only; a volume here would not preserve MV/catalog state.
+  # For durable RisingWave, replace with standalone + object store (see RisingWave Docker Compose docs).
   risingwave:
     image: risingwavelabs/risingwave:latest
     command: playground
@@ -96,8 +122,51 @@ services:
       - "5115:5115"
     environment:
       DATABASE_URL: postgres://attest:attest@postgres:5432/attest
+      # S3 / MinIO credentials for filesystem sink (Parquet output)
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      # AWS_ENDPOINT_URL is the standard env var for S3-compatible endpoint override
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ENDPOINT: http://minio:9000
+      AWS_REGION: us-east-1
+      # Allow HTTP (non-HTTPS) for local MinIO
+      AWS_ALLOW_HTTP: "true"
+      # Redpanda bootstrap — referenced by pipeline SQL as 'redpanda:9092'
+      KAFKA_BROKERS: redpanda:9092
+    volumes:
+      # Mount pipeline SQL files — deployer reads from /pipelines inside the container
+      - ./infra/arroyo/pipelines:/pipelines:ro
     depends_on:
       - postgres
+      - minio-init
+      - redpanda
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5115/api/v1/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    profiles:
+      - platform
+
+  # One-shot service: waits for Arroyo to be healthy then deploys all SQL pipelines.
+  # Uses the same Arroyo image — has bash, python3, and curl already available.
+  arroyo-pipeline-deployer:
+    image: ghcr.io/arroyosystems/arroyo:latest
+    entrypoint: ["/bin/bash", "/usr/local/bin/deploy-pipelines.sh"]
+    environment:
+      ARROYO_API: http://arroyo:5115
+      PIPELINES_DIR: /pipelines
+    volumes:
+      - ./infra/arroyo/pipelines:/pipelines:ro
+      - ./infra/arroyo/deploy-pipelines.sh:/usr/local/bin/deploy-pipelines.sh:ro
+    depends_on:
+      arroyo:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: on-failure
+    profiles:
+      - platform
 
   # llama.cpp HTTP server — model GGUF must be volume-mounted at runtime.
   # Pull a Qwen 3 ~7B GGUF and set LLAMA_MODEL_PATH on first run.
@@ -125,8 +194,11 @@ services:
       KAFKA_BROKERS: redpanda:9092
       TENANT_ID: local-dev
       PORT: "4000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-collector
     depends_on:
       - redpanda
+      - tempo
     profiles:
       - platform
 
@@ -140,11 +212,17 @@ services:
       RISINGWAVE_HOST: risingwave
       RISINGWAVE_PORT: "4566"
       CLICKHOUSE_URL: http://clickhouse:8123
+      KAFKA_BROKERS: redpanda:9092
       PORT: "8080"
+      LOAD_GEN_URL: http://load-gen:9100
+      ORCHESTRATOR_URL: http://orchestrator:4300
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-control-plane
     depends_on:
       - risingwave
       - redpanda
       - clickhouse
+      - tempo
     profiles:
       - platform
 
@@ -190,6 +268,77 @@ services:
     profiles:
       - platform
 
+  calibration-sidecar:
+    build:
+      context: .
+      dockerfile: infra/docker/calibration-sidecar.Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      CALIBRATION_PORT: "5001"
+      ARTIFACTS_DIR: /app/artifacts
+      PYTHONUNBUFFERED: "1"
+    profiles:
+      - platform
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: infra/docker/orchestrator.Dockerfile
+    ports:
+      - "4300:4300"
+    # Load `ATTEST_LLM_*`, guardrails, etc. from repo `.env`. Overrides below win (Compose merge order).
+    env_file:
+      - .env
+    extra_hosts:
+      # Linux: map host gateway (Docker Desktop already provides host.docker.internal on Mac/Win).
+      - "host.docker.internal:host-gateway"
+    environment:
+      ORCHESTRATOR_PORT: "4300"
+      ARTIFACTS_DIR: /artifacts
+      CALIBRATION_URL: http://calibration-sidecar:5001
+      ESCALATION_THRESHOLD: "0.60"
+      NOVELTY_THRESHOLD: "0.70"
+      ATTEST_LOG_PATH: /data/attestations.ndjson
+      MCP_GATEWAY_URL: http://mcp-gateway:4242
+      SYSTEM_PROMPT_PATH: /agents/triager/system_prompt_v1.md
+      REVIEWER_PROMPT_PATH: /agents/triager/reviewer_prompt_v1.md
+      INVESTIGATOR_PROMPT_PATH: /agents/investigator/system_prompt_v1.md
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-orchestrator
+      # Must override `.env` (which uses 127.0.0.1 for native runs). Unsloth runs on the host.
+      ATTEST_LLM_BASE_URL: ${ATTEST_LLM_DOCKER_BASE_URL:-http://host.docker.internal:8888/v1}
+    volumes:
+      - ./ml/triager/artifacts:/artifacts:ro
+      - ./agents:/agents:ro
+      - attestation-log:/data
+    depends_on:
+      - calibration-sidecar
+      - mcp-gateway
+      - tempo
+    profiles:
+      - platform
+
+  mcp-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/mcp-gateway.Dockerfile
+    ports:
+      - "4242:4242"
+    environment:
+      MCP_GATEWAY_PORT: "4242"
+      CONTROL_PLANE_URL: http://control-plane:8080
+      ATTEST_LOG_PATH: /data/attestations.ndjson
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: attest-mcp-gateway
+    volumes:
+      - attestation-log:/data
+    depends_on:
+      - control-plane
+      - tempo
+    profiles:
+      - platform
+
   ml-sidecar:
     build:
       context: ./ml/sidecar
@@ -201,8 +350,26 @@ services:
     profiles:
       - ml
 
+  load-gen:
+    build:
+      context: .
+      dockerfile: infra/docker/load-gen.Dockerfile
+    ports:
+      - "9100:9100"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      LOAD_GEN_PORT: "9100"
+      RUST_LOG: info
+    depends_on:
+      - redpanda
+    profiles:
+      - bench
+
 volumes:
+  redpanda-data:
   postgres-data:
   minio-data:
   clickhouse-data:
+  tempo-data:
   llama-models:
+  attestation-log:

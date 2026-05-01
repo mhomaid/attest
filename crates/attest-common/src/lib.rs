@@ -7,6 +7,8 @@
 
 pub mod ocsf;
 pub mod error;
+pub mod flat;
 
 pub use ocsf::*;
 pub use error::AttestError;
+pub use flat::FlatEvent;

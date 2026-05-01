@@ -2,20 +2,36 @@ use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::error;
+use utoipa::ToSchema;
 
-/// Shared ClickHouse HTTP base URL, held in an `Arc<String>` so it's cheap to clone.
 pub type ChUrl = std::sync::Arc<String>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct WarmQueryRequest {
+    /// A read-only SELECT statement to run against ClickHouse.
     pub sql: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct WarmQueryResponse {
     pub rows: Vec<Vec<Value>>,
     pub row_count: usize,
 }
+
+/// Run a raw SELECT against the ClickHouse warm-tier.
+///
+/// Only `SELECT` statements are permitted; writes are rejected.
+#[utoipa::path(
+    post,
+    path = "/v1/warm/query",
+    request_body(content = WarmQueryRequest, description = "SQL SELECT to execute"),
+    responses(
+        (status = 200, description = "Query results", body = WarmQueryResponse),
+        (status = 400, description = "Non-SELECT statement rejected"),
+        (status = 500, description = "ClickHouse error"),
+    ),
+    tag = "warm"
+)]
 
 pub async fn post_warm_query(
     State(ch_url): State<ChUrl>,
