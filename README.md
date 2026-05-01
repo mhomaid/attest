@@ -2,7 +2,7 @@
 
 Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer into Redpanda, are continuously aggregated by RisingWave materialized views, persisted as Parquet files in MinIO via Apache Iceberg, and queried at scale by ClickHouse — all exposed through a REST control-plane and a live Next.js SOC workbench.
 
-The agent layer runs on top of the data tier. A Hybrid Triager routes every alert through an XGBoost classifier (sub-30 ms) or escalates structurally novel cases to an LLM. Every agent decision produces a cryptographically signed `AttestationEnvelope` — not a black box.
+The agent layer runs on top of the data tier. A Hybrid Triager routes every alert through an XGBoost classifier (sub-30 ms) or escalates structurally novel cases to an LLM. When the verdict is `needs_investigation`, an **Investigator** agent runs a tool loop through the MCP gateway (including optional warm-tier SQL). Every agent decision produces a cryptographically signed `AttestationEnvelope` — not a black box.
 
 ## Documentation
 
@@ -16,6 +16,7 @@ The agent layer runs on top of the data tier. A Hybrid Triager routes every aler
 | `docs/15_Streaming_Engine_Decision.md` | Arroyo vs. Flink vs. RisingWave — ADR + interview reference |
 | `docs/10_Build_Order.md` | Phase-by-phase implementation sequence |
 | `docs/11_Repo_Structure.md` | Repository layout |
+| `docs/12_Workbench.md` | Workbench UX spec (SOC analyst flows, components, Phase 8+) |
 
 ---
 
@@ -289,7 +290,8 @@ POST /invoke  { agent_role, tool_id, args, ... }
       ↓  log ToolCallRecord
       → { result, allowed, latency_ms, args_hash }
 
-GET /tools  → list of registered ToolDescriptors
+GET /tools    → list of registered ToolDescriptors
+GET /healthz  → `ok` (same liveness pattern as other HTTP services)
 ```
 
 #### Pillar 7 — `attest-orchestrator` (Hybrid Triage Loop)
@@ -374,9 +376,62 @@ Single event ──► POST /api/simulate ──► Collector :4000 ──► Or
 
 ---
 
+### Phase 5 — Hallucination guardrails
+
+**The problem it solves:** LLM triage must not fabricate evidence. Guardrails enforce retrieval-first answers, citation realism (orphan citations → `needs_investigation`), and optional cross-agent review at high calibrated confidence.
+
+- Implemented in `crates/attest-orchestrator/src/guardrails.rs`, wired into the hybrid / LLM triage path.
+- Toggle with `ATTEST_GUARDRAILS` (`on` / `off`); retries capped by `GUARDRAIL_MAX_RETRIES`.
+
+**E2E:** `make e2e-phase5` (scripted LLM + WireMock; see `tests/e2e-tests/tests/phase5_guardrails.rs`).
+
+---
+
+### Phase 6 — Shadow check + triager auto-close
+
+**The problem it solves:** High-confidence benign verdicts should be able to auto-close a case only when deterministic policy allows it (tenant automation, action class allowlist, do-not-touch principals, severity floor).
+
+- `crates/attest-orchestrator/src/shadow_check.rs` + `auto_close.rs`.
+- Environment knobs: `AUTO_CLOSE_THRESHOLD`, `AUTO_CLOSE_ACTION_CLASSES`, `DO_NOT_TOUCH_LIST`, `TENANT_ALLOWS_AUTOMATION`, etc. (see `env.example`).
+
+**E2E:** `make e2e-phase6` (`tests/e2e-tests/tests/phase6_auto_close.rs`).
+
+---
+
+### Phase 7 — Investigator agent + warm-tier MCP + attestation trace
+
+**The problem it solves:** When the triager returns `needs_investigation`, a dedicated **Investigator** LLM runs a tool loop (MCP gateway → control-plane warm tier and stubs), produces a second signed envelope, and analysts need a **replayable trace** per case.
+
+#### Components
+
+| Piece | Role |
+|---|---|
+| `attest-orchestrator` | On `needs_investigation`, runs `run_investigator_llm_loop`; dispatches tools via `attest-mcp-client` → MCP gateway |
+| `agents/investigator/system_prompt_v1.md` | Investigator system prompt |
+| `attest-mcp-gateway` | `POST /invoke`, `GET /tools`, `GET /healthz`; `query_warm_tier` wraps control-plane `/v1/warm/query` with rate limits (`WarmTierLimiter`) |
+| `attest-inference-router` | OpenAI-compat client: by default encodes tool **results** as `role: "user"` (Unsloth / strict servers reject `role: "tool"`). Set `ATTEST_OPENAI_NATIVE_TOOL_MESSAGES=1` for native tool messages |
+| `apps/workbench-api` | `GET /v1/cases/{case_id}/trace` — reads `ATTEST_LOG_PATH` NDJSON, returns `{ case_id, steps[] }` for the workbench **Attestation trace** panel |
+| `apps/workbench` | `GET /api/cases/[caseId]/trace` proxies to workbench-api (server-side env) |
+
+#### Attestation log path (critical for trace)
+
+Both **orchestrator** and **workbench-api** must use the **same** `ATTEST_LOG_PATH` (see `env.example`). The Docker Compose orchestrator writes to `/data/attestations.ndjson` on the `attestation-log` volume; a workbench-api process on the host will **not** see that unless you bind-mount or run the orchestrator **natively** with the same path.
+
+**Offline E2E (no live LLM):** `make e2e-phase7` — `investigator_loop` integration test with scripted chat client + WireMock MCP.
+
+**Live E2E (real stack):** With Unsloth (or other OpenAI-compat server), MCP gateway, and control-plane up:
+
+1. Terminal A: `make run-orchestrator`  
+2. Terminal B: `make run-workbench-api`  
+3. `ATTEST_E2E=1 ATTEST_PHASE7_LIVE=1 make e2e-phase7-live`  
+
+Optional: `ATTEST_PHASE7_LIVE_STRICT=1`, `PHASE7_REQUIRE_WARM_QUERY=1`. Full notes: `scripts/e2e/README.md`.
+
+---
+
 ## Workbench UI — Page Guide
 
-The workbench is a Next.js 15 App Router application at `apps/workbench`. Every page is a React Server Component that fetches live data from the backend on each request. No mock data is used — if the backend is offline, pages show explicit offline states. Client components (Load Lab, Simulate Lab) use Zustand stores for cross-navigation state.
+The workbench is a Next.js 16 App Router application at `apps/workbench`. Every page is a React Server Component that fetches live data from the backend on each request. No mock data is used — if the backend is offline, pages show explicit offline states. Client components (Load Lab, Simulate Lab) use Zustand stores for cross-navigation state.
 
 ### Page Map
 
@@ -384,12 +439,12 @@ The workbench is a Next.js 15 App Router application at `apps/workbench`. Every 
 |---|---|---|
 | `/workbench/queue` | `control-plane /v1/detections/fired` + `arroyo /api/v1/pipelines` + WS | Real-time alert queue |
 | `/workbench/cases` | `control-plane /v1/detections/fired` (via `/api/detections`) | All triaged cases |
-| `/workbench/cases/[id]` | event lookup + baseline + triage | Deep case investigation |
+| `/workbench/cases/[id]` | event lookup + baseline + triage + `/api/cases/[id]/trace` → workbench-api | Deep case investigation + attestation trace |
 | `/workbench/detections` | `control-plane /v1/detections/fired` (last-fired timestamps) | Detection rule catalogue |
 | `/workbench/simulate` | `/api/simulate` → collector + orchestrator | ML hot-path testing |
 | `/workbench/load` | `/api/load/start` + `control-plane WS /v1/metrics/stream` | Streaming throughput testing |
 | `/workbench/agents` | `orchestrator /metrics` | Agent roster + live latency |
-| `/workbench/hunt` | None — Phase 7 placeholder | Threat hunting query editor |
+| `/workbench/hunt` | Partial — warm-tier wired in UI; stream/save still shells | Threat hunting query editor |
 | `/workbench/settings` | None — static | Integration & agent configuration status |
 | `/workbench/admin` | 4 health checks + Arroyo pipelines API | Platform health + API docs links |
 
@@ -432,6 +487,7 @@ The most data-intensive page. Three backend calls run in parallel on every load:
 The page builds a `CaseRecord` entirely from live data and renders it in `CaseWorkbench`:
 
 - **Timeline** — each step the event traversed: Collector (OCSF normalization) → RisingWave (baseline fetch) → Orchestrator (ML verdict) → Attestation (Ed25519 signing)
+- **Attestation trace** — `AttestationTracePanel` loads `GET /api/cases/{case_id}/trace` (NDJSON steps: triage, investigator, auto-close, etc.); requires `WORKBENCH_API_URL` and a shared `ATTEST_LOG_PATH` with the orchestrator
 - **Evidence panel** — Event ID, API operation, region, baseline regions seen in 30 days, triage action ID, novelty score
 - **SHAP feature impact bars** — top 8 features that drove the ML classifier's decision
 
@@ -530,18 +586,18 @@ Four agent cards in a 2×2 grid:
 
 | Agent | Status | Model | When |
 |---|---|---|---|
-| Triager | Live (if orchestrator up) | XGBoost + Claude Sonnet escalation | Phase 4b — deployed now |
-| Investigator | Phase 5 | Claude Opus / Qwen 3 32B (air-gapped) | Not yet built |
-| Hunter | Phase 7 | Claude Sonnet | Not yet built |
+| Triager | Live (if orchestrator up) | XGBoost + local Unsloth / Anthropic escalation | Phases 4a–4b |
+| Investigator | Live (if orchestrator + MCP up) | Same inference router as triager (`ATTEST_LLM_PROVIDER`) | Phase 7 — runs on `needs_investigation` |
+| Hunter | Shell | — | Phase 8+ (Hunter agent; see `docs/10_Build_Order.md`) |
 | Detection Engineer | Phase 10 | Claude Sonnet | Not yet built |
 
 The Triager card shows real-time verdict count and p50/p95/p99 latency percentiles, plus an **"Attestation envelopes: Ed25519 signed"** confirmation badge when the orchestrator is online.
 
 ---
 
-### Hunt (`/workbench/hunt`) — Phase 7 placeholder
+### Hunt (`/workbench/hunt`) — query UI shell
 
-A HELIQL query text area with three buttons (Run against warm tier, Run against live stream, Save hypothesis). The buttons are not wired — this page is the UI shell for the Hunter agent in Phase 7. The warm-tier button will call `control-plane /v1/warm/query` when wired.
+A HELIQL-style query area with **Run against warm tier** (proxies to `control-plane /v1/warm/query`), plus stream/save placeholders for the future **Hunter** agent (Phase 8+ per `docs/10_Build_Order.md` / `docs/12_Workbench.md`).
 
 ---
 
@@ -657,18 +713,42 @@ curl http://localhost:4000/healthz    # {"status":"ok"}
 curl http://localhost:8080/healthz    # {"status":"ok"}
 ```
 
-### 4. Start the workbench UI
+### 4. Apply Postgres schema (workbench / Better Auth)
+
+The workbench uses **Postgres** for Better Auth (`auth_*` tables, snake_case columns). Migrations live in **`infra/db`** (Python **uv** + **Alembic**; SQL under `infra/db/sql/`). After infra is up (`make dev-up-infra` or full stack), run:
+
+```sh
+cd infra/db
+uv sync
+export DATABASE_URL=postgres://attest:attest@127.0.0.1:5432/attest
+uv run alembic upgrade head
+```
+
+This applies the auth DDL and **seeds local dev users** (same password for all: **`analyst-dev`**):
+
+| Email | Notes |
+| --- | --- |
+| `analyst@attest.local` | Default on the login form |
+| `viewer@attest.local` | Extra persona / second browser session |
+| `operator@attest.local` | Extra persona |
+
+`apps/workbench/migrations/0001_auth.sql` is a **symlink** into `infra/db/sql/` for tools that still expect that path. **Prefer Alembic** so `alembic_version` stays in sync.
+
+Optional HTTP fallback (not required if migrations ran): `POST /api/auth/seed-analyst` with `ALLOW_AUTH_SEED=1` and header `x-seed-secret` — see `apps/workbench/.env.local.example`.
+
+### 5. Start the workbench UI
 
 ```sh
 cd apps/workbench
+cp .env.local.example .env.local   # then set BETTER_AUTH_SECRET (≥32 chars), DATABASE_URL, etc.
 bun install
 bun run dev
 # Open http://localhost:3000
 ```
 
-The queue page badge will show **"Live — control-plane connected"** when the backend is reachable.
+The queue page badge will show **"Live — control-plane connected"** when the backend is reachable. Sign in at `/login` with one of the dev emails above (`analyst-dev`).
 
-### 5. Train the classifier and run the Triager agent (Phase 4a)
+### 6. Train the classifier and run the Triager agent (Phase 4a)
 
 ```sh
 # Install Python ML dependencies and train all artifacts (~30 s)
@@ -719,7 +799,7 @@ Phase 4b (Load Lab, Simulate Lab) is tested manually via the UI. Automated E2E f
 
 ### Step-by-Step Platform Test (do this after every significant change)
 
-**Prerequisites:** `make dev-up-services` is running, `make train-classifier` has been run once.
+**Prerequisites:** `make dev-up-services` is running, `make train-classifier` has been run once. For workbench routes that require sign-in, apply **Postgres migrations** from `infra/db` (`uv run alembic upgrade head` — see Quick Start §4) and ensure `apps/workbench/.env.local` has `DATABASE_URL` pointing at the same database.
 
 #### 1. Verify the streaming substrate
 
@@ -826,6 +906,12 @@ make e2e-phase1    # Streaming substrate
 make e2e-phase2    # Iceberg warm tier
 make e2e-phase3    # HELIQL detection rules
 make e2e-phase4a   # ML triager (self-contained)
+make e2e-phase4b   # Hybrid LLM escalation (requires Unsloth on :8888)
+make e2e-phase5    # Guardrails (scripted LLM; may auto-start deps per Makefile)
+make e2e-phase6    # Shadow check + auto-close
+make e2e-phase7    # Investigator loop (WireMock MCP; offline)
+# Live Phase 7 (orchestrator + workbench-api + shared ATTEST_LOG_PATH + LLM):
+#   ATTEST_E2E=1 ATTEST_PHASE7_LIVE=1 make e2e-phase7-live
 ```
 
 ---
@@ -913,9 +999,25 @@ make e2e-phase4a
 # 6. Stops both services
 #
 # Prerequisite: make train-classifier (only needed once, or when golden_cases.json changes)
+
+# Phase 4b — Hybrid LLM escalation (requires ATTEST_LLM_PROVIDER=local + Unsloth on :8888)
+make e2e-phase4b
+
+# Phase 5 — guardrails (scripted LLM + WireMock)
+make e2e-phase5
+
+# Phase 6 — shadow check + auto-close
+make e2e-phase6
+
+# Phase 7 — investigator loop (offline; WireMock MCP)
+make e2e-phase7
+
+# Phase 7 live — real triage + investigator + trace (needs Unsloth/LLM, MCP, control-plane,
+# native orchestrator + workbench-api, identical ATTEST_LOG_PATH in .env)
+# ATTEST_E2E=1 ATTEST_PHASE7_LIVE=1 make e2e-phase7-live
 ```
 
-Phases 1–3 require `make dev-up-services` to be running. Phase 4a is self-contained.
+Phases 1–3 require `make dev-up-services` to be running. Phase 4a is self-contained. Phases 5–7 are Rust E2E crates (`tests/e2e-tests`); see each Makefile target and `scripts/e2e/README.md` for prerequisites. **Phase 7 live** additionally requires two long-running processes (`make run-orchestrator`, `make run-workbench-api`) and a shared `ATTEST_LOG_PATH`.
 
 ---
 
@@ -1000,8 +1102,9 @@ Attest/
 │   └── run_eval.py               # Calls POST /triage for each golden case, asserts metrics
 ├── detections/                   # 10 bundled HELIQL detection rules (Phase 3)
 ├── apps/
-│   └── workbench/                # Next.js 15 marketing site + SOC workbench UI
+│   └── workbench/                # Next.js 16 marketing site + SOC workbench UI
 ├── infra/
+│   ├── db/                       # Postgres migrations (uv + Alembic) — Better Auth schema + dev seed users
 │   ├── arroyo/                   # Arroyo streaming engine
 │   │   ├── pipelines/            # SQL pipeline definitions deployed via REST API
 │   │   │   ├── cloudtrail_to_parquet.sql    # Redpanda → Parquet → MinIO ETL
@@ -1016,7 +1119,13 @@ Attest/
 │       └── tests/
 │           ├── phase1_streaming.rs
 │           ├── phase2_iceberg.rs
-│           └── phase4a_triager.rs
+│           ├── phase3_detection.rs
+│           ├── phase4a_triager.rs
+│           ├── phase4b_llm_escalation.rs
+│           ├── phase5_guardrails.rs
+│           ├── phase6_auto_close.rs
+│           ├── phase7_live_investigator.rs
+│           └── phase_arroyo_pipelines.rs
 ├── docs/                         # Source-of-truth documentation
 ├── docker-compose.yml            # Local dev stack
 └── Makefile                      # Convenience targets
@@ -1041,6 +1150,13 @@ Attest/
 | `make e2e-phase2` | Run Phase 2 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase3` | Run Phase 3 E2E test (requires `ATTEST_E2E=1` + running stack) |
 | `make e2e-phase4a` | Start calibration sidecar + orchestrator, run Phase 4a E2E tests, stop services |
+| `make e2e-phase4b` | Phase 4b hybrid LLM escalation E2E (requires local LLM / Unsloth on :8888) |
+| `make e2e-phase5` | Phase 5 guardrails E2E (`tests/e2e-tests/tests/phase5_guardrails.rs`) |
+| `make e2e-phase6` | Phase 6 shadow check + auto-close E2E |
+| `make e2e-phase7` | Phase 7 investigator integration test (offline; WireMock MCP) |
+| `make e2e-phase7-live` | Phase 7 live: real `POST /triage` + investigator + trace (needs stack + `ATTEST_E2E=1` + `ATTEST_PHASE7_LIVE=1`) |
+| `make run-orchestrator` | Run hybrid triage + investigator orchestrator natively (`:4300`) |
+| `make run-workbench-api` | Run attestation trace API (`:4400`; reads `ATTEST_LOG_PATH`) |
 | `make load-gen-up` | Start load-gen container (bench profile) |
 | `make load-cli-smoke` | CLI benchmark: 10k/sec · 30s · mixed · seed baselines |
 | `make load-cli-burst` | CLI benchmark: 100k/sec · 60s · mixed |

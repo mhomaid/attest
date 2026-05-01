@@ -22,16 +22,32 @@ pub enum AgentRole {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PolicyDecision {
     Allow,
-    Deny { reason: String },
+    Deny {
+        reason: String,
+    },
     /// Action requires human approval before proceeding.
-    Escalate { reason: String },
+    Escalate {
+        reason: String,
+    },
 }
 
 impl PolicyDecision {
-    pub fn allow() -> Self { Self::Allow }
-    pub fn deny(reason: impl Into<String>) -> Self { Self::Deny { reason: reason.into() } }
-    pub fn escalate(reason: impl Into<String>) -> Self { Self::Escalate { reason: reason.into() } }
-    pub fn is_allowed(&self) -> bool { matches!(self, Self::Allow) }
+    pub fn allow() -> Self {
+        Self::Allow
+    }
+    pub fn deny(reason: impl Into<String>) -> Self {
+        Self::Deny {
+            reason: reason.into(),
+        }
+    }
+    pub fn escalate(reason: impl Into<String>) -> Self {
+        Self::Escalate {
+            reason: reason.into(),
+        }
+    }
+    pub fn is_allowed(&self) -> bool {
+        matches!(self, Self::Allow)
+    }
 }
 
 /// Contextual inputs evaluated by the policy.
@@ -149,7 +165,9 @@ fn authorize_responder(tool_id: &str, ctx: &PolicyContext) -> PolicyDecision {
                 return PolicyDecision::deny("host is on the production-critical list");
             }
             if ctx.blast_radius > 1 {
-                return PolicyDecision::escalate("edr isolation of >1 host requires human approval");
+                return PolicyDecision::escalate(
+                    "edr isolation of >1 host requires human approval",
+                );
             }
             PolicyDecision::allow()
         }
@@ -181,7 +199,11 @@ mod tests {
 
     #[test]
     fn read_tools_always_allowed() {
-        for role in [AgentRole::Triager, AgentRole::Responder, AgentRole::Coordinator] {
+        for role in [
+            AgentRole::Triager,
+            AgentRole::Responder,
+            AgentRole::Coordinator,
+        ] {
             assert!(authorize(&role, "query_hot_tier", &ctx()).is_allowed());
             assert!(authorize(&role, "get_user_baseline", &ctx()).is_allowed());
         }

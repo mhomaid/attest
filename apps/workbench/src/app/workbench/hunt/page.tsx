@@ -3,6 +3,7 @@
 import { Crosshair, FlaskConical, Loader2, Search } from "lucide-react";
 import { useState } from "react";
 import { StatusBadge } from "@/components/workbench/status-badge";
+import { analytics } from "@/lib/analytics";
 
 const HELIQL_PLACEHOLDER = `detection: my_hunt_hypothesis
 where:
@@ -40,6 +41,7 @@ export default function HuntPage() {
           : `HTTP ${res.status}`);
         return;
       }
+      analytics.hunt_query_run();
       setResult(data);
     } catch {
       setError("Request failed — is the workbench dev server and control-plane up?");

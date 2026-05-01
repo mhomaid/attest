@@ -15,7 +15,11 @@ mod routes;
 mod state;
 
 use anyhow::Context;
-use axum::{Router, middleware::from_fn, routing::{get, post}};
+use axum::{
+    middleware::from_fn,
+    routing::{get, post},
+    Router,
+};
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
@@ -32,7 +36,7 @@ use crate::{
     routes::{
         baselines::{get_user_baseline, UserBaseline},
         detections::{fetch_all_fired, get_detections_fired, ws_alerts, FiredAlert},
-        events::{get_recent_event, EventRow, EventQuery},
+        events::{get_recent_event, EventQuery, EventRow},
         healthz::{healthz, HealthResponse},
         metrics::ws_metrics,
         warm::{post_warm_query, ChUrl, WarmQueryRequest, WarmQueryResponse},
@@ -85,8 +89,7 @@ async fn main() -> anyhow::Result<()> {
     let ch_url: ChUrl = Arc::new(
         std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".into()),
     );
-    let kafka_brokers =
-        std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "redpanda:9092".into());
+    let kafka_brokers = std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "redpanda:9092".into());
     let poll_secs: u64 = std::env::var("ALERT_POLL_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -132,7 +135,9 @@ async fn main() -> anyhow::Result<()> {
                     Ok(alerts) => {
                         for alert in alerts {
                             let key = format!("{}:{}", alert.detection_id, alert.event_id);
-                            if seen.contains(&key) { continue; }
+                            if seen.contains(&key) {
+                                continue;
+                            }
                             seen.insert(key);
                             if let Ok(json) = serde_json::to_string(&alert) {
                                 let _ = state_for_poll.alert_tx.send(json);
@@ -163,14 +168,14 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Router ───────────────────────────────────────────────────────────────
     let app = Router::new()
-        .route("/healthz",                   get(healthz))
-        .route("/v1/events/recent",          get(get_recent_event))
-        .route("/v1/baselines/user/{name}",  get(get_user_baseline))
-        .route("/v1/detections/fired",       get(get_detections_fired))
-        .route("/v1/ws/alerts",              get(ws_alerts))
-        .route("/v1/metrics/stream",         get(ws_metrics))
+        .route("/healthz", get(healthz))
+        .route("/v1/events/recent", get(get_recent_event))
+        .route("/v1/baselines/user/{name}", get(get_user_baseline))
+        .route("/v1/detections/fired", get(get_detections_fired))
+        .route("/v1/ws/alerts", get(ws_alerts))
+        .route("/v1/metrics/stream", get(ws_metrics))
         .with_state(state)
-        .route("/v1/warm/query",             post(post_warm_query))
+        .route("/v1/warm/query", post(post_warm_query))
         .with_state(ch_url)
         .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
         .layer(cors)
@@ -182,9 +187,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("bind failed")?;
 
-    axum::serve(listener, app)
-        .await
-        .context("server error")?;
+    axum::serve(listener, app).await.context("server error")?;
 
     Ok(())
 }
@@ -215,7 +218,10 @@ async fn ensure_kafka_topic(brokers: &str, topic: &str) {
         .create()
     {
         Ok(c) => c,
-        Err(e) => { tracing::warn!("kafka admin create failed: {e}"); return; }
+        Err(e) => {
+            tracing::warn!("kafka admin create failed: {e}");
+            return;
+        }
     };
 
     let new_topic = NewTopic::new(topic, 1, TopicReplication::Fixed(1));

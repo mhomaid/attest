@@ -1,0 +1,10 @@
+[project]
+name = "attest-db"
+version = "0.1.0"
+description = "Alembic migrations for Attest Postgres (workbench auth + future tables)."
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.2",
+]

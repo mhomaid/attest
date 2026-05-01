@@ -6,4 +6,15 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-
+anyhow = { workspace = true }
+attest-attestation = { path = "../../crates/attest-attestation" }
+axum = { workspace = true, features = ["ws"] }
+jsonwebtoken = "9"
+rdkafka = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-postgres = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }

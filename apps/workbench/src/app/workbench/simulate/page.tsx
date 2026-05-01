@@ -14,6 +14,7 @@ import type { FeatureImpact } from "@/lib/mock-data";
 import type { SimulateResponse, StageResult } from "@/app/api/simulate/route";
 import type { VerifyResponse } from "@/app/api/simulate/verify/route";
 import { useSimulateStore } from "@/lib/stores/simulate-store";
+import { analytics } from "@/lib/analytics";
 
 // ── Stage definitions ─────────────────────────────────────────────────────
 
@@ -214,6 +215,14 @@ export default function SimulatePage() {
       setHot(data);
       setRunState(data.collector.ok && data.orchestrator.ok ? "done" : "error");
 
+      analytics.simulation_run({
+        scenario_id: selected.id,
+        verdict: data.verdict ?? "unknown",
+        execution_path: data.execution_path ?? "",
+        latency_ms: data.total_latency_ms ?? 0,
+        escalated: data.escalated ?? false,
+      });
+
       // Persist to cross-navigation history
       pushRun({
         ts: Date.now(),
@@ -281,13 +290,21 @@ export default function SimulatePage() {
     const ok = latencies.filter(v => v >= 0).sort((a, b) => a - b);
     const errors = latencies.filter(v => v < 0).length;
     const pct = (p: number) => ok[Math.round((p / 100) * (ok.length - 1)) | 0] ?? 0;
-    setBatchResult({
+    const result = {
       n: BATCH_N,
       min: ok[0] ?? 0,
       p50: pct(50),
       p95: pct(95),
       p99: pct(99),
       max: ok.at(-1) ?? 0,
+      errors,
+    };
+    setBatchResult(result);
+    analytics.batch_simulation_run({
+      scenario_id: selected.id,
+      n: BATCH_N,
+      p95_ms: result.p95,
+      p99_ms: result.p99,
       errors,
     });
     setBatchState("done");

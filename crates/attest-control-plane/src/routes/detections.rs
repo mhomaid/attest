@@ -1,13 +1,13 @@
 //! GET  /v1/detections/fired  — returns all rows currently in every det_* view
 //! GET  /v1/ws/alerts          — WebSocket: streams new fired rows in real time
 
+use axum::extract::ws::{Message, WebSocket};
 use axum::{
-    Json,
     extract::{State, WebSocketUpgrade},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
-use axum::extract::ws::{Message, WebSocket};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -16,12 +16,12 @@ use crate::state::AppState;
 /// Shape of one fired detection row (mirrors the det_* view SELECT).
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct FiredAlert {
-    pub detection_id:   String,
-    pub event_id:       String,
+    pub detection_id: String,
+    pub event_id: String,
     pub actor_user_name: String,
-    pub cloud_region:   String,
-    pub severity:       String,
-    pub fired_at:       String,
+    pub cloud_region: String,
+    pub severity: String,
+    pub fired_at: String,
 }
 
 /// Return all rows from every `det_*` materialized view in RisingWave.
@@ -34,15 +34,16 @@ pub struct FiredAlert {
     ),
     tag = "detections"
 )]
-pub async fn get_detections_fired(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn get_detections_fired(State(state): State<AppState>) -> impl IntoResponse {
     match fetch_all_fired(&state).await {
         Ok(alerts) => (StatusCode::OK, Json(serde_json::to_value(alerts).unwrap())).into_response(),
         Err(e) => {
             tracing::error!("detections/fired error: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR,
-             Json(serde_json::json!({"error": e.to_string()}))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response()
         }
     }
 }
@@ -79,12 +80,12 @@ pub async fn fetch_all_fired(state: &AppState) -> anyhow::Result<Vec<FiredAlert>
             Ok(rows) => {
                 for row in rows {
                     alerts.push(FiredAlert {
-                        detection_id:    row.get(0),
-                        event_id:        row.get(1),
+                        detection_id: row.get(0),
+                        event_id: row.get(1),
                         actor_user_name: row.try_get(2).unwrap_or_default(),
-                        cloud_region:    row.try_get(3).unwrap_or_default(),
-                        severity:        row.try_get(4).unwrap_or_else(|_| "medium".into()),
-                        fired_at:        row.try_get(5).unwrap_or_default(),
+                        cloud_region: row.try_get(3).unwrap_or_default(),
+                        severity: row.try_get(4).unwrap_or_else(|_| "medium".into()),
+                        fired_at: row.try_get(5).unwrap_or_default(),
                     });
                 }
             }
@@ -103,10 +104,7 @@ pub async fn fetch_all_fired(state: &AppState) -> anyhow::Result<Vec<FiredAlert>
 
 /// Upgrade the connection to a WebSocket.  Each connected client receives
 /// every new alert broadcast by the background polling task.
-pub async fn ws_alerts(
-    ws:             WebSocketUpgrade,
-    State(state):   State<AppState>,
-) -> impl IntoResponse {
+pub async fn ws_alerts(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 

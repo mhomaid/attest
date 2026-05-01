@@ -16,20 +16,17 @@ use crate::error::HeliqlError;
 /// Column mapping: HELIQL dotted field → flat SQL column name.
 fn field_to_column(field: &str) -> String {
     match field {
-        "event.cloud_region"   | "cloud_region"       => "cloud_region".into(),
-        "event.cloud_account"  | "cloud_account_uid"  => "cloud_account_uid".into(),
-        "event.severity"       | "severity"           => "severity".into(),
-        "event.auth_status"    | "event.outcome"
-        | "auth_status"                               => "auth_status".into(),
-        "event.api_operation"  | "event.activity"
-        | "api_operation"                             => "api_operation".into(),
-        "event.api_service"    | "api_service"        => "api_service".into(),
-        "event.class"          | "class_uid"          => "class_uid".into(),
-        "event.time"           | "time"               => "\"time\"".into(),
-        "identity.user"        | "identity.user.name"
-        | "actor_user_name"                           => "actor_user_name".into(),
-        "event.source.country"                        => "cloud_region".into(),
-        "event.cloud_provider"                        => "'aws'".into(),
+        "event.cloud_region" | "cloud_region" => "cloud_region".into(),
+        "event.cloud_account" | "cloud_account_uid" => "cloud_account_uid".into(),
+        "event.severity" | "severity" => "severity".into(),
+        "event.auth_status" | "event.outcome" | "auth_status" => "auth_status".into(),
+        "event.api_operation" | "event.activity" | "api_operation" => "api_operation".into(),
+        "event.api_service" | "api_service" => "api_service".into(),
+        "event.class" | "class_uid" => "class_uid".into(),
+        "event.time" | "time" => "\"time\"".into(),
+        "identity.user" | "identity.user.name" | "actor_user_name" => "actor_user_name".into(),
+        "event.source.country" => "cloud_region".into(),
+        "event.cloud_provider" => "'aws'".into(),
         other => other.replace('.', "_"),
     }
 }
@@ -38,8 +35,8 @@ fn field_to_column(field: &str) -> String {
 fn duration_to_interval(d: &crate::ast::Duration) -> String {
     use crate::ast::DurationUnit;
     match d.unit {
-        DurationUnit::Days    => format!("{} days",    d.value),
-        DurationUnit::Hours   => format!("{} hours",   d.value),
+        DurationUnit::Days => format!("{} days", d.value),
+        DurationUnit::Hours => format!("{} hours", d.value),
         DurationUnit::Minutes => format!("{} minutes", d.value),
         DurationUnit::Seconds => format!("{} seconds", d.value),
     }
@@ -47,8 +44,8 @@ fn duration_to_interval(d: &crate::ast::Duration) -> String {
 
 fn value_to_sql(v: &Value) -> String {
     match v {
-        Value::Str(s)   => format!("'{s}'"),
-        Value::Int(i)   => i.to_string(),
+        Value::Str(s) => format!("'{s}'"),
+        Value::Int(i) => i.to_string(),
         Value::Float(f) => f.to_string(),
         Value::Field(f) => field_to_column(f),
     }
@@ -66,7 +63,11 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
             let col = field_to_column(field);
             match rhs {
                 InRhs::List(values) => {
-                    let list = values.iter().map(value_to_sql).collect::<Vec<_>>().join(", ");
+                    let list = values
+                        .iter()
+                        .map(value_to_sql)
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     Ok(format!("{col} IN ({list})"))
                 }
                 // baseline(entity, window) — use a self-join to avoid entity_baselines
@@ -74,7 +75,7 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
                 // EXISTS means the current field value WAS seen before.
                 InRhs::Baseline(b) => {
                     let entity_col = field_to_column(&b.field);
-                    let interval   = duration_to_interval(&b.window);
+                    let interval = duration_to_interval(&b.window);
                     Ok(format!(
                         "EXISTS (\
                             SELECT 1 FROM cloudtrail_events prior \
@@ -92,13 +93,17 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
             let col = field_to_column(field);
             match rhs {
                 InRhs::List(values) => {
-                    let list = values.iter().map(value_to_sql).collect::<Vec<_>>().join(", ");
+                    let list = values
+                        .iter()
+                        .map(value_to_sql)
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     Ok(format!("{col} NOT IN ({list})"))
                 }
                 // NOT IN baseline → region was NOT seen before → anomaly
                 InRhs::Baseline(b) => {
                     let entity_col = field_to_column(&b.field);
-                    let interval   = duration_to_interval(&b.window);
+                    let interval = duration_to_interval(&b.window);
                     Ok(format!(
                         "NOT EXISTS (\
                             SELECT 1 FROM cloudtrail_events prior \
@@ -112,7 +117,12 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
             }
         }
 
-        ConditionAtom::Unique { field, window, op, threshold } => {
+        ConditionAtom::Unique {
+            field,
+            window,
+            op,
+            threshold,
+        } => {
             let col = field_to_column(field);
             let interval = window.to_interval_sql();
             // Rewrite as: (SELECT count(DISTINCT field) FROM cloudtrail_events
@@ -132,13 +142,19 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
 
 fn condition_to_sql(cond: &Condition) -> Result<String, HeliqlError> {
     match cond {
-        Condition::Single(atom)  => atom_to_sql(atom),
-        Condition::And(atoms)    => {
-            let parts = atoms.iter().map(atom_to_sql).collect::<Result<Vec<_>, _>>()?;
+        Condition::Single(atom) => atom_to_sql(atom),
+        Condition::And(atoms) => {
+            let parts = atoms
+                .iter()
+                .map(atom_to_sql)
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(" AND ")))
         }
-        Condition::Or(atoms)     => {
-            let parts = atoms.iter().map(atom_to_sql).collect::<Result<Vec<_>, _>>()?;
+        Condition::Or(atoms) => {
+            let parts = atoms
+                .iter()
+                .map(atom_to_sql)
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(" OR ")))
         }
     }

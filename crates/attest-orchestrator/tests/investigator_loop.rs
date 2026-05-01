@@ -2,11 +2,13 @@
 //!
 //! Run: `cargo test -p attest-orchestrator --test investigator_loop`
 
-use attest_inference_router::{ChatClient, ChatRequest, ChatResponse, FinishReason, ToolCall, Usage};
+use async_trait::async_trait;
+use attest_inference_router::{
+    ChatClient, ChatRequest, ChatResponse, FinishReason, ToolCall, Usage,
+};
 use attest_orchestrator::guardrails::EnforcementMode;
 use attest_orchestrator::llm_loop::run_investigator_llm_loop;
 use attest_orchestrator::mcp_client::McpClient;
-use async_trait::async_trait;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -104,12 +106,14 @@ async fn investigator_calls_warm_tier_then_verdict() {
             "query_warm_tier",
             json!({"sql": "SELECT 1", "limit": 10}),
         ),
-        final_json(r#"{
+        final_json(
+            r#"{
             "verdict": "true_positive",
             "confidence": 0.91,
             "reasoning": "Warm tier shows activity [evidence:warm_1].",
             "evidence_citations": ["warm_1"]
-        }"#),
+        }"#,
+        ),
     ]);
 
     let prompt = "Investigator system prompt";
@@ -127,6 +131,7 @@ async fn investigator_calls_warm_tier_then_verdict() {
         8,
         Uuid::new_v4(),
         Some(EnforcementMode::Off),
+        None,
         None,
     )
     .await

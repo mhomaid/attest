@@ -33,25 +33,45 @@ use std::time::Duration;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum ChatMessage {
-    System { content: String },
-    User { content: String },
-    Assistant { content: String, tool_calls: Option<Vec<ToolCall>> },
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: String,
+        tool_calls: Option<Vec<ToolCall>>,
+    },
     /// Tool result message returned after executing a tool call.
-    Tool { tool_call_id: String, content: String },
+    Tool {
+        tool_call_id: String,
+        content: String,
+    },
 }
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
-        Self::System { content: content.into() }
+        Self::System {
+            content: content.into(),
+        }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self::User { content: content.into() }
+        Self::User {
+            content: content.into(),
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self::Assistant { content: content.into(), tool_calls: None }
+        Self::Assistant {
+            content: content.into(),
+            tool_calls: None,
+        }
     }
     pub fn tool_result(id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self::Tool { tool_call_id: id.into(), content: content.into() }
+        Self::Tool {
+            tool_call_id: id.into(),
+            content: content.into(),
+        }
     }
 }
 
@@ -85,7 +105,12 @@ pub struct ChatRequest {
 
 impl ChatRequest {
     pub fn new(messages: Vec<ChatMessage>, tools: Vec<ToolDef>) -> Self {
-        Self { messages, tools, max_tokens: 2048, temperature: 0.1 }
+        Self {
+            messages,
+            tools,
+            max_tokens: 2048,
+            temperature: 0.1,
+        }
     }
 }
 
@@ -183,10 +208,11 @@ pub fn from_env() -> Result<Box<dyn ChatClient>> {
             )))
         }
         "anthropic" => {
-            let api_key = std::env::var("ANTHROPIC_API_KEY")
-                .map_err(|_| anyhow::anyhow!("ANTHROPIC_API_KEY must be set when ATTEST_LLM_PROVIDER=anthropic"))?;
-            let model = std::env::var("ATTEST_LLM_MODEL")
-                .unwrap_or_else(|_| "claude-sonnet-4-5".into());
+            let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+                anyhow::anyhow!("ANTHROPIC_API_KEY must be set when ATTEST_LLM_PROVIDER=anthropic")
+            })?;
+            let model =
+                std::env::var("ATTEST_LLM_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5".into());
             tracing::info!(model, "LLM provider: anthropic");
             Ok(Box::new(anthropic::AnthropicClient::new(api_key, model)))
         }

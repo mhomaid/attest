@@ -22,7 +22,7 @@ use generator::{RunConfig, Scenario};
 #[derive(Parser, Debug)]
 #[command(
     name = "attest-load-gen",
-    about = "Direct-to-Kafka load generator for the Attest platform",
+    about = "Direct-to-Kafka load generator for the Attest platform"
 )]
 pub struct Cli {
     #[arg(long, env = "KAFKA_BROKERS", default_value = "redpanda:9092")]
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
         let scenario = match cli.scenario.as_str() {
             "attack" => Scenario::Attack,
             "benign" => Scenario::Benign,
-            _        => Scenario::Mixed,
+            _ => Scenario::Mixed,
         };
         let cfg = RunConfig {
             rate,
@@ -83,7 +83,9 @@ async fn main() -> anyhow::Result<()> {
         };
 
         tracing::info!(
-            rate, duration = cli.duration, triage_pct = cli.triage_pct,
+            rate,
+            duration = cli.duration,
+            triage_pct = cli.triage_pct,
             "starting run-mode benchmark"
         );
 
@@ -113,11 +115,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // ── Server mode ───────────────────────────────────────────────────────────
-    let state: control::SharedState = Arc::new(RwLock::new(
-        control::AppState::new(cli.brokers.clone(), cli.orchestrator_url),
-    ));
+    let state: control::SharedState = Arc::new(RwLock::new(control::AppState::new(
+        cli.brokers.clone(),
+        cli.orchestrator_url,
+    )));
 
-    let app  = control::build_router(state);
+    let app = control::build_router(state);
     let addr = format!("0.0.0.0:{}", cli.port);
     tracing::info!("attest-load-gen listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr)

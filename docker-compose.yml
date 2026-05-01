@@ -62,7 +62,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Creates the attest-warm bucket on first start.
+  # Creates required MinIO buckets on first start.
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -73,7 +73,8 @@ services:
         mc alias set local http://minio:9000 minioadmin minioadmin;
         mc mb --ignore-existing local/attest-warm;
         mc policy set public local/attest-warm;
-        echo 'MinIO bucket ready';
+        mc mb --ignore-existing local/risingwave;
+        echo 'MinIO buckets ready';
       "
     restart: on-failure
 
@@ -108,13 +109,20 @@ services:
       - ./infra/tempo/tempo.yaml:/etc/tempo.yaml:ro
       - tempo-data:/var/tempo
 
-  # Playground mode is in-memory only; a volume here would not preserve MV/catalog state.
-  # For durable RisingWave, replace with standalone + object store (see RisingWave Docker Compose docs).
   risingwave:
     image: risingwavelabs/risingwave:latest
-    command: playground
+    command: single-node
+    environment:
+      # Durable state: Hummock SST files stored in MinIO; catalog/meta stored on local volume.
+      RW_STATE_STORE: hummock+minio://minioadmin:minioadmin@minio:9000/risingwave
+      RW_DATA_DIRECTORY: attest-data
     ports:
       - "4566:4566"
+    volumes:
+      - risingwave-data:/data
+    depends_on:
+      minio:
+        condition: service_healthy
 
   arroyo:
     image: ghcr.io/arroyosystems/arroyo:latest
@@ -306,6 +314,7 @@ services:
       INVESTIGATOR_PROMPT_PATH: /agents/investigator/system_prompt_v1.md
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-orchestrator
+      KAFKA_BROKERS: redpanda:9092
       # Must override `.env` (which uses 127.0.0.1 for native runs). Unsloth runs on the host.
       ATTEST_LLM_BASE_URL: ${ATTEST_LLM_DOCKER_BASE_URL:-http://host.docker.internal:8888/v1}
     volumes:
@@ -316,6 +325,28 @@ services:
       - calibration-sidecar
       - mcp-gateway
       - tempo
+      - redpanda
+    profiles:
+      - platform
+
+  ws-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/ws-gateway.Dockerfile
+    ports:
+      - "4500:4500"
+    env_file:
+      - .env
+    environment:
+      ATTEST_WS_GATEWAY_PORT: "4500"
+      KAFKA_BROKERS: redpanda:9092
+      DATABASE_URL: postgres://attest:attest@postgres:5432/attest
+      ATTEST_WS_JWT_SECRET: ${ATTEST_WS_JWT_SECRET:-dev-ws-jwt-secret-change-me}
+      ATTEST_TRACE_WRITER_GROUP_ID: ${ATTEST_TRACE_WRITER_GROUP_ID:-attest-trace-writer}
+      ATTEST_TRACE_WRITER_OFFSET_RESET: ${ATTEST_TRACE_WRITER_OFFSET_RESET:-latest}
+    depends_on:
+      - redpanda
+      - postgres
     profiles:
       - platform
 
@@ -373,3 +404,4 @@ volumes:
   tempo-data:
   llama-models:
   attestation-log:
+  risingwave-data:

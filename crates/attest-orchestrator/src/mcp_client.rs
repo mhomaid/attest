@@ -71,8 +71,8 @@ impl McpClient {
     }
 
     pub fn from_env() -> Self {
-        let url = std::env::var("MCP_GATEWAY_URL")
-            .unwrap_or_else(|_| "http://localhost:4242".into());
+        let url =
+            std::env::var("MCP_GATEWAY_URL").unwrap_or_else(|_| "http://localhost:4242".into());
         Self::new(url)
     }
 
@@ -118,7 +118,9 @@ impl McpClient {
 
         let latency_ms = t0.elapsed().as_millis() as u64;
         let status = http_resp.status();
-        let resp: InvokeResponse = http_resp.json().await
+        let resp: InvokeResponse = http_resp
+            .json()
+            .await
             .context("failed to parse MCP gateway response")?;
 
         let policy_str = match &resp.call_log.policy_decision {
@@ -127,7 +129,7 @@ impl McpClient {
         };
 
         let args_hash = hex::encode(Sha256::digest(
-            serde_json::to_string(args).unwrap_or_default()
+            serde_json::to_string(args).unwrap_or_default(),
         ));
         let result_hash = resp.call_log.result_hash.clone();
 

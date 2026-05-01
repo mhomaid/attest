@@ -7,6 +7,8 @@ import {
   MoreVerticalIcon,
   UserCircleIcon,
 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 
 import {
   Avatar,
@@ -28,6 +30,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { authClient } from "@/lib/auth-client"
 
 export function NavUser({
   user,
@@ -39,6 +42,19 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
+  const router = useRouter()
+  const [signingOut, setSigningOut] = useState(false)
+
+  async function signOut() {
+    setSigningOut(true)
+    try {
+      await authClient.signOut()
+    } finally {
+      await fetch("/api/auth/force-logout", { method: "POST" })
+      router.replace("/login")
+      router.refresh()
+    }
+  }
 
   return (
     <SidebarMenu>
@@ -98,9 +114,15 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={signingOut}
+              onSelect={(event) => {
+                event.preventDefault()
+                void signOut()
+              }}
+            >
               <LogOutIcon />
-              Log out
+              {signingOut ? "Logging out…" : "Log out"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

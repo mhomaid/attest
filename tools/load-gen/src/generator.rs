@@ -111,13 +111,29 @@ impl RunHandle {
             sent,
             errors: self.errors.load(Ordering::Relaxed),
             elapsed_secs: elapsed,
-            rate_actual: if elapsed > 0.0 { sent as f64 / elapsed } else { 0.0 },
+            rate_actual: if elapsed > 0.0 {
+                sent as f64 / elapsed
+            } else {
+                0.0
+            },
             p50_ms: hist.value_at_quantile(0.50) as f64 / 1000.0,
             p95_ms: hist.value_at_quantile(0.95) as f64 / 1000.0,
             p99_ms: hist.value_at_quantile(0.99) as f64 / 1000.0,
-            triage_p50_ms: if ts > 0 { th.value_at_quantile(0.50) as f64 / 1000.0 } else { 0.0 },
-            triage_p95_ms: if ts > 0 { th.value_at_quantile(0.95) as f64 / 1000.0 } else { 0.0 },
-            triage_p99_ms: if ts > 0 { th.value_at_quantile(0.99) as f64 / 1000.0 } else { 0.0 },
+            triage_p50_ms: if ts > 0 {
+                th.value_at_quantile(0.50) as f64 / 1000.0
+            } else {
+                0.0
+            },
+            triage_p95_ms: if ts > 0 {
+                th.value_at_quantile(0.95) as f64 / 1000.0
+            } else {
+                0.0
+            },
+            triage_p99_ms: if ts > 0 {
+                th.value_at_quantile(0.99) as f64 / 1000.0
+            } else {
+                0.0
+            },
             triage_samples: ts,
         }
     }
@@ -133,19 +149,21 @@ pub async fn start_run(
     cfg: RunConfig,
     orchestrator_url: Option<String>,
 ) -> Result<RunHandle> {
-    let sent        = Arc::new(AtomicU64::new(0));
-    let errors      = Arc::new(AtomicU64::new(0));
-    let running     = Arc::new(AtomicBool::new(true));
-    let hist        = Arc::new(Mutex::new(Histogram::new(3).expect("histogram")));
+    let sent = Arc::new(AtomicU64::new(0));
+    let errors = Arc::new(AtomicU64::new(0));
+    let running = Arc::new(AtomicBool::new(true));
+    let hist = Arc::new(Mutex::new(Histogram::new(3).expect("histogram")));
     let triage_hist = Arc::new(Mutex::new(Histogram::new(3).expect("triage histogram")));
     let triage_samples = Arc::new(AtomicU64::new(0));
 
     // Build tenant/user pairs
     let tenants: Vec<(String, String)> = (0..cfg.tenants)
-        .map(|i| (
-            format!("tenant-{:03}", i),
-            format!("user-{:03}@acme.example.com", i),
-        ))
+        .map(|i| {
+            (
+                format!("tenant-{:03}", i),
+                format!("user-{:03}@acme.example.com", i),
+            )
+        })
         .collect();
 
     // Pre-seed baselines if requested
@@ -166,18 +184,18 @@ pub async fn start_run(
 
     // Spawn Kafka producer tasks
     for producer_id in 0..N_PRODUCERS {
-        let brokers   = brokers.clone();
-        let sent      = sent.clone();
-        let errors    = errors.clone();
-        let running   = running.clone();
-        let hist      = hist.clone();
-        let tenants   = tenants.clone();
-        let scenario  = cfg.scenario.clone();
+        let brokers = brokers.clone();
+        let sent = sent.clone();
+        let errors = errors.clone();
+        let running = running.clone();
+        let hist = hist.clone();
+        let tenants = tenants.clone();
+        let scenario = cfg.scenario.clone();
         // Triage sampling state shared with the producer tasks
-        let triage_hist    = triage_hist.clone();
+        let triage_hist = triage_hist.clone();
         let triage_samples = triage_samples.clone();
-        let triage_pct     = cfg.sampled_triage_pct;
-        let orch_url       = orchestrator_url.clone();
+        let triage_pct = cfg.sampled_triage_pct;
+        let orch_url = orchestrator_url.clone();
 
         tokio::spawn(async move {
             if let Err(e) = produce_loop(
@@ -213,7 +231,15 @@ pub async fn start_run(
         });
     }
 
-    Ok(RunHandle { sent, errors, running, started_at, hist, triage_hist, triage_samples })
+    Ok(RunHandle {
+        sent,
+        errors,
+        running,
+        started_at,
+        hist,
+        triage_hist,
+        triage_samples,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -254,35 +280,48 @@ async fn produce_loop(
     let mut seq: u64 = 0;
 
     loop {
-        if !running.load(Ordering::Relaxed) { break; }
+        if !running.load(Ordering::Relaxed) {
+            break;
+        }
         interval.tick().await;
-        if !running.load(Ordering::Relaxed) { break; }
+        if !running.load(Ordering::Relaxed) {
+            break;
+        }
 
         let (tenant_id, user_name) = &tenants[idx % tenants.len()];
         idx = (idx + 1) % tenants.len();
 
         let event = match scenario {
-            Scenario::Mixed   => scenarios::pick_event(tenant_id, user_name),
-            Scenario::Attack  => scenarios::geo_anomaly(tenant_id, user_name),
-            Scenario::Benign  => scenarios::benign_login(tenant_id, user_name),
+            Scenario::Mixed => scenarios::pick_event(tenant_id, user_name),
+            Scenario::Attack => scenarios::geo_anomaly(tenant_id, user_name),
+            Scenario::Benign => scenarios::benign_login(tenant_id, user_name),
         };
 
-        let key     = event.tenant_id.clone();
+        let key = event.tenant_id.clone();
         let payload = match serde_json::to_string(&event) {
             Ok(p) => p,
-            Err(e) => { warn!("serialize error: {e}"); errors.fetch_add(1, Ordering::Relaxed); continue; }
+            Err(e) => {
+                warn!("serialize error: {e}");
+                errors.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
         };
 
         // Kafka publish
         let t0 = Instant::now();
         match producer
-            .send(FutureRecord::to(TOPIC).key(&key).payload(&payload), Duration::from_secs(5))
+            .send(
+                FutureRecord::to(TOPIC).key(&key).payload(&payload),
+                Duration::from_secs(5),
+            )
             .await
         {
             Ok(_) => {
                 let lat_us = t0.elapsed().as_micros() as u64;
                 sent.fetch_add(1, Ordering::Relaxed);
-                let _ = hist.lock().map(|mut h| { let _ = h.record(lat_us); });
+                let _ = hist.lock().map(|mut h| {
+                    let _ = h.record(lat_us);
+                });
                 debug!(producer = id, "produced event");
             }
             Err((e, _)) => {
@@ -295,11 +334,11 @@ async fn produce_loop(
         seq += 1;
         if triage_pct > 0 && seq % 100 < triage_pct as u64 {
             if let Some(ref url) = orch_url {
-                let url     = format!("{url}/triage");
-                let body    = payload.clone();
-                let http    = http.clone();
-                let th      = triage_hist.clone();
-                let ts      = triage_samples.clone();
+                let url = format!("{url}/triage");
+                let body = payload.clone();
+                let http = http.clone();
+                let th = triage_hist.clone();
+                let ts = triage_samples.clone();
                 tokio::spawn(async move {
                     let t0 = Instant::now();
                     if http.post(&url)
@@ -332,7 +371,10 @@ async fn seed_baselines(brokers: &str, tenants: &[(String, String)]) {
         .create()
     {
         Ok(p) => p,
-        Err(e) => { warn!("seed producer create failed: {e}"); return; }
+        Err(e) => {
+            warn!("seed producer create failed: {e}");
+            return;
+        }
     };
 
     let mut count = 0u64;
@@ -341,7 +383,12 @@ async fn seed_baselines(brokers: &str, tenants: &[(String, String)]) {
             let event = scenarios::benign_login(tenant_id, user_name);
             if let Ok(payload) = serde_json::to_string(&event) {
                 let _ = producer
-                    .send(FutureRecord::to(TOPIC).key(tenant_id.as_str()).payload(&payload), Duration::from_secs(5))
+                    .send(
+                        FutureRecord::to(TOPIC)
+                            .key(tenant_id.as_str())
+                            .payload(&payload),
+                        Duration::from_secs(5),
+                    )
                     .await;
                 count += 1;
             }

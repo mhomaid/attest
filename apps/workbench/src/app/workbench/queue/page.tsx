@@ -3,7 +3,10 @@ import Link from "next/link";
 import { AlertQueueLive } from "@/components/workbench/alert-queue";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { parseFiredDetections } from "@/lib/detection-to-alert";
+import { getCase } from "@/lib/server/case-repository";
 import type { Alert } from "@/lib/mock-data";
+
+export const dynamic = "force-dynamic";
 
 const CP_URL          = process.env.CONTROL_PLANE_URL  ?? "http://localhost:8080";
 const ARROYO_URL      = process.env.ARROYO_URL         ?? "http://localhost:5115";
@@ -22,14 +25,33 @@ async function fetchLiveAlerts(): Promise<{ alerts: Alert[]; status: LiveStatus 
   try {
     const res = await fetch(`${CP_URL}/v1/detections/fired`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(1500),
     });
     if (!res.ok) return { alerts: [], status: "offline" };
     const data = await res.json();
-    const alerts = parseFiredDetections(data);
+    const parsed = parseFiredDetections(data);
+    const availability = await Promise.all(
+      parsed.map(async (alert) => isCaseAvailable(alert.caseId)),
+    );
+    const alerts = parsed.filter((_, index) => availability[index]);
     return { alerts, status: alerts.length > 0 ? "live" : "connected" };
   } catch {
     return { alerts: [], status: "offline" };
+  }
+}
+
+async function isCaseAvailable(caseId: string): Promise<boolean> {
+  const persisted = await getCase(caseId).catch(() => null);
+  if (persisted?.event) return true;
+
+  try {
+    const res = await fetch(`${CP_URL}/v1/events/recent?id=${encodeURIComponent(caseId)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(700),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -37,7 +59,7 @@ async function fetchArroyoPipelines(): Promise<{ name: string; state: string }[]
   try {
     const res = await fetch(`${ARROYO_URL}/api/v1/pipelines`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(1500),
     });
     if (!res.ok) return [];
     const body = await res.json();

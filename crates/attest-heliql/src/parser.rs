@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::error::HeliqlError;
-use pest::Parser;
 use pest::iterators::Pair;
+use pest::Parser;
 
 #[derive(pest_derive::Parser)]
 #[grammar = "src/grammar.pest"]
@@ -80,9 +80,7 @@ fn parse_detection_block(pair: Pair<Rule>) -> Result<Detection, HeliqlError> {
                 conditions.extend(parse_where_list(inner)?);
             }
             Rule::severity_kw => {
-                severity = parse_severity(
-                    inner.into_inner().next().unwrap().as_str(),
-                )?;
+                severity = parse_severity(inner.into_inner().next().unwrap().as_str())?;
             }
             Rule::mitre_kw => {
                 for item in inner.into_inner() {
@@ -139,9 +137,7 @@ fn parse_condition_expr(pair: Pair<Rule>) -> Result<Condition, HeliqlError> {
             Ok(Condition::Or(atoms))
         }
         Rule::bool_atom => Ok(Condition::Single(parse_bool_atom(pair)?)),
-        Rule::condition_expr => {
-            parse_condition_expr(pair.into_inner().next().unwrap())
-        }
+        Rule::condition_expr => parse_condition_expr(pair.into_inner().next().unwrap()),
         other => Err(HeliqlError::ParseError(format!(
             "unexpected rule in condition_expr: {other:?}"
         ))),
@@ -159,30 +155,39 @@ fn parse_bool_atom(pair: Pair<Rule>) -> Result<ConditionAtom, HeliqlError> {
         Rule::cmp_expr => {
             let mut parts = inner.into_inner();
             let field = parts.next().unwrap().as_str().to_string();
-            let op    = parse_cmp_op(parts.next().unwrap().as_str())?;
+            let op = parse_cmp_op(parts.next().unwrap().as_str())?;
             let value = parse_value(parts.next().unwrap())?;
             Ok(ConditionAtom::Cmp { field, op, value })
         }
         Rule::in_expr => {
             let mut parts = inner.into_inner();
             let field = parts.next().unwrap().as_str().to_string();
-            let rhs   = parse_in_rhs(parts.next().unwrap())?;
+            let rhs = parse_in_rhs(parts.next().unwrap())?;
             Ok(ConditionAtom::In { field, rhs })
         }
         Rule::not_in_expr => {
             let mut parts = inner.into_inner();
             let field = parts.next().unwrap().as_str().to_string();
-            let rhs   = parse_in_rhs(parts.next().unwrap())?;
+            let rhs = parse_in_rhs(parts.next().unwrap())?;
             Ok(ConditionAtom::NotIn { field, rhs })
         }
         Rule::unique_expr => {
             let mut parts = inner.into_inner();
-            let field     = parts.next().unwrap().as_str().to_string();
-            let window    = parse_duration(parts.next().unwrap())?;
-            let op        = parse_cmp_op(parts.next().unwrap().as_str())?;
-            let threshold = parts.next().unwrap().as_str().parse::<i64>()
+            let field = parts.next().unwrap().as_str().to_string();
+            let window = parse_duration(parts.next().unwrap())?;
+            let op = parse_cmp_op(parts.next().unwrap().as_str())?;
+            let threshold = parts
+                .next()
+                .unwrap()
+                .as_str()
+                .parse::<i64>()
                 .map_err(|e| HeliqlError::ParseError(e.to_string()))?;
-            Ok(ConditionAtom::Unique { field, window, op, threshold })
+            Ok(ConditionAtom::Unique {
+                field,
+                window,
+                op,
+                threshold,
+            })
         }
         other => Err(HeliqlError::ParseError(format!(
             "unexpected bool_atom rule: {other:?}"
@@ -194,7 +199,7 @@ fn parse_in_rhs(pair: Pair<Rule>) -> Result<InRhs, HeliqlError> {
     match pair.as_rule() {
         Rule::baseline_expr => {
             let mut parts = pair.into_inner();
-            let field  = parts.next().unwrap().as_str().to_string();
+            let field = parts.next().unwrap().as_str().to_string();
             let window = parse_duration(parts.next().unwrap())?;
             Ok(InRhs::Baseline(BaselineRef { field, window }))
         }
@@ -213,14 +218,22 @@ fn parse_in_rhs(pair: Pair<Rule>) -> Result<InRhs, HeliqlError> {
 
 fn parse_duration(pair: Pair<Rule>) -> Result<Duration, HeliqlError> {
     let mut parts = pair.into_inner();
-    let value = parts.next().unwrap().as_str().parse::<i64>()
+    let value = parts
+        .next()
+        .unwrap()
+        .as_str()
+        .parse::<i64>()
         .map_err(|e| HeliqlError::ParseError(e.to_string()))?;
     let unit = match parts.next().unwrap().as_str() {
         "s" => DurationUnit::Seconds,
         "m" => DurationUnit::Minutes,
         "h" => DurationUnit::Hours,
         "d" => DurationUnit::Days,
-        u   => return Err(HeliqlError::ParseError(format!("unknown duration unit: {u}"))),
+        u => {
+            return Err(HeliqlError::ParseError(format!(
+                "unknown duration unit: {u}"
+            )))
+        }
     };
     Ok(Duration { value, unit })
 }
@@ -233,19 +246,25 @@ fn parse_value(pair: Pair<Rule>) -> Result<Value, HeliqlError> {
     };
     match inner.as_rule() {
         Rule::string_lit => Ok(Value::Str(strip_quotes(inner.as_str()))),
-        Rule::integer    => Ok(Value::Int(inner.as_str().parse().map_err(|e: std::num::ParseIntError| HeliqlError::ParseError(e.to_string()))?)),
-        Rule::number     => Ok(Value::Float(inner.as_str().parse().map_err(|e: std::num::ParseFloatError| HeliqlError::ParseError(e.to_string()))?)),
-        Rule::field_ref  => Ok(Value::Field(inner.as_str().to_string())),
-        other => Err(HeliqlError::ParseError(format!("unexpected value rule: {other:?}"))),
+        Rule::integer => Ok(Value::Int(inner.as_str().parse().map_err(
+            |e: std::num::ParseIntError| HeliqlError::ParseError(e.to_string()),
+        )?)),
+        Rule::number => Ok(Value::Float(inner.as_str().parse().map_err(
+            |e: std::num::ParseFloatError| HeliqlError::ParseError(e.to_string()),
+        )?)),
+        Rule::field_ref => Ok(Value::Field(inner.as_str().to_string())),
+        other => Err(HeliqlError::ParseError(format!(
+            "unexpected value rule: {other:?}"
+        ))),
     }
 }
 
 fn parse_cmp_op(s: &str) -> Result<CmpOp, HeliqlError> {
     match s {
-        "="  => Ok(CmpOp::Eq),
+        "=" => Ok(CmpOp::Eq),
         "!=" => Ok(CmpOp::Ne),
-        ">"  => Ok(CmpOp::Gt),
-        "<"  => Ok(CmpOp::Lt),
+        ">" => Ok(CmpOp::Gt),
+        "<" => Ok(CmpOp::Lt),
         ">=" => Ok(CmpOp::Gte),
         "<=" => Ok(CmpOp::Lte),
         other => Err(HeliqlError::ParseError(format!("unknown cmp_op: {other}"))),
@@ -255,27 +274,27 @@ fn parse_cmp_op(s: &str) -> Result<CmpOp, HeliqlError> {
 fn parse_severity(s: &str) -> Result<Severity, HeliqlError> {
     match s {
         "critical" => Ok(Severity::Critical),
-        "high"     => Ok(Severity::High),
-        "medium"   => Ok(Severity::Medium),
-        "low"      => Ok(Severity::Low),
-        "info"     => Ok(Severity::Info),
-        other => Err(HeliqlError::ParseError(format!("unknown severity: {other}"))),
+        "high" => Ok(Severity::High),
+        "medium" => Ok(Severity::Medium),
+        "low" => Ok(Severity::Low),
+        "info" => Ok(Severity::Info),
+        other => Err(HeliqlError::ParseError(format!(
+            "unknown severity: {other}"
+        ))),
     }
 }
 
 fn parse_runtime(s: &str) -> Result<Runtime, HeliqlError> {
     match s.trim() {
-        "stream"    => Ok(Runtime::Stream),
-        "batch"     => Ok(Runtime::Batch),
+        "stream" => Ok(Runtime::Stream),
+        "batch" => Ok(Runtime::Batch),
         "federated" => Ok(Runtime::Federated),
         other => Err(HeliqlError::ParseError(format!("unknown runtime: {other}"))),
     }
 }
 
 fn strip_quotes(s: &str) -> String {
-    if (s.starts_with('"') && s.ends_with('"'))
-        || (s.starts_with('\'') && s.ends_with('\''))
-    {
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()

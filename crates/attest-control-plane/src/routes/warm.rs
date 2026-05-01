@@ -1,6 +1,6 @@
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tracing::error;
 use utoipa::ToSchema;
 
@@ -85,11 +85,7 @@ async fn run_query(ch_url: &str, sql: &str) -> anyhow::Result<WarmQueryResponse>
     let rows: Vec<Vec<Value>> = json
         .get("data")
         .and_then(|d| d.as_array())
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|r| r.as_array().cloned())
-                .collect()
-        })
+        .map(|rows| rows.iter().filter_map(|r| r.as_array().cloned()).collect())
         .unwrap_or_default();
 
     let row_count = rows.len();

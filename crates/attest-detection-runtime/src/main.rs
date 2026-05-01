@@ -89,11 +89,13 @@ async fn main() -> Result<()> {
     );
 
     // ── Load rules ──────────────────────────────────────────────────────────
-    let detections = loader::load_rules(&cli.rules_dir)
-        .context("failed to load rules")?;
+    let detections = loader::load_rules(&cli.rules_dir).context("failed to load rules")?;
 
     if detections.is_empty() {
-        tracing::warn!("no rules found in {}; continuing anyway", cli.rules_dir.display());
+        tracing::warn!(
+            "no rules found in {}; continuing anyway",
+            cli.rules_dir.display()
+        );
     }
     info!("{} detections loaded", detections.len());
 
@@ -120,15 +122,18 @@ async fn main() -> Result<()> {
     info!("{deployed}/{} views deployed", detections.len());
 
     // ── Build Kafka producer ────────────────────────────────────────────────
-    let producer = poller::build_producer(&cli.kafka_brokers)
-        .context("Kafka producer creation failed")?;
+    let producer =
+        poller::build_producer(&cli.kafka_brokers).context("Kafka producer creation failed")?;
 
     let detection_ids: Vec<String> = detections.iter().map(|d| d.id.clone()).collect();
     let seen = poller::new_seen_alerts();
 
     // ── Poll loop ───────────────────────────────────────────────────────────
     let mut interval = tokio::time::interval(Duration::from_secs(cli.poll_interval_secs));
-    info!("polling every {}s for fired detections", cli.poll_interval_secs);
+    info!(
+        "polling every {}s for fired detections",
+        cli.poll_interval_secs
+    );
 
     loop {
         tokio::select! {

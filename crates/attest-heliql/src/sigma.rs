@@ -14,19 +14,19 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 struct SigmaRule {
-    title:       Option<String>,
+    title: Option<String>,
     description: Option<String>,
-    status:      Option<String>,
-    level:       Option<String>,
-    tags:        Option<Vec<String>>,
-    logsource:   Option<SigmaLogSource>,
-    detection:   Option<SigmaDetection>,
+    status: Option<String>,
+    level: Option<String>,
+    tags: Option<Vec<String>>,
+    logsource: Option<SigmaLogSource>,
+    detection: Option<SigmaDetection>,
 }
 
 #[derive(Debug, Deserialize)]
 struct SigmaLogSource {
-    product:  Option<String>,
-    service:  Option<String>,
+    product: Option<String>,
+    service: Option<String>,
     category: Option<String>,
 }
 
@@ -34,7 +34,7 @@ struct SigmaLogSource {
 struct SigmaDetection {
     #[serde(flatten)]
     selections: HashMap<String, serde_json::Value>,
-    condition:  Option<String>,
+    condition: Option<String>,
 }
 
 // ── Conversion ───────────────────────────────────────────────────────────────
@@ -44,8 +44,8 @@ struct SigmaDetection {
 /// The `id` parameter overrides the detection ID; if not supplied the Sigma
 /// `title` (slugified) is used.
 pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detection, HeliqlError> {
-    let sigma: SigmaRule = serde_yaml::from_str(yaml)
-        .map_err(|e| HeliqlError::SigmaConversionError(e.to_string()))?;
+    let sigma: SigmaRule =
+        serde_yaml::from_str(yaml).map_err(|e| HeliqlError::SigmaConversionError(e.to_string()))?;
 
     let id = id_override
         .map(|s| s.to_string())
@@ -58,7 +58,10 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
         .map(map_sigma_level)
         .unwrap_or(Severity::Medium);
 
-    let condition = sigma.detection.as_ref().and_then(|d| d.condition.as_deref());
+    let condition = sigma
+        .detection
+        .as_ref()
+        .and_then(|d| d.condition.as_deref());
     let description = merge_sigma_meta(
         sigma.description.clone(),
         sigma.status.as_deref(),
@@ -83,9 +86,13 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
     let applies_to = sigma.logsource.as_ref().and_then(|ls| {
         match (ls.product.as_deref(), ls.service.as_deref()) {
             (Some("aws"), Some("cloudtrail")) => Some("ocsf.authentication".to_string()),
-            (Some("okta"), _)                => Some("ocsf.authentication".to_string()),
+            (Some("okta"), _) => Some("ocsf.authentication".to_string()),
             (Some("azure") | Some("m365"), _) => Some("ocsf.authentication".to_string()),
-            _ if ls.category.as_deref().is_some_and(|c| c.eq_ignore_ascii_case("authentication")) => {
+            _ if ls
+                .category
+                .as_deref()
+                .is_some_and(|c| c.eq_ignore_ascii_case("authentication")) =>
+            {
                 Some("ocsf.authentication".to_string())
             }
             _ => None,
@@ -102,7 +109,9 @@ pub fn sigma_to_detection(yaml: &str, id_override: Option<&str>) -> Result<Detec
             if let Some(atoms) = sigma_selection_to_atoms(sel_value) {
                 match atoms.len() {
                     0 => {}
-                    1 => where_conditions.push(Condition::Single(atoms.into_iter().next().unwrap())),
+                    1 => {
+                        where_conditions.push(Condition::Single(atoms.into_iter().next().unwrap()))
+                    }
                     _ => where_conditions.push(Condition::And(atoms)),
                 }
             }
@@ -177,14 +186,14 @@ fn sigma_selection_to_atoms(val: &serde_json::Value) -> Option<Vec<ConditionAtom
 
 fn sigma_field_to_heliql(field: &str) -> String {
     match field {
-        "eventName"     | "EventName"    => "event.api_operation".into(),
-        "eventSource"                    => "event.api_service".into(),
-        "awsRegion"     | "AwsRegion"    => "event.cloud_region".into(),
-        "userAgent"                      => "user_agent".into(),
-        "sourceIPAddress"                => "source_ip".into(),
-        "userIdentity.type"              => "identity.type".into(),
-        "userIdentity.userName"          => "identity.user.name".into(),
-        "requestParameters.bucketName"   => "request.bucket_name".into(),
+        "eventName" | "EventName" => "event.api_operation".into(),
+        "eventSource" => "event.api_service".into(),
+        "awsRegion" | "AwsRegion" => "event.cloud_region".into(),
+        "userAgent" => "user_agent".into(),
+        "sourceIPAddress" => "source_ip".into(),
+        "userIdentity.type" => "identity.type".into(),
+        "userIdentity.userName" => "identity.user.name".into(),
+        "requestParameters.bucketName" => "request.bucket_name".into(),
         other => other.to_lowercase().replace('.', "_"),
     }
 }
@@ -192,10 +201,10 @@ fn sigma_field_to_heliql(field: &str) -> String {
 fn map_sigma_level(level: &str) -> Severity {
     match level {
         "critical" => Severity::Critical,
-        "high"     => Severity::High,
-        "medium"   => Severity::Medium,
-        "low"      => Severity::Low,
-        _          => Severity::Info,
+        "high" => Severity::High,
+        "medium" => Severity::Medium,
+        "low" => Severity::Low,
+        _ => Severity::Info,
     }
 }
 

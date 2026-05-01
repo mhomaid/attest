@@ -3,11 +3,13 @@
 //! Handles Anthropic's `content` block format (where tool use is a typed block,
 //! not a top-level `tool_calls` array) and normalises into the shared `ChatResponse`.
 
-use crate::{ChatClient, ChatMessage, ChatRequest, ChatResponse, FinishReason, ToolCall, ToolDef, Usage};
+use crate::{
+    ChatClient, ChatMessage, ChatRequest, ChatResponse, FinishReason, ToolCall, ToolDef, Usage,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value};
+use serde_json::Value;
 use std::time::Instant;
 
 // ── Wire types ────────────────────────────────────────────────────────────────
@@ -39,9 +41,18 @@ enum WireContent {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum WireContentBlock {
-    Text { text: String },
-    ToolUse { id: String, name: String, input: Value },
-    ToolResult { tool_use_id: String, content: String },
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -85,10 +96,15 @@ fn to_wire(msgs: &[ChatMessage]) -> (Option<String>, Vec<WireMessage>) {
                     content: WireContent::Text(content.clone()),
                 });
             }
-            ChatMessage::Assistant { content, tool_calls } => {
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
                 let mut blocks: Vec<WireContentBlock> = Vec::new();
                 if !content.is_empty() {
-                    blocks.push(WireContentBlock::Text { text: content.clone() });
+                    blocks.push(WireContentBlock::Text {
+                        text: content.clone(),
+                    });
                 }
                 if let Some(tcs) = tool_calls {
                     for tc in tcs {
@@ -113,7 +129,10 @@ fn to_wire(msgs: &[ChatMessage]) -> (Option<String>, Vec<WireMessage>) {
                     },
                 });
             }
-            ChatMessage::Tool { tool_call_id, content } => {
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+            } => {
                 // Anthropic tool results go as a user message with a tool_result block
                 out.push(WireMessage {
                     role: "user".into(),
@@ -130,11 +149,14 @@ fn to_wire(msgs: &[ChatMessage]) -> (Option<String>, Vec<WireMessage>) {
 }
 
 fn to_wire_tools(tools: &[ToolDef]) -> Vec<WireTool> {
-    tools.iter().map(|t| WireTool {
-        name: t.name.clone(),
-        description: t.description.clone(),
-        input_schema: t.parameters.clone(),
-    }).collect()
+    tools
+        .iter()
+        .map(|t| WireTool {
+            name: t.name.clone(),
+            description: t.description.clone(),
+            input_schema: t.parameters.clone(),
+        })
+        .collect()
 }
 
 fn parse_finish_reason(s: Option<&str>) -> FinishReason {
@@ -183,8 +205,12 @@ impl AnthropicClient {
 
 #[async_trait]
 impl ChatClient for AnthropicClient {
-    fn provider(&self) -> &str { "anthropic" }
-    fn model_id(&self) -> &str { &self.model }
+    fn provider(&self) -> &str {
+        "anthropic"
+    }
+    fn model_id(&self) -> &str {
+        &self.model
+    }
 
     async fn chat(&self, req: ChatRequest) -> Result<ChatResponse> {
         let t0 = Instant::now();
@@ -199,7 +225,8 @@ impl ChatClient for AnthropicClient {
             temperature: req.temperature,
         };
 
-        let http_resp = self.client
+        let http_resp = self
+            .client
             .post(&self.endpoint)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -209,7 +236,10 @@ impl ChatClient for AnthropicClient {
             .context("Anthropic: HTTP request failed")?;
 
         let status = http_resp.status();
-        let body: Value = http_resp.json().await.context("Anthropic: failed to parse response")?;
+        let body: Value = http_resp
+            .json()
+            .await
+            .context("Anthropic: failed to parse response")?;
 
         if !status.is_success() {
             anyhow::bail!("Anthropic API error {status}: {body}");
@@ -224,22 +254,31 @@ impl ChatClient for AnthropicClient {
         for block in wire.content {
             match block {
                 WireContentBlock::Text { text } => {
-                    if !content_text.is_empty() { content_text.push('\n'); }
+                    if !content_text.is_empty() {
+                        content_text.push('\n');
+                    }
                     content_text.push_str(&text);
                 }
                 WireContentBlock::ToolUse { id, name, input } => {
-                    tool_calls.push(ToolCall { id, name, arguments: input });
+                    tool_calls.push(ToolCall {
+                        id,
+                        name,
+                        arguments: input,
+                    });
                 }
                 WireContentBlock::ToolResult { .. } => {}
             }
         }
 
         let finish_reason = parse_finish_reason(wire.stop_reason.as_deref());
-        let usage = wire.usage.map(|u| Usage {
-            prompt_tokens: u.input_tokens,
-            completion_tokens: u.output_tokens,
-            total_tokens: u.input_tokens + u.output_tokens,
-        }).unwrap_or_default();
+        let usage = wire
+            .usage
+            .map(|u| Usage {
+                prompt_tokens: u.input_tokens,
+                completion_tokens: u.output_tokens,
+                total_tokens: u.input_tokens + u.output_tokens,
+            })
+            .unwrap_or_default();
 
         Ok(ChatResponse {
             content: content_text,
@@ -257,7 +296,10 @@ impl ChatClient for AnthropicClient {
 mod tests {
     use super::*;
     use serde_json::json;
-    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     fn tool_def() -> ToolDef {
         ToolDef {
@@ -282,10 +324,7 @@ mod tests {
 
         let client = AnthropicClient::new("test-key", "claude-sonnet-4-5")
             .with_endpoint(format!("{}/v1/messages", server.uri()));
-        let req = ChatRequest::new(
-            vec![ChatMessage::user("classify this alert")],
-            vec![],
-        );
+        let req = ChatRequest::new(vec![ChatMessage::user("classify this alert")], vec![]);
         let resp = client.chat(req).await.unwrap();
         assert!(resp.content.contains("benign"));
         assert_eq!(resp.finish_reason, FinishReason::Stop);

@@ -1,7 +1,7 @@
-use std::sync::{Arc, OnceLock};
+use crate::db::Db;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use crate::db::Db;
+use std::sync::{Arc, OnceLock};
 
 /// Live platform metrics snapshot, broadcast at 1 Hz from the sampler task.
 #[derive(Debug, Clone, Serialize)]

@@ -48,6 +48,7 @@ use attest_orchestrator::{
     agent::{AgentDefinition, ClassifierArtifact, ExecutionPath},
     build_router,
     shadow_check::ShadowChecker,
+    trace_kafka::ensure_trace_topic,
     triage::TriageEngine,
     AgentRole,
 };
@@ -65,8 +66,8 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "4300".into())
         .parse()?;
 
-    let artifacts_dir = std::env::var("ARTIFACTS_DIR")
-        .unwrap_or_else(|_| "./ml/triager/artifacts".into());
+    let artifacts_dir =
+        std::env::var("ARTIFACTS_DIR").unwrap_or_else(|_| "./ml/triager/artifacts".into());
 
     let escalation_threshold: f32 = std::env::var("ESCALATION_THRESHOLD")
         .unwrap_or_else(|_| "0.60".into())
@@ -138,9 +139,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // ── Investigator prompt (Phase 7) ────────────────────────────────────────
-    let investigator_prompt_path = std::env::var("INVESTIGATOR_PROMPT_PATH").unwrap_or_else(|_| {
-        "./agents/investigator/system_prompt_v1.md".into()
-    });
+    let investigator_prompt_path = std::env::var("INVESTIGATOR_PROMPT_PATH")
+        .unwrap_or_else(|_| "./agents/investigator/system_prompt_v1.md".into());
     let investigator_prompt = std::fs::read_to_string(&investigator_prompt_path)
         .unwrap_or_else(|e| {
             tracing::warn!(
@@ -162,10 +162,13 @@ async fn main() -> anyhow::Result<()> {
 
     // ── LLM client ────────────────────────────────────────────────────────────
     let llm_provider = std::env::var("ATTEST_LLM_PROVIDER").unwrap_or_else(|_| "local".into());
-    let llm_model = std::env::var("ATTEST_LLM_MODEL")
-        .unwrap_or_else(|_| "unsloth/Qwen3.6-35B-A3B-GGUF".into());
-    let mcp_url = std::env::var("MCP_GATEWAY_URL")
-        .unwrap_or_else(|_| "http://localhost:4242".into());
+    let llm_model =
+        std::env::var("ATTEST_LLM_MODEL").unwrap_or_else(|_| "unsloth/Qwen3.6-35B-A3B-GGUF".into());
+    let kafka_brokers = std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:19092".into());
+    ensure_trace_topic(&kafka_brokers).await;
+
+    let mcp_url =
+        std::env::var("MCP_GATEWAY_URL").unwrap_or_else(|_| "http://localhost:4242".into());
 
     let llm_client = match llm_from_env() {
         Ok(c) => {
@@ -229,8 +232,10 @@ async fn main() -> anyhow::Result<()> {
     // ── Shadow checker (Phase 6) ──────────────────────────────────────────────
     let shadow_checker = ShadowChecker::from_env();
     tracing::info!(
-        auto_close_threshold = std::env::var("AUTO_CLOSE_THRESHOLD").unwrap_or_else(|_| "0.90".into()),
-        tenant_allows_automation = std::env::var("TENANT_ALLOWS_AUTOMATION").unwrap_or_else(|_| "true".into()),
+        auto_close_threshold =
+            std::env::var("AUTO_CLOSE_THRESHOLD").unwrap_or_else(|_| "0.90".into()),
+        tenant_allows_automation =
+            std::env::var("TENANT_ALLOWS_AUTOMATION").unwrap_or_else(|_| "true".into()),
         "Shadow checker ready"
     );
 

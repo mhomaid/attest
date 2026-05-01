@@ -12,13 +12,17 @@ mod producer;
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{Router, middleware::from_fn, routing::{get, post}};
+use axum::{
+    middleware::from_fn,
+    routing::{get, post},
+    Router,
+};
 use clap::{Parser, Subcommand};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable as _};
 
 use crate::{
-    http::{AppState, ErrorResponse, HealthResponse, IngestResponse, healthz, ingest},
+    http::{healthz, ingest, AppState, ErrorResponse, HealthResponse, IngestResponse},
     normalizer::normalize_cloudtrail,
     producer::EventProducer,
 };
@@ -75,8 +79,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let producer = Arc::new(
-        EventProducer::new(&cli.kafka_brokers)
-            .context("failed to create Kafka producer")?,
+        EventProducer::new(&cli.kafka_brokers).context("failed to create Kafka producer")?,
     );
 
     match cli.command.unwrap_or(Command::Serve) {
@@ -89,11 +92,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn serve(
-    producer: Arc<EventProducer>,
-    tenant_id: &str,
-    port: u16,
-) -> anyhow::Result<()> {
+async fn serve(producer: Arc<EventProducer>, tenant_id: &str, port: u16) -> anyhow::Result<()> {
     let state = AppState {
         producer,
         tenant_id: tenant_id.to_string(),
@@ -116,9 +115,7 @@ async fn serve(
         .await
         .context("failed to bind")?;
 
-    axum::serve(listener, app)
-        .await
-        .context("server error")?;
+    axum::serve(listener, app).await.context("server error")?;
 
     Ok(())
 }
@@ -132,8 +129,7 @@ async fn ingest_file(
         .await
         .with_context(|| format!("failed to read {path}"))?;
 
-    let raw: serde_json::Value = serde_json::from_str(&content)
-        .context("invalid JSON")?;
+    let raw: serde_json::Value = serde_json::from_str(&content).context("invalid JSON")?;
 
     let dummy_state = crate::http::AppState {
         producer,

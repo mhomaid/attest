@@ -1,11 +1,9 @@
 use crate::schema::cloudtrail_arrow_schema;
 use anyhow::{Context, Result};
-use arrow::array::{
-    ArrayRef, StringArray, TimestampMicrosecondArray,
-};
+use arrow::array::{ArrayRef, StringArray, TimestampMicrosecondArray};
 use arrow::record_batch::RecordBatch;
 use chrono::DateTime;
-use object_store::{ObjectStore, ObjectStoreExt, PutPayload, path::Path as OsPath};
+use object_store::{path::Path as OsPath, ObjectStore, ObjectStoreExt, PutPayload};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
@@ -65,13 +63,18 @@ impl ParquetBatchWriter {
             uuid::Uuid::new_v4(),
         );
         let path = OsPath::parse(&path_str).context("invalid object path")?;
-        self.store.put(&path, PutPayload::from_bytes(buf.into())).await?;
+        self.store
+            .put(&path, PutPayload::from_bytes(buf.into()))
+            .await?;
         info!("wrote {} events → {}", events.len(), path_str);
         Ok(path_str)
     }
 }
 
-fn events_to_record_batch(events: &[FlatEvent], schema: Arc<arrow::datatypes::Schema>) -> Result<RecordBatch> {
+fn events_to_record_batch(
+    events: &[FlatEvent],
+    schema: Arc<arrow::datatypes::Schema>,
+) -> Result<RecordBatch> {
     let mut event_ids: Vec<Option<&str>> = Vec::with_capacity(events.len());
     let mut class_uids: Vec<Option<&str>> = Vec::with_capacity(events.len());
     let mut times: Vec<Option<i64>> = Vec::with_capacity(events.len());
@@ -120,7 +123,9 @@ fn events_to_record_batch(events: &[FlatEvent], schema: Arc<arrow::datatypes::Sc
         Arc::new(StringArray::from(auth_statuses)),
         Arc::new(StringArray::from(api_operations)),
         Arc::new(StringArray::from(api_services)),
-        Arc::new(StringArray::from(raws.iter().map(|s| s.as_deref()).collect::<Vec<_>>())),
+        Arc::new(StringArray::from(
+            raws.iter().map(|s| s.as_deref()).collect::<Vec<_>>(),
+        )),
     ];
 
     Ok(RecordBatch::try_new(schema, columns)?)

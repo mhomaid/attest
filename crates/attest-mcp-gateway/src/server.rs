@@ -84,7 +84,13 @@ pub struct ToolSummary {
 #[derive(OpenApi)]
 #[openapi(
     paths(handle_invoke, handle_list_tools),
-    components(schemas(InvokeRequest, InvokeResponse, ToolCallLog, ToolListResponse, ToolSummary)),
+    components(schemas(
+        InvokeRequest,
+        InvokeResponse,
+        ToolCallLog,
+        ToolListResponse,
+        ToolSummary
+    )),
     info(
         title = "Attest MCP Gateway",
         version = "0.1.0",
@@ -101,7 +107,10 @@ pub fn build_router(registry: ToolRegistry) -> Router {
     build_router_with_warm_limiter(registry, WarmTierLimiter::from_env())
 }
 
-pub fn build_router_with_warm_limiter(registry: ToolRegistry, warm_limiter: WarmTierLimiter) -> Router {
+pub fn build_router_with_warm_limiter(
+    registry: ToolRegistry,
+    warm_limiter: WarmTierLimiter,
+) -> Router {
     let state = GatewayState {
         registry: Arc::new(registry),
         warm_limiter: Arc::new(warm_limiter),
@@ -138,7 +147,9 @@ async fn handle_invoke(
     Json(req): Json<InvokeRequest>,
 ) -> impl IntoResponse {
     let timestamp = Utc::now();
-    let args_hash = hex::encode(Sha256::digest(serde_json::to_string(&req.args).unwrap_or_default()));
+    let args_hash = hex::encode(Sha256::digest(
+        serde_json::to_string(&req.args).unwrap_or_default(),
+    ));
 
     // 1. Policy check
     let policy_ctx = PolicyContext {
@@ -165,7 +176,11 @@ async fn handle_invoke(
             decision = ?policy_decision,
             "tool call denied by policy engine"
         );
-        let resp = InvokeResponse { result: None, call_log: log, error: Some(format!("{:?}", policy_decision)) };
+        let resp = InvokeResponse {
+            result: None,
+            call_log: log,
+            error: Some(format!("{:?}", policy_decision)),
+        };
         return (StatusCode::FORBIDDEN, Json(resp));
     }
 
@@ -182,7 +197,11 @@ async fn handle_invoke(
             policy_decision,
             timestamp,
         };
-        let resp = InvokeResponse { result: None, call_log: log, error: Some(format!("unknown tool: {}", req.tool_id)) };
+        let resp = InvokeResponse {
+            result: None,
+            call_log: log,
+            error: Some(format!("unknown tool: {}", req.tool_id)),
+        };
         return (StatusCode::NOT_FOUND, Json(resp));
     }
 
@@ -193,7 +212,9 @@ async fn handle_invoke(
 
     let (result, result_hash, error) = match dispatch_result {
         Ok(v) => {
-            let h = hex::encode(Sha256::digest(serde_json::to_string(&v).unwrap_or_default()));
+            let h = hex::encode(Sha256::digest(
+                serde_json::to_string(&v).unwrap_or_default(),
+            ));
             (Some(v), h, None)
         }
         Err(e) => (None, String::new(), Some(e.to_string())),
@@ -218,8 +239,19 @@ async fn handle_invoke(
         "tool call completed"
     );
 
-    let status = if error.is_some() { StatusCode::INTERNAL_SERVER_ERROR } else { StatusCode::OK };
-    (status, Json(InvokeResponse { result, call_log: log, error }))
+    let status = if error.is_some() {
+        StatusCode::INTERNAL_SERVER_ERROR
+    } else {
+        StatusCode::OK
+    };
+    (
+        status,
+        Json(InvokeResponse {
+            result,
+            call_log: log,
+            error,
+        }),
+    )
 }
 
 /// List all registered tools (id, description, class).
@@ -232,10 +264,17 @@ async fn handle_invoke(
     tag = "tools"
 )]
 async fn handle_list_tools(State(state): State<GatewayState>) -> Json<Value> {
-    let tools: Vec<_> = state.registry.list().iter().map(|t| serde_json::json!({
-        "id": t.id,
-        "description": t.description,
-        "class": t.class,
-    })).collect();
+    let tools: Vec<_> = state
+        .registry
+        .list()
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "description": t.description,
+                "class": t.class,
+            })
+        })
+        .collect();
     Json(serde_json::json!({ "tools": tools }))
 }

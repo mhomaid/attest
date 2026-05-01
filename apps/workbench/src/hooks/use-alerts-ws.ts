@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Alert } from "@/lib/mock-data";
 import { firedDetectionToAlert, type FiredDetection } from "@/lib/detection-to-alert";
+import { env } from "@/lib/env";
 
 export type WsStatus = "connecting" | "connected" | "disconnected";
 
@@ -26,10 +27,7 @@ export function useAlertsWs() {
   const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
-    const wsUrl =
-      (typeof window !== "undefined" &&
-        process.env.NEXT_PUBLIC_CP_WS_URL) ||
-      "ws://localhost:8080";
+    const wsUrl = env.NEXT_PUBLIC_CP_WS_URL;
 
     const ws = new WebSocket(`${wsUrl}/v1/ws/alerts`);
     wsRef.current = ws;

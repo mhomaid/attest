@@ -23,13 +23,13 @@ pub fn new_seen_alerts() -> SeenAlerts {
 /// The shape written to the `alerts` Redpanda topic.
 #[derive(Debug, Serialize)]
 pub struct Alert {
-    pub alert_id:       String,
-    pub detection_id:   String,
-    pub event_id:       String,
+    pub alert_id: String,
+    pub detection_id: String,
+    pub event_id: String,
     pub actor_user_name: Option<String>,
-    pub cloud_region:   Option<String>,
-    pub severity:       String,
-    pub fired_at:       String,
+    pub cloud_region: Option<String>,
+    pub severity: String,
+    pub fired_at: String,
 }
 
 /// Build a Kafka producer for the alerts topic.
@@ -44,16 +44,16 @@ pub fn build_producer(brokers: &str) -> Result<FutureProducer> {
 /// Poll all detection views (named `det_*`) and produce fired rows to Kafka.
 /// Returns the total number of alerts emitted in this poll cycle.
 pub async fn poll_and_emit(
-    db:           &Client,
-    producer:     &FutureProducer,
+    db: &Client,
+    producer: &FutureProducer,
     alerts_topic: &str,
     detection_ids: &[String],
-    seen:         &SeenAlerts,
+    seen: &SeenAlerts,
 ) -> usize {
     let mut total = 0usize;
     for det_id in detection_ids {
         match poll_one(db, producer, alerts_topic, det_id, seen).await {
-            Ok(n)  => total += n,
+            Ok(n) => total += n,
             Err(e) => error!(detection_id = %det_id, error = %e, "poll error"),
         }
     }
@@ -61,11 +61,11 @@ pub async fn poll_and_emit(
 }
 
 async fn poll_one(
-    db:           &Client,
-    producer:     &FutureProducer,
+    db: &Client,
+    producer: &FutureProducer,
     alerts_topic: &str,
     detection_id: &str,
-    seen:         &SeenAlerts,
+    seen: &SeenAlerts,
 ) -> Result<usize> {
     let view_name = format!("det_{}", detection_id.replace('-', "_"));
 
@@ -96,29 +96,32 @@ async fn poll_one(
             set.insert(dedup_key);
         }
 
-        let actor:    Option<String> = row.try_get("actor_user_name").ok();
-        let region:   Option<String> = row.try_get("cloud_region").ok();
-        let severity: String = row.try_get::<_, String>("severity").unwrap_or_else(|_| "medium".into());
-        let fired_at: String = row.try_get::<_, String>("fired_at")
+        let actor: Option<String> = row.try_get("actor_user_name").ok();
+        let region: Option<String> = row.try_get("cloud_region").ok();
+        let severity: String = row
+            .try_get::<_, String>("severity")
+            .unwrap_or_else(|_| "medium".into());
+        let fired_at: String = row
+            .try_get::<_, String>("fired_at")
             .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
 
         let alert = Alert {
-            alert_id:        uuid::Uuid::new_v4().to_string(),
-            detection_id:    det_id_col.to_string(),
-            event_id:        event_id.clone(),
+            alert_id: uuid::Uuid::new_v4().to_string(),
+            detection_id: det_id_col.to_string(),
+            event_id: event_id.clone(),
             actor_user_name: actor,
-            cloud_region:    region,
+            cloud_region: region,
             severity,
             fired_at,
         };
 
         let payload = serde_json::to_string(&alert)?;
-        let record  = FutureRecord::to(alerts_topic)
+        let record = FutureRecord::to(alerts_topic)
             .payload(&payload)
             .key(&event_id);
 
         match producer.send(record, Duration::from_secs(5)).await {
-            Ok(_)  => {
+            Ok(_) => {
                 info!(alert_id = %alert.alert_id, detection_id = %det_id_col, "alert emitted");
                 count += 1;
             }

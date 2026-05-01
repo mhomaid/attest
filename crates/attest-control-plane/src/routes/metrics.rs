@@ -15,10 +15,7 @@ use tracing::{debug, warn};
 
 use crate::state::AppState;
 
-pub async fn ws_metrics(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn ws_metrics(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 

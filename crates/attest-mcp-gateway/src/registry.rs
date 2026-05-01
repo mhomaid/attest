@@ -33,7 +33,9 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn register(&mut self, tool: ToolDescriptor) {
         self.tools.insert(tool.id.clone(), tool);
@@ -68,7 +70,8 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "query_warm_tier".into(),
-        description: "Query ClickHouse over Iceberg warm-tier data (historical events >24h).".into(),
+        description: "Query ClickHouse over Iceberg warm-tier data (historical events >24h)."
+            .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -82,7 +85,8 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "lookup_threat_intel".into(),
-        description: "Look up an IP, domain, or file hash in the Attest threat intelligence index.".into(),
+        description: "Look up an IP, domain, or file hash in the Attest threat intelligence index."
+            .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -96,7 +100,9 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "get_asset_context".into(),
-        description: "Return asset metadata for a given hostname or IP (criticality, owner, environment).".into(),
+        description:
+            "Return asset metadata for a given hostname or IP (criticality, owner, environment)."
+                .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -109,7 +115,8 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "get_user_baseline".into(),
-        description: "Return the UEBA baseline statistics for a user principal from RisingWave.".into(),
+        description: "Return the UEBA baseline statistics for a user principal from RisingWave."
+            .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -136,7 +143,8 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "sandbox_detonate".into(),
-        description: "Sandbox detonation stub for suspicious payloads (MVP — no live detonation).".into(),
+        description: "Sandbox detonation stub for suspicious payloads (MVP — no live detonation)."
+            .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {

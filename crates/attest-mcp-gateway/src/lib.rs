@@ -7,8 +7,8 @@
 //! - Rate-limit per agent/tenant
 
 pub mod registry;
-pub mod tools;
 pub mod server;
+pub mod tools;
 pub mod warm_limit;
 
 pub use registry::{ToolDescriptor, ToolRegistry};

@@ -75,12 +75,7 @@ async fn post_login(
 
 /// Seed N successful login events for a user from the given region.
 /// Used to build a baseline.
-async fn seed_baseline(
-    client: &reqwest::Client,
-    user: &str,
-    region: &str,
-    count: usize,
-) {
+async fn seed_baseline(client: &reqwest::Client, user: &str, region: &str, count: usize) {
     for _ in 0..count {
         post_login(client, user, region, "Success").await;
     }
@@ -112,11 +107,8 @@ async fn poll_for_alert(
 
     while Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let msg = tokio::time::timeout(
-            remaining.min(Duration::from_millis(500)),
-            consumer.recv(),
-        )
-        .await;
+        let msg =
+            tokio::time::timeout(remaining.min(Duration::from_millis(500)), consumer.recv()).await;
 
         let msg = match msg {
             Ok(Ok(m)) => m,

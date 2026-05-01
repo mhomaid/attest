@@ -38,11 +38,15 @@ impl FlatEvent {
                 cloud_account_uid: e.cloud.account_uid.clone(),
                 severity: format!("{:?}", e.severity).to_lowercase(),
                 auth_status: Some(format!("{:?}", e.status)),
-                api_operation: e.raw.as_ref()
+                api_operation: e
+                    .raw
+                    .as_ref()
                     .and_then(|r| r.get("eventName"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                api_service: e.raw.as_ref()
+                api_service: e
+                    .raw
+                    .as_ref()
                     .and_then(|r| r.get("eventSource"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),

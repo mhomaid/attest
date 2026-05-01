@@ -5,20 +5,25 @@
 //!
 //! Run via: `cargo test -p attest-orchestrator --test llm_loop`
 
+use async_trait::async_trait;
 use attest_attestation::{ClassifierEvidence, EscalationReason};
-use attest_inference_router::{ChatClient, ChatRequest, ChatResponse, FinishReason, ToolCall, Usage};
+use attest_inference_router::{
+    ChatClient, ChatRequest, ChatResponse, FinishReason, ToolCall, Usage,
+};
+use attest_orchestrator::agent::{AgentDefinition, ClassifierArtifact, ExecutionPath};
 use attest_orchestrator::llm_loop::run_llm_loop;
 use attest_orchestrator::mcp_client::McpClient;
-use attest_orchestrator::agent::{AgentDefinition, ClassifierArtifact, ExecutionPath};
 use attest_orchestrator::AgentRole;
-use async_trait::async_trait;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
-use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
 // ── Mock ChatClient ───────────────────────────────────────────────────────────
 
@@ -43,8 +48,12 @@ impl ScriptedChatClient {
 
 #[async_trait]
 impl ChatClient for ScriptedChatClient {
-    fn provider(&self) -> &str { "mock" }
-    fn model_id(&self) -> &str { "mock-model" }
+    fn provider(&self) -> &str {
+        "mock"
+    }
+    fn model_id(&self) -> &str {
+        "mock-model"
+    }
 
     async fn chat(&self, _req: ChatRequest) -> anyhow::Result<ChatResponse> {
         let idx = self.call_count.fetch_add(1, Ordering::SeqCst);
@@ -107,7 +116,11 @@ fn tool_call_response(tool_id: &str, tool_name: &str, args: serde_json::Value) -
             arguments: args,
         }],
         finish_reason: FinishReason::ToolCalls,
-        usage: Usage { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
+        usage: Usage {
+            prompt_tokens: 50,
+            completion_tokens: 20,
+            total_tokens: 70,
+        },
         latency: Duration::from_millis(100),
     }
 }
@@ -117,7 +130,11 @@ fn final_verdict_response(verdict_json: &str) -> ChatResponse {
         content: format!("```json\n{verdict_json}\n```"),
         tool_calls: vec![],
         finish_reason: FinishReason::Stop,
-        usage: Usage { prompt_tokens: 200, completion_tokens: 80, total_tokens: 280 },
+        usage: Usage {
+            prompt_tokens: 200,
+            completion_tokens: 80,
+            total_tokens: 280,
+        },
         latency: Duration::from_millis(500),
     }
 }
@@ -159,12 +176,14 @@ async fn llm_loop_tool_call_then_verdict() {
             json!({"principal": "alice@corp.example"}),
         ),
         // Round 2: emit final verdict
-        final_verdict_response(r#"{
+        final_verdict_response(
+            r#"{
             "verdict": "benign",
             "confidence": 0.88,
             "reasoning": "User baseline [evidence:call_001] matches expected pattern.",
             "evidence_citations": ["call_001"]
-        }"#),
+        }"#,
+        ),
     ]);
 
     let agent = make_agent();
@@ -179,9 +198,13 @@ async fn llm_loop_tool_call_then_verdict() {
         &prompt_hash,
         &json!({"severity_score": 0.3, "actor": "alice"}),
         make_classifier_draft(),
-        EscalationReason::HighNoveltyScore { score: 0.80, threshold: 0.70 },
+        EscalationReason::HighNoveltyScore {
+            score: 0.80,
+            threshold: 0.70,
+        },
         8,
         Uuid::new_v4(),
+        None,
         None,
         None,
     )
@@ -192,8 +215,14 @@ async fn llm_loop_tool_call_then_verdict() {
     assert_eq!(result.verdict, Verdict::Benign);
     assert_eq!(result.evidence.llm_final.total_iterations, 2);
     assert_eq!(result.evidence.llm_final.tool_calls.len(), 1);
-    assert_eq!(result.evidence.llm_final.tool_calls[0].tool_id, "get_user_baseline");
-    assert_eq!(result.evidence.llm_final.evidence_citations, vec!["call_001"]);
+    assert_eq!(
+        result.evidence.llm_final.tool_calls[0].tool_id,
+        "get_user_baseline"
+    );
+    assert_eq!(
+        result.evidence.llm_final.evidence_citations,
+        vec!["call_001"]
+    );
     assert_eq!(client.call_count(), 2);
 }
 
@@ -223,11 +252,13 @@ async fn llm_loop_max_iterations_exceeded() {
 
     // Always return tool calls — never a final verdict
     let responses: Vec<ChatResponse> = (0..3)
-        .map(|i| tool_call_response(
-            &format!("call_{i:03}"),
-            "get_asset_context",
-            json!({"asset_id": "server-01"}),
-        ))
+        .map(|i| {
+            tool_call_response(
+                &format!("call_{i:03}"),
+                "get_asset_context",
+                json!({"asset_id": "server-01"}),
+            )
+        })
         .collect();
 
     let client = ScriptedChatClient::new(responses);
@@ -246,6 +277,7 @@ async fn llm_loop_max_iterations_exceeded() {
         EscalationReason::BothLowConfidenceAndHighNovelty,
         3, // max 3 iterations
         Uuid::new_v4(),
+        None,
         None,
         None,
     )
@@ -283,8 +315,16 @@ async fn llm_loop_multi_tool_then_verdict() {
     let round1 = ChatResponse {
         content: String::new(),
         tool_calls: vec![
-            ToolCall { id: "t1".into(), name: "lookup_threat_intel".into(), arguments: json!({"indicator": "1.2.3.4", "indicator_type": "ip"}) },
-            ToolCall { id: "t2".into(), name: "get_user_baseline".into(), arguments: json!({"principal": "bob@corp"}) },
+            ToolCall {
+                id: "t1".into(),
+                name: "lookup_threat_intel".into(),
+                arguments: json!({"indicator": "1.2.3.4", "indicator_type": "ip"}),
+            },
+            ToolCall {
+                id: "t2".into(),
+                name: "get_user_baseline".into(),
+                arguments: json!({"principal": "bob@corp"}),
+            },
         ],
         finish_reason: FinishReason::ToolCalls,
         usage: Usage::default(),
@@ -293,7 +333,9 @@ async fn llm_loop_multi_tool_then_verdict() {
 
     let client = ScriptedChatClient::new(vec![
         round1,
-        final_verdict_response(r#"{"verdict": "true_positive", "confidence": 0.93, "reasoning": "Threat intel hit [evidence:t1] plus anomalous baseline [evidence:t2].", "evidence_citations": ["t1", "t2"]}"#),
+        final_verdict_response(
+            r#"{"verdict": "true_positive", "confidence": 0.93, "reasoning": "Threat intel hit [evidence:t1] plus anomalous baseline [evidence:t2].", "evidence_citations": ["t1", "t2"]}"#,
+        ),
     ]);
 
     let agent = make_agent();
@@ -308,9 +350,13 @@ async fn llm_loop_multi_tool_then_verdict() {
         &prompt_hash,
         &json!({"ip": "1.2.3.4"}),
         make_classifier_draft(),
-        EscalationReason::LowCalibratedConfidence { score: 0.40, threshold: 0.60 },
+        EscalationReason::LowCalibratedConfidence {
+            score: 0.40,
+            threshold: 0.60,
+        },
         8,
         Uuid::new_v4(),
+        None,
         None,
         None,
     )
@@ -320,6 +366,9 @@ async fn llm_loop_multi_tool_then_verdict() {
     use attest_attestation::Verdict;
     assert_eq!(result.verdict, Verdict::TruePositive);
     assert_eq!(result.evidence.llm_final.tool_calls.len(), 2);
-    assert_eq!(result.evidence.llm_final.evidence_citations, vec!["t1", "t2"]);
+    assert_eq!(
+        result.evidence.llm_final.evidence_citations,
+        vec!["t1", "t2"]
+    );
     assert_eq!(result.evidence.llm_final.total_iterations, 2);
 }

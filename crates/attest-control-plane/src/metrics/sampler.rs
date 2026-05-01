@@ -12,12 +12,12 @@ use std::time::Duration;
 use tokio::sync::{broadcast, Mutex};
 use tracing::{debug, warn};
 
+use chrono::Utc;
 use rdkafka::{
-    consumer::{BaseConsumer, Consumer},
     config::ClientConfig,
+    consumer::{BaseConsumer, Consumer},
     TopicPartitionList,
 };
-use chrono::Utc;
 
 use crate::state::MetricsSnapshot;
 
@@ -157,8 +157,14 @@ async fn kafka_hwm_and_lag(brokers: &str) -> (i64, u64) {
 
     match result {
         Ok(Ok((hwm, lag))) => (hwm, lag),
-        Ok(Err(e)) => { warn!("kafka cloudtrail sample error: {e}"); (0, 0) }
-        Err(e) => { warn!("kafka cloudtrail join error: {e}"); (0, 0) }
+        Ok(Err(e)) => {
+            warn!("kafka cloudtrail sample error: {e}");
+            (0, 0)
+        }
+        Err(e) => {
+            warn!("kafka cloudtrail join error: {e}");
+            (0, 0)
+        }
     }
 }
 
@@ -182,8 +188,14 @@ async fn kafka_topic_hwm(brokers: &str, topic: &str) -> i64 {
 
     match result {
         Ok(Ok(hwm)) => hwm,
-        Ok(Err(e)) => { debug!("kafka {topic} hwm: {e}"); 0 }
-        Err(e) => { warn!("kafka {topic} hwm join error: {e}"); 0 }
+        Ok(Err(e)) => {
+            debug!("kafka {topic} hwm: {e}");
+            0
+        }
+        Err(e) => {
+            warn!("kafka {topic} hwm join error: {e}");
+            0
+        }
     }
 }
 
@@ -193,11 +205,12 @@ async fn clickhouse_row_count(ch_url: &str, http: &reqwest::Client) -> u64 {
     let query = "SELECT count() FROM cloudtrail_events FORMAT TabSeparated";
     let url = format!("{}/?query={}", ch_url, urlencoding(query));
     match http.get(&url).send().await {
-        Ok(r) if r.status().is_success() => {
-            r.text().await.ok()
-                .and_then(|t| t.trim().parse::<u64>().ok())
-                .unwrap_or(0)
-        }
+        Ok(r) if r.status().is_success() => r
+            .text()
+            .await
+            .ok()
+            .and_then(|t| t.trim().parse::<u64>().ok())
+            .unwrap_or(0),
         _ => 0,
     }
 }
@@ -207,9 +220,9 @@ async fn load_gen_status(load_gen_url: &str, http: &reqwest::Client) -> (bool, u
     match http.get(&url).send().await {
         Ok(r) if r.status().is_success() => {
             if let Ok(v) = r.json::<serde_json::Value>().await {
-                let running     = v["running"].as_bool().unwrap_or(false);
-                let rate        = v["rate_actual"].as_f64().unwrap_or(0.0) as u64;
-                let triage_p95  = v["triage_p95_ms"].as_f64().unwrap_or(0.0) as f32;
+                let running = v["running"].as_bool().unwrap_or(false);
+                let rate = v["rate_actual"].as_f64().unwrap_or(0.0) as u64;
+                let triage_p95 = v["triage_p95_ms"].as_f64().unwrap_or(0.0) as f32;
                 return (running, rate, triage_p95);
             }
             (false, 0, 0.0)

@@ -59,8 +59,7 @@ pub fn init_otlp_tracer_provider(service_name: &str) -> anyhow::Result<Option<Tr
 ///
 /// `service_name` becomes the OpenTelemetry `service.name` resource attribute.
 pub fn init_subscriber_with_otel(service_name: &str) -> anyhow::Result<Option<TracerProvider>> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let fmt_layer = tracing_subscriber::fmt::layer();
 
@@ -76,10 +75,7 @@ pub fn init_subscriber_with_otel(service_name: &str) -> anyhow::Result<Option<Tr
             Ok(Some(provider))
         }
         None => {
-            Registry::default()
-                .with(filter)
-                .with(fmt_layer)
-                .init();
+            Registry::default().with(filter).with(fmt_layer).init();
             Ok(None)
         }
     }

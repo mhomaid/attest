@@ -11,11 +11,13 @@
 pub mod envelope;
 pub mod log;
 pub mod signer;
+pub mod trace_step;
 
 pub use envelope::{
     AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, CrossReviewBlock,
     EscalationReason, EvidenceBlock, ExecutionPathKind, HybridEvidence, IntermediateBelief,
-    LlmEvidence, ShadowCheckDecision, TimingBlock, ToolCallRecord, Verdict,
+    LlmEvidence, OverrideEvidence, ShadowCheckDecision, TimingBlock, ToolCallRecord, Verdict,
 };
 pub use log::AttestationLog;
 pub use signer::Signer;
+pub use trace_step::{execution_path_snake, TraceStep, TRACE_STEPS_TOPIC};

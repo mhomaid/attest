@@ -14,18 +14,22 @@ use crate::agent::{AgentDefinition, ClassifierArtifact, ExecutionPath};
 use crate::auto_close::{try_auto_close, AutoCloseResult};
 use crate::calibration::CalibrationClient;
 use crate::guardrails::EnforcementMode;
-use crate::llm_loop::{build_cross_review_block, run_investigator_llm_loop, run_llm_loop, run_review, LlmLoopError};
+use crate::llm_loop::{
+    build_cross_review_block, run_investigator_llm_loop, run_llm_loop, run_review, LlmLoopError,
+};
 use crate::mcp_client::McpClient;
 use crate::shadow_check::ShadowChecker;
+use crate::trace_kafka::{TraceEmit, TracePublisher};
 use anyhow::{Context, Result};
 use attest_attestation::{
     AttestationEnvelope, AttestationLog, CaseState, ClassifierEvidence, EscalationReason,
-    EvidenceBlock, ExecutionPathKind, ShadowCheckDecision, Signer, TimingBlock, Verdict,
+    EvidenceBlock, ExecutionPathKind, OverrideEvidence, ShadowCheckDecision, Signer, TimingBlock,
+    Verdict,
 };
 use attest_feature_extractor::FeatureExtractor;
 use attest_inference_router::ChatClient;
 use attest_onnx_runtime::{NoveltyDetector, OnnxClassifier};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -99,6 +103,7 @@ pub struct TriageEngine {
     calibration: CalibrationClient,
     attestation_log: AttestationLog,
     signer: Arc<Signer>,
+    trace_publisher: TracePublisher,
     /// Hex-encoded Ed25519 verifying key — published via `/agent` for offline verification.
     pub verifying_key: String,
     /// Pre-loaded system prompt text.
@@ -164,6 +169,7 @@ impl TriageEngine {
             novelty,
             calibration: CalibrationClient::from_env(),
             attestation_log: AttestationLog::from_env(),
+            trace_publisher: TracePublisher::from_env(),
             signer,
             verifying_key,
             system_prompt,
@@ -193,22 +199,48 @@ impl TriageEngine {
         let features = FeatureExtractor::extract_from_json(&req.alert);
 
         // 2. Classifier prediction + SHAP
-        let (raw_score, shap_values) = self.classifier.predict(&features)
+        let (raw_score, shap_values) = self
+            .classifier
+            .predict(&features)
             .context("classifier inference failed")?;
 
         // 3. Calibration (classifier path)
         let case_class = infer_case_class(&req.alert);
-        let calibrated = self.calibration.calibrate(&self.agent.id, &case_class, raw_score, "classifier").await;
+        let calibrated = self
+            .calibration
+            .calibrate(&self.agent.id, &case_class, raw_score, "classifier")
+            .await;
 
         // 4. Novelty score
         let novelty_score = self.novelty.score(&features);
+
+        // 4b. Emit classifier_complete trace step so the UI stepper advances immediately.
+        {
+            let classifier_trace = TraceEmit {
+                publisher: self.trace_publisher.clone(),
+                case_id,
+                tenant_id: tenant_id.clone(),
+                agent_action_id: action_id,
+                agent_id: self.agent.id.clone(),
+                execution_path: ExecutionPathKind::Hybrid,
+            };
+            classifier_trace.step(
+                "classifier_complete",
+                format!(
+                    "calibrated={:.3} novelty={:.3} escalation_threshold={:.3}",
+                    calibrated, novelty_score, artifact.escalation_threshold,
+                ),
+            );
+        }
 
         // 5. Hybrid routing decision
         let should_escalate = calibrated < artifact.escalation_threshold
             || novelty_score > artifact.novelty_threshold;
 
         let (verdict, execution_path, evidence, escalation_reason) = if should_escalate {
-            let reason = if novelty_score > artifact.novelty_threshold && calibrated < artifact.escalation_threshold {
+            let reason = if novelty_score > artifact.novelty_threshold
+                && calibrated < artifact.escalation_threshold
+            {
                 EscalationReason::BothLowConfidenceAndHighNovelty
             } else if novelty_score > artifact.novelty_threshold {
                 EscalationReason::HighNoveltyScore {
@@ -223,7 +255,12 @@ impl TriageEngine {
             };
 
             let classifier_draft = build_classifier_evidence(
-                artifact, &features, &shap_values, raw_score, calibrated, novelty_score,
+                artifact,
+                &features,
+                &shap_values,
+                raw_score,
+                calibrated,
+                novelty_score,
             );
 
             let reason_str = format!("{:?}", reason);
@@ -238,12 +275,17 @@ impl TriageEngine {
             );
 
             // Phase 4b: call the real LLM loop
-            match self.try_llm_escalation(
-                action_id,
-                classifier_draft.clone(),
-                reason.clone(),
-                &req.alert,
-            ).await {
+            match self
+                .try_llm_escalation(
+                    action_id,
+                    case_id,
+                    tenant_id.clone(),
+                    classifier_draft.clone(),
+                    reason.clone(),
+                    &req.alert,
+                )
+                .await
+            {
                 Ok((llm_verdict, hybrid_evidence)) => {
                     tracing::info!(
                         action_id = %action_id,
@@ -278,11 +320,25 @@ impl TriageEngine {
             }
         } else {
             // Confident classifier disposition
-            let label = if calibrated >= 0.5 { Verdict::TruePositive } else { Verdict::Benign };
+            let label = if calibrated >= 0.5 {
+                Verdict::TruePositive
+            } else {
+                Verdict::Benign
+            };
             let ev = build_classifier_evidence(
-                artifact, &features, &shap_values, raw_score, calibrated, novelty_score,
+                artifact,
+                &features,
+                &shap_values,
+                raw_score,
+                calibrated,
+                novelty_score,
             );
-            (label, ExecutionPathKind::Classifier, EvidenceBlock::Classifier(ev), None)
+            (
+                label,
+                ExecutionPathKind::Classifier,
+                EvidenceBlock::Classifier(ev),
+                None,
+            )
         };
 
         let finished_at = Utc::now();
@@ -298,7 +354,11 @@ impl TriageEngine {
             execution_path: execution_path.clone(),
             verdict: verdict.clone(),
             evidence,
-            timing: TimingBlock { started_at, finished_at, total_ms: latency_ms },
+            timing: TimingBlock {
+                started_at,
+                finished_at,
+                total_ms: latency_ms,
+            },
             signature: String::new(),
             signed_at: finished_at,
         };
@@ -318,58 +378,91 @@ impl TriageEngine {
         // 7. Append to log (non-blocking)
         let log = self.attestation_log.clone();
         let env_clone = envelope.clone();
+        let tp = self.trace_publisher.clone();
+        let agent_id_for_trace = self.agent.id.clone();
+        let ep_trace = execution_path.clone();
+        let verdict_for_trace = verdict.clone();
+        let tid_trace = tenant_id.clone();
         tokio::spawn(async move {
             if let Err(e) = log.append(&env_clone).await {
                 tracing::error!(error = %e, "failed to write attestation log");
             }
+            tp.emit(
+                case_id,
+                &tid_trace,
+                action_id,
+                agent_id_for_trace,
+                &ep_trace,
+                "envelope",
+                format!("{verdict_for_trace:?}"),
+            );
         });
 
         // 8. Phase 6: attempt auto-close
         let classifier_ev_for_ac = match &envelope.evidence {
             EvidenceBlock::Classifier(ev) => Some(ev.clone()),
             EvidenceBlock::Hybrid(h) => Some(h.classifier_draft.clone()),
-            EvidenceBlock::EscalatedStub { classifier_draft, .. } => Some(classifier_draft.clone()),
+            EvidenceBlock::EscalatedStub {
+                classifier_draft, ..
+            } => Some(classifier_draft.clone()),
             _ => None,
         };
 
-        let AutoCloseResult { case_state, shadow_check, envelope: _ac_envelope } =
-            if let Some(cls_ev) = classifier_ev_for_ac {
-                let result = try_auto_close(
-                    &verdict,
-                    calibrated,
-                    &req.alert,
-                    cls_ev,
-                    &self.shadow_checker,
-                    &self.signer,
-                    &self.agent.id,
-                    &tenant_id,
-                    case_id,
-                    action_id,
-                )
-                .await;
+        let AutoCloseResult {
+            case_state,
+            shadow_check,
+            envelope: _ac_envelope,
+        } = if let Some(cls_ev) = classifier_ev_for_ac {
+            let result = try_auto_close(
+                &verdict,
+                calibrated,
+                &req.alert,
+                cls_ev,
+                &self.shadow_checker,
+                &self.signer,
+                &self.agent.id,
+                &tenant_id,
+                case_id,
+                action_id,
+            )
+            .await;
 
-                // If auto-closed, also log the second envelope
-                if let Some(ref ac_env) = result.envelope {
-                    let log2 = self.attestation_log.clone();
-                    let ac_clone = ac_env.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = log2.append(&ac_clone).await {
-                            tracing::error!(error = %e, "failed to write auto-close attestation log");
-                        }
-                    });
-                }
-                result
-            } else {
-                AutoCloseResult {
-                    case_state: attest_attestation::CaseState::PendingHumanReview,
-                    shadow_check: attest_attestation::ShadowCheckDecision {
-                        allowed: false,
-                        reason: "no classifier evidence available for auto-close".into(),
-                        policies_evaluated: vec![],
-                    },
-                    envelope: None,
-                }
-            };
+            // If auto-closed, also log the second envelope
+            if let Some(ref ac_env) = result.envelope {
+                let log2 = self.attestation_log.clone();
+                let ac_clone = ac_env.clone();
+                let tp_ac = self.trace_publisher.clone();
+                let ag = self.agent.id.clone();
+                let ac_aid = ac_env.agent_action_id;
+                let cid = case_id;
+                let tid_ac = tenant_id.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = log2.append(&ac_clone).await {
+                        tracing::error!(error = %e, "failed to write auto-close attestation log");
+                    }
+                    tp_ac.emit(
+                        cid,
+                        &tid_ac,
+                        ac_aid,
+                        ag,
+                        &ExecutionPathKind::Classifier,
+                        "auto_close",
+                        "case_auto_closed",
+                    );
+                });
+            }
+            result
+        } else {
+            AutoCloseResult {
+                case_state: attest_attestation::CaseState::PendingHumanReview,
+                shadow_check: attest_attestation::ShadowCheckDecision {
+                    allowed: false,
+                    reason: "no classifier evidence available for auto-close".into(),
+                    policies_evaluated: vec![],
+                },
+                envelope: None,
+            }
+        };
 
         // 9. Phase 7: Investigator for `NeedsInvestigation` (requires configured LLM).
         let mut investigation: Option<InvestigationSummary> = None;
@@ -381,6 +474,14 @@ impl TriageEngine {
                     "Triager outcome: verdict={verdict:?}, path={execution_path:?}, calibrated_confidence={calibrated:.3}, escalation_reason={escalation_reason:?}"
                 );
                 let t0_inv = Instant::now();
+                let inv_trace = TraceEmit {
+                    publisher: self.trace_publisher.clone(),
+                    case_id,
+                    tenant_id: tenant_id.clone(),
+                    agent_action_id: inv_action_id,
+                    agent_id: self.investigator_agent_id.clone(),
+                    execution_path: ExecutionPathKind::Llm,
+                };
                 match run_investigator_llm_loop(
                     client.as_ref().as_ref(),
                     &self.mcp_client,
@@ -394,6 +495,7 @@ impl TriageEngine {
                     inv_action_id,
                     None,
                     None,
+                    Some(inv_trace),
                 )
                 .await
                 {
@@ -425,10 +527,25 @@ impl TriageEngine {
                         self.signer.sign(&mut inv_env);
                         let log3 = self.attestation_log.clone();
                         let ic = inv_env.clone();
+                        let tp_inv = self.trace_publisher.clone();
+                        let inv_aid = inv_action_id;
+                        let inv_ag = self.investigator_agent_id.clone();
+                        let cid = case_id;
+                        let vinv = inv.verdict.clone();
+                        let tid_inv = tenant_id.clone();
                         tokio::spawn(async move {
                             if let Err(e) = log3.append(&ic).await {
                                 tracing::error!(error = %e, "failed to write investigator attestation log");
                             }
+                            tp_inv.emit(
+                                cid,
+                                &tid_inv,
+                                inv_aid,
+                                inv_ag,
+                                &ExecutionPathKind::Llm,
+                                "envelope",
+                                format!("{vinv:?}"),
+                            );
                         });
                         investigation = Some(InvestigationSummary {
                             action_id: inv_action_id,
@@ -469,7 +586,9 @@ impl TriageEngine {
             classifier_evidence: match &envelope.evidence {
                 EvidenceBlock::Classifier(ev) => Some(ev.clone()),
                 EvidenceBlock::Hybrid(h) => Some(h.classifier_draft.clone()),
-                EvidenceBlock::EscalatedStub { classifier_draft, .. } => Some(classifier_draft.clone()),
+                EvidenceBlock::EscalatedStub {
+                    classifier_draft, ..
+                } => Some(classifier_draft.clone()),
                 _ => None,
             },
             case_state,
@@ -483,6 +602,8 @@ impl TriageEngine {
     async fn try_llm_escalation(
         &self,
         action_id: Uuid,
+        case_id: Uuid,
+        tenant_id: String,
         classifier_draft: ClassifierEvidence,
         escalation_reason: EscalationReason,
         alert: &Value,
@@ -494,6 +615,15 @@ impl TriageEngine {
         })?;
 
         let max_iterations = self.llm_max_iterations();
+
+        let trace = TraceEmit {
+            publisher: self.trace_publisher.clone(),
+            case_id,
+            tenant_id,
+            agent_action_id: action_id,
+            agent_id: self.agent.id.clone(),
+            execution_path: ExecutionPathKind::Hybrid,
+        };
 
         let mut result = run_llm_loop(
             client.as_ref().as_ref(),
@@ -508,7 +638,9 @@ impl TriageEngine {
             action_id,
             None, // read enforcement mode from env
             None, // read max retries from env
-        ).await?;
+            Some(trace),
+        )
+        .await?;
 
         // Phase 5: Cross-agent review for high-impact TruePositive verdicts
         if result.verdict == Verdict::TruePositive
@@ -522,7 +654,10 @@ impl TriageEngine {
                     "cross-review: triggering reviewer pass for high-impact TruePositive"
                 );
 
-                let last_reasoning = result.evidence.llm_final.intermediate_beliefs
+                let last_reasoning = result
+                    .evidence
+                    .llm_final
+                    .intermediate_beliefs
                     .last()
                     .map(|b| b.content_summary.as_str())
                     .unwrap_or("");
@@ -534,13 +669,12 @@ impl TriageEngine {
                     "true_positive",
                     last_reasoning,
                     alert,
-                ).await;
+                )
+                .await;
 
                 let agrees = outcome.agrees;
-                let cross_review_block = build_cross_review_block(
-                    &self.reviewer_prompt_hash,
-                    outcome,
-                );
+                let cross_review_block =
+                    build_cross_review_block(&self.reviewer_prompt_hash, outcome);
 
                 result.evidence.llm_final.cross_review = Some(cross_review_block);
 
@@ -573,6 +707,69 @@ impl TriageEngine {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(10)
+    }
+
+    /// Phase 8 — human analyst override as a new signed envelope (prior rows preserved).
+    /// Tenant is taken from the latest envelope for `case_id` (no cross-tenant spoofing).
+    pub async fn append_human_override(
+        &self,
+        case_id: Uuid,
+        corrected: Verdict,
+        reason: String,
+        actor_id: String,
+        actor_email: String,
+    ) -> anyhow::Result<(Uuid, u64, DateTime<Utc>)> {
+        let envelopes = self.attestation_log.read_all().await?;
+        let last = envelopes
+            .into_iter()
+            .rev()
+            .find(|e| e.case_id == case_id)
+            .ok_or_else(|| anyhow::anyhow!("no attestation envelope found for case_id"))?;
+        let tenant_id = last.tenant_id.clone();
+        let original_agent_action_id = last.agent_action_id;
+        let action_id = Uuid::new_v4();
+        let started_at = Utc::now();
+        let evidence = EvidenceBlock::Override(OverrideEvidence {
+            original_agent_action_id,
+            corrected_verdict: corrected.clone(),
+            reason,
+            actor_id: actor_id.clone(),
+            actor_email,
+        });
+        let agent_row_id = format!("human-override:{actor_id}");
+        let mut envelope = AttestationEnvelope {
+            envelope_version: "1.1".into(),
+            agent_action_id: action_id,
+            case_id,
+            tenant_id: tenant_id.clone(),
+            agent_id: agent_row_id.clone(),
+            execution_path: ExecutionPathKind::HumanOverride,
+            verdict: corrected,
+            evidence,
+            timing: TimingBlock {
+                started_at,
+                finished_at: started_at,
+                total_ms: 0,
+            },
+            signature: String::new(),
+            signed_at: started_at,
+        };
+        let finished_at = Utc::now();
+        envelope.timing.finished_at = finished_at;
+        envelope.timing.total_ms = (finished_at - started_at).num_milliseconds().max(0) as u64;
+        envelope.signed_at = finished_at;
+        self.signer.sign(&mut envelope);
+        self.attestation_log.append(&envelope).await?;
+        self.trace_publisher.emit(
+            case_id,
+            &tenant_id,
+            action_id,
+            &agent_row_id,
+            &ExecutionPathKind::HumanOverride,
+            "override",
+            format!("{:?}", envelope.verdict),
+        );
+        Ok((action_id, envelope.timing.total_ms, finished_at))
     }
 }
 
@@ -614,8 +811,14 @@ fn infer_case_class(alert: &Value) -> String {
     let severity = alert["severity_score"].as_f64().unwrap_or(0.5);
     let rep = alert["entity_reputation_score"].as_f64().unwrap_or(0.0);
     let bd = alert["baseline_deviation"].as_f64().unwrap_or(0.0);
-    if rep > 0.5 { return "brute_force".into(); }
-    if bd > 3.0 { return "geo_anomaly".into(); }
-    if severity >= 0.9 { return "exfiltration".into(); }
+    if rep > 0.5 {
+        return "brute_force".into();
+    }
+    if bd > 3.0 {
+        return "geo_anomaly".into();
+    }
+    if severity >= 0.9 {
+        return "exfiltration".into();
+    }
     "default".into()
 }

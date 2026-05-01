@@ -30,10 +30,7 @@ impl OnnxClassifier {
             .context("failed to load ONNX model")?
             .with_input_fact(
                 0,
-                InferenceFact::dt_shape(
-                    f32::datum_type(),
-                    &[1usize, num_features][..],
-                ),
+                InferenceFact::dt_shape(f32::datum_type(), &[1usize, num_features][..]),
             )
             .context("failed to set input fact")?
             .into_optimized()
@@ -42,16 +39,19 @@ impl OnnxClassifier {
             .context("failed to make ONNX model runnable")?;
 
         let shap_background_means = if let Some(bp) = background_path {
-            load_npy_means(Path::new(bp), num_features)
-                .unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "failed to load SHAP background — using zeros");
-                    vec![0.0f32; num_features]
-                })
+            load_npy_means(Path::new(bp), num_features).unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to load SHAP background — using zeros");
+                vec![0.0f32; num_features]
+            })
         } else {
             vec![0.0f32; num_features]
         };
 
-        Ok(Self { model, shap_background_means, num_features })
+        Ok(Self {
+            model,
+            shap_background_means,
+            num_features,
+        })
     }
 
     /// Run inference and return `(raw_score, shap_values_map)`.
@@ -64,14 +64,13 @@ impl OnnxClassifier {
 
     fn run_model(&self, feat_vec: &[f32]) -> Result<f32> {
         // Build input tensor: shape [1, num_features], dtype f32
-        let input: Tensor = ndarray::Array2::from_shape_vec(
-            (1, self.num_features),
-            feat_vec.to_vec(),
-        )
-        .context("failed to build input array")?
-        .into();
+        let input: Tensor =
+            ndarray::Array2::from_shape_vec((1, self.num_features), feat_vec.to_vec())
+                .context("failed to build input array")?
+                .into();
 
-        let outputs = self.model
+        let outputs = self
+            .model
             .run(tvec!(input.into()))
             .context("ONNX inference failed")?;
 
@@ -96,7 +95,11 @@ impl OnnxClassifier {
         Ok(positive_prob)
     }
 
-    fn approximate_shap(&self, features: &AlertFeatures, baseline_score: f32) -> Result<HashMap<String, f64>> {
+    fn approximate_shap(
+        &self,
+        features: &AlertFeatures,
+        baseline_score: f32,
+    ) -> Result<HashMap<String, f64>> {
         let feat_vec = features.to_vec_f32();
         let mut shap = HashMap::new();
         for (i, name) in AlertFeatures::COLUMN_ORDER.iter().enumerate() {
@@ -117,12 +120,17 @@ fn load_npy_means(path: &Path, num_features: usize) -> Result<Vec<f32>> {
     let header_len = u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
     let data_offset = 10 + header_len;
     let data_bytes = &bytes[data_offset..];
-    let header = std::str::from_utf8(&bytes[10..data_offset]).unwrap_or("").to_lowercase();
-    let is_f64 = header.contains("float64") || header.contains("'<f8'") || header.contains("\"<f8\"");
+    let header = std::str::from_utf8(&bytes[10..data_offset])
+        .unwrap_or("")
+        .to_lowercase();
+    let is_f64 =
+        header.contains("float64") || header.contains("'<f8'") || header.contains("\"<f8\"");
     let elem_size = if is_f64 { 8 } else { 4 };
     let mut values = Vec::with_capacity(data_bytes.len() / elem_size);
     for chunk in data_bytes.chunks(elem_size) {
-        if chunk.len() < elem_size { break; }
+        if chunk.len() < elem_size {
+            break;
+        }
         values.push(if is_f64 {
             f64::from_le_bytes(chunk.try_into().unwrap()) as f32
         } else {
@@ -137,7 +145,9 @@ fn load_npy_means(path: &Path, num_features: usize) -> Result<Vec<f32>> {
                 means[col] += values[row * num_features + col];
             }
         }
-        for m in &mut means { *m /= n_rows as f32; }
+        for m in &mut means {
+            *m /= n_rows as f32;
+        }
         Ok(means)
     } else if values.len() == num_features {
         Ok(values)
