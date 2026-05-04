@@ -5,7 +5,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   skipTrailingSlashRedirect: true,
-  /** Hide the dev-only “Rendering …” pill (bottom corner); case routes use `loading.tsx` instead. */
+  /** Standalone output bundles server + minimal node_modules for Docker/Railway deploys. */
+  output: "standalone",
+  /** Hide the dev-only "Rendering" pill; case routes use loading.tsx instead. */
   devIndicators: false,
   async rewrites() {
     return [

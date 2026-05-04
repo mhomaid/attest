@@ -1,0 +1,12 @@
+[build]
+builder = "DOCKERFILE"
+# Path is relative to the repo root (Railway always builds from root).
+dockerfilePath = "apps/workbench/Dockerfile"
+
+[deploy]
+# standalone server.js is at apps/workbench/server.js inside the image.
+startCommand = "node apps/workbench/server.js"
+healthcheckPath = "/api/healthz"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
