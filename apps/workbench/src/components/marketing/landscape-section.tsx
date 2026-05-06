@@ -3,7 +3,7 @@ export function LandscapeSection() {
   return (
     <section className="border-b border-border/60 bg-secondary/20 py-10">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <p className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <p className="text-center text-sm font-semibold tracking-wide text-foreground">
           Why the problem space is urgent
         </p>
         <div className="mt-6 grid gap-6 sm:grid-cols-3">

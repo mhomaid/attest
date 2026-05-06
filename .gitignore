@@ -3,6 +3,7 @@
 .idea/
 .vscode/
 .cursor/
+docs/.$architecture-diagrams.drawio.bkp
 
 # Node
 node_modules/
@@ -14,6 +15,8 @@ test-results/
 apps/workbench/tests/e2e/.auth/
 *.tsbuildinfo
 
+docs/social/*
+!docs/social/.gitkeep
 # Rust
 /target/
 # Cargo.lock is intentionally committed — this workspace contains binary crates.

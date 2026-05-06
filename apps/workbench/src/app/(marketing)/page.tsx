@@ -3,6 +3,7 @@ import { HeroSection } from "@/components/marketing/hero-section";
 import { LandscapeSection } from "@/components/marketing/landscape-section";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
+import { PhasesSection } from "@/components/marketing/phases-section";
 import {
   FabricSection,
   PillarsBento,
@@ -17,6 +18,7 @@ export default function HomePage() {
       <main>
         <HeroSection />
         <LandscapeSection />
+        <PhasesSection />
         <PillarsBento />
         <FabricSection />
         <SubstrateSection />

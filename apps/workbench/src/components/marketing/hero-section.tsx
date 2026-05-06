@@ -40,11 +40,10 @@ export function HeroSection() {
           variants={fadeUp}
           className="font-sans text-[clamp(2.25rem,5.5vw,4rem)] font-bold leading-[1.06] tracking-tight"
         >
-          The security platform where{" "}
+          The security platform built for a world where{" "}
           <span className="bg-gradient-to-br from-primary via-lime-300/90 to-emerald-400/70 bg-clip-text text-transparent">
-            AI agents are first-class
+            AI agents are on both sides of the attack.
           </span>
-          {" "}— on both sides of the attack.
         </motion.h1>
 
         {/* Sub-copy */}
@@ -55,10 +54,9 @@ export function HeroSection() {
           variants={fadeUp}
           className="mt-6 max-w-2xl text-[1.0625rem] leading-[1.75] text-muted-foreground"
         >
-          Streaming-first operations, portable detections, and a multi-agent SOC
-          that every auditor can trust: signed traces, calibrated confidence, and
-          policy gates no model can bypass — built for regulated teams adopting AI
-          at full speed.
+          Streaming-first ingest, portable detections, and a multi-agent SOC
+          every auditor can trust: signed reasoning traces, calibrated confidence,
+          and policy gates no model can bypass.
         </motion.p>
 
         {/* CTAs */}
