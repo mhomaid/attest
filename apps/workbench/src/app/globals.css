@@ -209,6 +209,25 @@ body:has(.marketing) ::selection {
   text-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.2);
 }
 
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.flow-dash {
+  stroke-dasharray: 4 8;
+  animation: flow-dash 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-scan-line,
+  .sf-pulse-ring,
+  .flow-dash {
+    animation: none !important;
+  }
+}
+
 /* `html` uses `.dark` for Tailwind’s `dark:` variant; sidebar tokens stay on `:root` above (oklch). */
 
 .dark {

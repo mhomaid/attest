@@ -1,28 +1,30 @@
+import { FlowRail } from "@/components/marketing/flow-diagram";
+
 const path = [
   {
-    n: "01",
-    title: "Ingest",
-    body: "CloudTrail JSON lands on the collector, becomes OCSF 1.3, and publishes to Kafka.",
+    label: "Ingest",
+    hint: "OCSF → Kafka",
+    detail: "CloudTrail JSON lands on the collector, becomes OCSF 1.3, and publishes to Kafka.",
   },
   {
-    n: "02",
-    title: "Detect",
-    body: "RisingWave keeps hot views. Ten HELIQL rules compile to streaming SQL and fire alerts.",
+    label: "Detect",
+    hint: "10 HELIQL rules",
+    detail: "RisingWave keeps hot views. Ten HELIQL rules compile to streaming SQL and fire alerts.",
   },
   {
-    n: "03",
-    title: "Triage",
-    body: "ONNX XGBoost + SHAP + novelty + a calibration sidecar. About 28 ms, no LLM required.",
+    label: "Triage",
+    hint: "~28 ms ONNX",
+    detail: "ONNX XGBoost + SHAP + novelty + a calibration sidecar. About 28 ms, no LLM required.",
   },
   {
-    n: "04",
-    title: "Attest",
-    body: "Every verdict is an Ed25519 envelope. Tools only move through the MCP gateway.",
+    label: "Attest",
+    hint: "Ed25519",
+    detail: "Every verdict is an Ed25519 envelope. Tools only move through the MCP gateway.",
   },
   {
-    n: "05",
-    title: "Workbench",
-    body: "Live queue, cases, Simulate Lab, Load Lab, and admin health on this site.",
+    label: "Workbench",
+    hint: "This site",
+    detail: "Live queue, cases, Simulate Lab, Load Lab, and admin health on this site.",
   },
 ] as const;
 
@@ -68,25 +70,7 @@ export function ShippedStatusSection() {
           so a visitor is never sold a slide as a ship.
         </p>
 
-        <ol className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {path.map((step, i) => (
-            <li
-              key={step.n}
-              className="relative rounded-2xl border border-border/70 bg-card/40 p-5"
-            >
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
-                {step.n}
-                {i < path.length - 1 ? (
-                  <span className="hidden text-muted-foreground lg:inline"> →</span>
-                ) : null}
-              </p>
-              <h3 className="mt-3 text-base font-semibold">{step.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {step.body}
-              </p>
-            </li>
-          ))}
-        </ol>
+        <FlowRail steps={path} className="mt-12" cycleMs={1900} />
 
         <div className="mt-10 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <div className="rounded-2xl border border-signal-good/25 bg-signal-good/5 p-6">

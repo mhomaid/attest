@@ -1,3 +1,5 @@
+import { VerticalFlow } from "@/components/marketing/flow-diagram";
+
 const planes = [
   {
     id: "workbench",
@@ -95,21 +97,7 @@ export function ArchitectureSection() {
           runtime, and — if a rule fires — the hybrid triager. The workbench
           reads the same artifacts; it does not keep a second copy of truth.
         </p>
-        <ol className="mt-6 grid gap-2 sm:grid-cols-2">
-          {hops.map((hop, i) => (
-            <li
-              key={`${hop.from}-${hop.to}`}
-              className="rounded-lg border border-border/60 bg-background/40 px-3 py-3"
-            >
-              <p className="font-mono text-[10px] text-primary">Hop {i + 1}</p>
-              <p className="mt-1 text-sm font-medium">{hop.from}</p>
-              <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                {hop.via}
-              </p>
-              <p className="mt-1 text-sm text-foreground">{hop.to}</p>
-            </li>
-          ))}
-        </ol>
+        <VerticalFlow hops={hops} className="mt-6 max-w-2xl" />
       </div>
     </section>
   );

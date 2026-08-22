@@ -3,7 +3,17 @@
 import { motion } from "framer-motion";
 import { ArrowRight, Fingerprint, Radio, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { FlowRail } from "@/components/marketing/flow-diagram";
 import { GridBackground } from "@/components/marketing/grid-background";
+
+const heroPath = [
+  { label: "CloudTrail", hint: "JSON in", detail: "A ConsoleLogin lands on the collector as raw AWS JSON." },
+  { label: "Collector", hint: "OCSF 1.3", detail: "Normalized to a FlatEvent and published onto Kafka." },
+  { label: "Detect", hint: "HELIQL → RW", detail: "RisingWave views and compiled rules watch the stream." },
+  { label: "Triage", hint: "~28 ms ONNX", detail: "XGBoost + SHAP + calibration. No LLM required on this path." },
+  { label: "Attest", hint: "Ed25519", detail: "The verdict becomes a signed envelope an auditor can replay." },
+  { label: "Queue", hint: "Workbench", detail: "The same artifacts show up live on this site." },
+] as const;
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -82,13 +92,26 @@ export function HeroSection() {
           </a>
         </motion.div>
 
-        {/* Feature cards */}
-        <motion.dl
+        <motion.div
           custom={4}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-18 grid gap-3 sm:grid-cols-3"
+          className="mt-14"
+        >
+          <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            Follow one event
+          </p>
+          <FlowRail steps={heroPath} size="sm" cycleMs={1700} />
+        </motion.div>
+
+        {/* Feature cards */}
+        <motion.dl
+          custom={5}
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="mt-14 grid gap-3 sm:grid-cols-3"
         >
           {[
             {

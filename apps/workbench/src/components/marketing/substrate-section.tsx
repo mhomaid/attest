@@ -130,7 +130,6 @@ export function SubstrateSection() {
           </p>
         </div>
 
-        {/* Cards */}
         <motion.ul
           initial="hidden"
           whileInView="show"

@@ -1,3 +1,5 @@
+import { BranchFlow } from "@/components/marketing/flow-diagram";
+
 const agents = [
   {
     name: "Coordinator",
@@ -67,6 +69,35 @@ export function AgentsSection() {
           are specified in the blueprint and shown here so the design is
           complete — they are not claimed as shipped.
         </p>
+
+        <BranchFlow
+          className="mt-10"
+          start={{
+            label: "Coordinator",
+            hint: "Routes the alert",
+            detail: "Receives an alert and chooses classifier vs Investigator. Emits a plan, not a verdict.",
+          }}
+          left={{
+            label: "Classifier",
+            hint: "ONNX · ~28 ms",
+            detail: "In-distribution high-confidence cases stay on XGBoost. SHAP + calibration, no LLM.",
+          }}
+          right={{
+            label: "Investigator",
+            hint: "LLM · MCP tools",
+            detail: "Novel or low-confidence cases escalate. Tools only move through the gateway.",
+          }}
+          join={{
+            label: "Attest",
+            hint: "Ed25519 envelope",
+            detail: "Both paths emit a signed envelope: hashes, tools, verdict, replayable later.",
+          }}
+          end={{
+            label: "Workbench",
+            hint: "Queue + trace",
+            detail: "The analyst sees the same artifacts — SHAP bars or the investigator stepper.",
+          }}
+        />
 
         <ul className="mt-10 grid gap-3 md:grid-cols-2">
           {agents.map((agent) => (
