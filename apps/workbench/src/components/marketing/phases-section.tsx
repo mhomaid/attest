@@ -24,106 +24,121 @@ interface Feature {
   description: string;
   tags: string[];
   icon: React.ElementType;
+  status: "shipped" | "partial" | "planned";
 }
 
 const features: Feature[] = [
   {
     title: "Streaming Substrate",
     description:
-      "Rust collector ingests raw CloudTrail events, normalises to OCSF 1.3, and publishes to Redpanda at 100k+ events/sec. No JVM, no lock-in.",
-    tags: ["Rust", "Redpanda", "OCSF 1.3"],
+      "Rust collector ingests raw CloudTrail events, normalises to OCSF 1.3, and publishes to Kafka (Redpanda locally) at 100k+ events/sec. No JVM, no lock-in.",
+    tags: ["Rust", "Kafka / Redpanda", "OCSF 1.3"],
     icon: Workflow,
+    status: "shipped",
   },
   {
     title: "Warm Storage & Analytics",
     description:
-      "Apache Iceberg on MinIO with daily tenant partitioning. ClickHouse delivers sub-30s aggregate queries over months of compressed history.",
+      "Parquet on MinIO with daily Hive partitions. ClickHouse s3() reads the same files — sub-30s aggregates, no second copy of the lake.",
     tags: ["Apache Iceberg", "ClickHouse", "Parquet"],
     icon: Layers,
+    status: "shipped",
   },
   {
     title: "Detection Runtime",
     description:
-      "HELIQL — a portable DSL that compiles to RisingWave streaming SQL and ClickHouse batch. 10 reference rules shipped out of the box.",
+      "HELIQL — a portable DSL that compiles to RisingWave streaming SQL and ClickHouse batch. 10 reference rules shipped in detections/.",
     tags: ["HELIQL DSL", "RisingWave", "Sigma-compatible"],
     icon: FileCode2,
+    status: "shipped",
   },
   {
     title: "ML Classifier",
     description:
-      "XGBoost triage model served via ONNX at <50 ms. SHAP explanations and a calibration sidecar keep confidence scores honest.",
-    tags: ["XGBoost", "ONNX", "<50 ms", "SHAP"],
+      "XGBoost triage model served via tract-onnx at ~28 ms P99. SHAP explanations and a calibration sidecar keep confidence scores honest.",
+    tags: ["XGBoost", "ONNX", "~28 ms", "SHAP"],
     icon: BrainCircuit,
+    status: "shipped",
   },
   {
     title: "LLM Investigator",
     description:
-      "Open-weights models escalate low-confidence cases, call MCP tools, write structured reasoning, and emit a signed verdict — fully air-gapped if needed.",
-    tags: ["Qwen 3.6", "Gemma", "GLM 5.1", "Mistral"],
+      "OpenAI-compat models escalate low-confidence cases, call MCP tools, write structured reasoning, and emit a second signed envelope.",
+    tags: ["Qwen", "Anthropic", "MCP tools"],
     icon: Server,
+    status: "shipped",
   },
   {
     title: "MCP Gateway",
     description:
-      "Rust gateway intercepts every tool call before execution. Policy-engine RBAC by agent role, signed attestations, and a hard kill-switch per tenant.",
-    tags: ["Rust", "MCP / A2A", "RBAC"],
+      "Rust gateway intercepts every tool call before execution. Policy-engine RBAC by agent role, argument hashing, and a warm-tier rate limiter.",
+    tags: ["Rust", "MCP", "RBAC"],
     icon: Lock,
+    status: "shipped",
   },
   {
     title: "Hybrid Orchestrator",
     description:
-      "Combines the classifier and LLM paths with shadow checks — when calibrated scores diverge from the LLM verdict, the case gets a second look.",
-    tags: ["Shadow checks", "Calibration gate", "Auto-close"],
+      "Classifier + LLM paths with novelty routing, shadow checks, and calibrated auto-close. When scores diverge, the case gets a second look.",
+    tags: ["Shadow checks", "Calibration", "Auto-close"],
     icon: Network,
+    status: "shipped",
   },
   {
     title: "Ed25519 Attestation",
     description:
-      "Every agent decision is wrapped in a signed envelope: model artifact hash, feature vector, tool call log, and verdict — cryptographically reproducible.",
+      "Every agent decision is a signed envelope: artifact hashes, feature vector, tool-call log, verdict — replayable from the workbench trace panel.",
     tags: ["Ed25519", "Signed envelopes", "Replay"],
     icon: Key,
+    status: "shipped",
   },
   {
     title: "Analyst Workbench",
     description:
-      "Bloomberg-density Next.js SOC UI: live alert queue, hybrid case investigation with reasoning stepper, MITRE coverage map, and detection editor.",
-    tags: ["Next.js 16", "WebSocket", "MITRE ATT&CK"],
+      "Dense Next.js SOC UI: live alert queue, hybrid case investigation, Simulate Lab, Load Lab, and admin health. Hunt and coverage are still thin.",
+    tags: ["Next.js 16", "WebSocket", "Zustand"],
     icon: Cpu,
+    status: "partial",
   },
   {
     title: "Threat Hunter Agent",
     description:
-      "Natural-language hunt queries translated to HELIQL, executed against warm Iceberg history, and surfaced as annotated timelines.",
-    tags: ["NL → HELIQL", "Iceberg hunt", "Timeline"],
+      "Natural-language hunt queries translated to HELIQL against warm Iceberg. The query editor is live; the agent that authors hunts is not.",
+    tags: ["NL → HELIQL", "Iceberg hunt"],
     icon: Search,
+    status: "planned",
   },
   {
     title: "Detection Engineer Agent",
     description:
-      "Proposes HELIQL rules from natural language, shadow-deploys against the live stream, monitors drift, and opens a human-reviewed Git PR.",
-    tags: ["NL → rule", "Shadow deploy", "PR review"],
+      "Proposes HELIQL from coverage gaps, backtests, and opens a human-reviewed Git PR. Specified as SIDM; not in this MVP.",
+    tags: ["SIDM", "Backtest", "PR review"],
     icon: GitPullRequest,
+    status: "planned",
   },
   {
     title: "Responder Agent",
     description:
-      "Policy-gated containment: isolate endpoint, revoke token, create ticket — each action signed, rate-limited, and human-approvable before execution.",
-    tags: ["Containment", "SOAR bridge", "Signed actions"],
+      "Policy-gated containment: isolate host, revoke session, ticket. Explicitly out of MVP — recommendations only until shadow-check is mature.",
+    tags: ["Out of MVP", "SOAR later"],
     icon: ShieldAlert,
+    status: "planned",
   },
   {
     title: "AI-Threat Detection",
     description:
-      "First-class detection of rogue internal AI: baseline MCP tool invocation, correlate OTEL GenAI traces with identity and egress, fire on anomalies.",
-    tags: ["OTEL GenAI", "MCP abuse", "Agent identity"],
+      "Treat AI agents as first-class OCSF entities. OTEL GenAI + MCP traces, five launch detections (prompt injection, tool misuse, PII leak). Phase 9.",
+    tags: ["AADF", "OTEL GenAI", "Phase 9"],
     icon: Fingerprint,
+    status: "planned",
   },
   {
     title: "Enterprise & MSSP",
     description:
-      "Multi-tenant isolation, BYOK encryption, federated push-down to Snowflake / Splunk, SSO, and compliance exports mapped to NIST / SOC 2 controls.",
-    tags: ["Multi-tenant", "BYOK", "SOC 2"],
+      "Multi-tenant isolation, BYOK, federated push-down, OIDC SSO, SOC 2 exports. Architecture supports it; this demo is a single-tenant Railway stack.",
+    tags: ["GA v1", "BYOC", "OIDC"],
     icon: Database,
+    status: "planned",
   },
 ];
 
@@ -140,7 +155,9 @@ export function PhasesSection() {
           Everything in the stack
         </h2>
         <p className="mt-4 max-w-3xl text-muted-foreground">
-          From raw ingest to signed verdicts — each capability is a discrete, composable layer.
+          From raw ingest to signed verdicts — each capability is a discrete
+          layer. Cards tagged shipped are in this repo with an E2E gate;
+          planned cards are the blueprint, not a claim.
         </p>
       </div>
 
@@ -183,10 +200,20 @@ export function PhasesSection() {
               <feat.icon className="h-4 w-4 text-primary" aria-hidden />
             </div>
 
-            {/* Title */}
-            <h3 className="relative z-10 mt-4 text-sm font-semibold leading-snug">
-              {feat.title}
-            </h3>
+            <div className="relative z-10 mt-4 flex items-start justify-between gap-2">
+              <h3 className="text-sm font-semibold leading-snug">{feat.title}</h3>
+              <span
+                className={
+                  feat.status === "shipped"
+                    ? "shrink-0 font-mono text-[9px] uppercase tracking-wide text-signal-good"
+                    : feat.status === "partial"
+                      ? "shrink-0 font-mono text-[9px] uppercase tracking-wide text-foreground"
+                      : "shrink-0 font-mono text-[9px] uppercase tracking-wide text-muted-foreground"
+                }
+              >
+                {feat.status}
+              </span>
+            </div>
 
             {/* Description */}
             <p className="relative z-10 mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">

@@ -88,8 +88,11 @@ function formatAbsoluteTime(iso: string): string {
 
 function RelativeTime({ iso }: { iso: string }) {
   const [label, setLabel] = useState(() => relativeTime(iso));
+  const [mounted, setMounted] = useState(false);
   const tick = useCallback(() => setLabel(relativeTime(iso)), [iso]);
   useEffect(() => {
+    setMounted(true);
+    tick();
     const id = setInterval(tick, 30_000);
     return () => clearInterval(id);
   }, [tick]);
@@ -97,7 +100,7 @@ function RelativeTime({ iso }: { iso: string }) {
     <div className="font-mono text-xs">
       <div className="inline-flex items-center gap-1 text-muted-foreground">
         <Clock3 className="h-3 w-3 shrink-0" />
-        <span>{label}</span>
+        <span suppressHydrationWarning>{mounted ? label : ""}</span>
       </div>
       <div className="text-[10px] text-muted-foreground/60" title={iso}>
         {formatAbsoluteTime(iso)}

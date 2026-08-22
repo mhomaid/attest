@@ -9,7 +9,7 @@
     "healthcheckPath": "/health"
   },
   "environmentVariables": {
-    "KAFKA_BROKERS": "${{Redpanda.RAILWAY_PRIVATE_DOMAIN}}:9092",
+    "KAFKA_BROKERS": "redpanda.railway.internal:9092",
     "TENANT_ID": "production",
     "PORT": "4000",
     "RUST_LOG": "info"

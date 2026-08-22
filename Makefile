@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -490,6 +490,19 @@ railway-app-start: ## Deploy all application services — handles first-deploy a
 	    railway up --service $$svc --detach --ci; \
 	done
 	@echo "✔ App services deploy triggered."
+
+# `make prod pause` / `make prod resume` / `make prod down`
+# Make treats the second word as another goal; these are no-ops so it does not fail.
+PROD_ACTION := $(word 2,$(MAKECMDGOALS))
+pause resume down:
+	@:
+
+prod: ## Railway demo: make prod pause | make prod resume | make prod down
+	@if [ -z "$(PROD_ACTION)" ]; then \
+	  echo "Usage: make prod pause | make prod resume | make prod down"; \
+	  exit 2; \
+	fi
+	@./scripts/prod-railway.sh $(PROD_ACTION)
 
 railway-full-deploy: ## ⭐ Full ordered deploy: infra first, wait 90s, then app services
 	@echo "════════════════════════════════════════════════════════"

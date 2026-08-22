@@ -21,6 +21,9 @@ export const metadata = {
   title: "Attest — Verifiable Agentic SIEM",
   description:
     "Streaming-first security operations with agent-aware detection, signed agent reasoning, and a self-improving detection mesh. Explore the analyst workbench.",
+  icons: {
+    icon: "/icon.svg",
+  },
   openGraph: {
     title: "Attest — Verifiable Agentic SIEM",
     description:

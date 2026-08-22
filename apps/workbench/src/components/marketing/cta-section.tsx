@@ -34,10 +34,10 @@ export function CtaSection() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <a
-                href="#pillars"
+                href="#architecture"
                 className="inline-flex items-center rounded-md border border-border bg-background/60 px-4 py-2.5 text-sm font-medium"
               >
-                Back to platform
+                Read the architecture
               </a>
             </div>
           </div>

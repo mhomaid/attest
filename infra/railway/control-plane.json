@@ -9,9 +9,10 @@
     "healthcheckPath": "/health"
   },
   "environmentVariables": {
-    "RISINGWAVE_HOST": "${{Risingwave.RAILWAY_PRIVATE_DOMAIN}}",
+    "RISINGWAVE_HOST": "risingwave.railway.internal",
     "RISINGWAVE_PORT": "4566",
-    "CLICKHOUSE_URL": "http://${{Clickhouse.RAILWAY_PRIVATE_DOMAIN}}:8123",
+    "CLICKHOUSE_URL": "http://clickhouse.railway.internal:8123",
+    "KAFKA_BROKERS": "redpanda.railway.internal:9092",
     "PORT": "8080",
     "RUST_LOG": "info"
   }

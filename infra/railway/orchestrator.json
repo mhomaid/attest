@@ -12,10 +12,15 @@
     "ORCHESTRATOR_PORT": "4300",
     "PORT": "4300",
     "ARTIFACTS_DIR": "/artifacts",
-    "CALIBRATION_URL": "http://${{CalibrationSidecar.RAILWAY_PRIVATE_DOMAIN}}:5001",
+    "CALIBRATION_URL": "http://calibration-sidecar.railway.internal:5001",
+    "MCP_GATEWAY_URL": "http://mcp-gateway.railway.internal:4242",
+    "SYSTEM_PROMPT_PATH": "/agents/triager/system_prompt_v1.md",
+    "REVIEWER_PROMPT_PATH": "/agents/triager/reviewer_prompt_v1.md",
+    "INVESTIGATOR_PROMPT_PATH": "/agents/investigator/system_prompt_v1.md",
     "ESCALATION_THRESHOLD": "0.60",
     "NOVELTY_THRESHOLD": "0.70",
     "ATTEST_LOG_PATH": "/data/attestations.ndjson",
+    "KAFKA_BROKERS": "redpanda.railway.internal:9092",
     "RUST_LOG": "info"
   }
 }

@@ -61,7 +61,7 @@ WHERE time >= NOW() - INTERVAL '30 days'
 GROUP BY tenant_id, actor_user_name;
 
 -- ── 4. Detection views (det_*) ───────────────────────────────────────────
--- Each view fires a row per matching event; the control-plane polls them
+-- Each view fires a row per matching event. The control-plane polls them
 -- every 2 s and broadcasts new rows over the WebSocket.
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS det_aws_root_account_use AS

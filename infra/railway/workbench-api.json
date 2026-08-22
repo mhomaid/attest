@@ -2,16 +2,15 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "infra/docker/mcp-gateway.Dockerfile"
+    "dockerfilePath": "infra/docker/workbench-api.Dockerfile"
   },
   "deploy": {
     "restartPolicyType": "ON_FAILURE",
     "healthcheckPath": "/healthz"
   },
   "environmentVariables": {
-    "MCP_GATEWAY_PORT": "4242",
-    "PORT": "4242",
-    "CONTROL_PLANE_URL": "http://control-plane.railway.internal:8080",
+    "WORKBENCH_API_PORT": "4400",
+    "PORT": "4400",
     "ATTEST_LOG_PATH": "/data/attestations.ndjson",
     "RUST_LOG": "info"
   }

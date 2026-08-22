@@ -72,10 +72,13 @@ Image") or with the CLI. These services do **not** need a public domain.
 
 ### RisingWave
 
-- **Image**: `risingwavelabs/risingwave:latest`
-- **Start command**: `playground`
+- **Image**: `risingwavelabs/risingwave:v2.4.2` (or `latest`)
+- **Start command**: `/risingwave/bin/risingwave single_node`
+  Railway replaces the image entrypoint, so a bare `playground` / `single-node`
+  never execs. Current images use the `single_node` subcommand (underscore).
 - **Port**: `4566` (internal only)
-- **Volume**: attach a Railway volume at `/var/lib/risingwave` for persistence
+- **State**: `RW_STATE_STORE=hummock+minio://…@minio.railway.internal:9000/risingwave`
+  and `RW_DATA_DIRECTORY=attest-data`. MinIO must already have a `risingwave` bucket.
 
 ### ClickHouse
 
@@ -253,4 +256,11 @@ make railway-login      # Log in to Railway CLI
 make railway-setup      # Create all services with railway add (run once)
 make railway-deploy     # railway up --service for all services (first deploy)
 make railway-redeploy   # railway service redeploy for all services (after first deploy)
+make prod pause         # Stop demo compute (Postgres stays)
+make prod resume        # Redeploy infra then apps from source
+make prod down          # Remove active deployments (keep services + volumes)
 ```
+
+`make prod pause` / `resume` / `down` never touch the managed **Postgres**
+service, so seeded login (`analyst@attest.local`) survives. They skip Arroyo
+and workbench-api (not in the demo cut).

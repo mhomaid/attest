@@ -1,0 +1,13 @@
+# Keep CLI uploads small. Use `railway up --no-gitignore` so gitignored
+# ML artifacts are included; this file still excludes local build trees.
+.git/
+target/
+**/node_modules/
+**/.next/
+**/.venv/
+ml/.venv/
+ml/uv.lock
+eval/per_customer/
+eval/reports/
+*.ndjson
+test.json

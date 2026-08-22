@@ -1302,3 +1302,9 @@ Nixpacks `[variables] NODE_VERSION = "20"` in `nixpacks.toml` sets an environmen
 
 #### 10. Detection rules baked into the Docker image
 Railway does not support local volume mounts from the host. Detection rules (`.heliql` files) are copied into the `detection-runtime` image at build time via `COPY detections/ /rules/` in `infra/docker/detection-runtime.Dockerfile`. The `RULES_DIR=/rules` env var is set in the Dockerfile. This is intentional and correct for Railway deployments.
+
+#### 11. RisingWave start command must include the binary
+Railway's start command replaces the image entrypoint, not just `CMD`. Use `/risingwave/bin/risingwave single_node` (underscore). Bare `playground` or `single-node` fails with no container logs. Current images default to `single_node`.
+
+#### 12. `railway up` and gitignored ML artifacts
+`railway up` respects `.gitignore`, so `ml/triager/artifacts/` is omitted from the upload. Orchestrator and calibration-sidecar Dockerfiles `COPY` those files — without them the Metal builder dies at schedule with almost no logs. Deploy those two services with `railway up --no-gitignore`. `.railwayignore` still excludes `target/`, `node_modules/`, and `.venv/` so the archive stays small.

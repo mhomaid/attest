@@ -75,10 +75,10 @@ export function HeroSection() {
             <ArrowRight className="h-4 w-4" />
           </Link>
           <a
-            href="#pillars"
+            href="#architecture"
             className="inline-flex items-center gap-2 rounded-md border border-border/80 bg-card/50 px-5 py-2.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:bg-card"
           >
-            How Attest is different
+            Architecture and stack
           </a>
         </motion.div>
 

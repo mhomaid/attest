@@ -92,8 +92,26 @@ const stack = [
   {
     category: "Platform",
     icon: Globe,
-    label: "Next.js 15 + Bun",
-    detail: "Workbench UI · axum 0.8 control-plane · shadcn / Tailwind · Railway",
+    label: "Next.js 16 + Bun",
+    detail: "App Router workbench · Better Auth · Zustand · shadcn / Tailwind · Railway",
+  },
+  {
+    category: "Platform",
+    icon: Database,
+    label: "Postgres 16",
+    detail: "Better Auth sessions · Alembic migrations in infra/db · Arroyo pipeline state",
+  },
+  {
+    category: "AI / Triage",
+    icon: BrainCircuit,
+    label: "tract-onnx + uv",
+    detail: "In-process XGBoost · Mahalanobis novelty · Python calibration sidecar :5001",
+  },
+  {
+    category: "Streaming",
+    icon: Workflow,
+    label: "Arroyo",
+    detail: "CEP sequences (login → S3) + Parquet ETL · UI :5115 · SQL pipelines in-repo",
   },
 ];
 

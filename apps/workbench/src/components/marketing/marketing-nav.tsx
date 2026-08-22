@@ -7,10 +7,12 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "#pillars", label: "Platform" },
-  { href: "#fabric", label: "Detection" },
-  { href: "#substrate", label: "Architecture" },
-  { href: "#use-cases", label: "Use cases" },
+  { href: "#status", label: "Demo" },
+  { href: "#architecture", label: "Architecture" },
+  { href: "#design", label: "Design" },
+  { href: "#agents", label: "Agents" },
+  { href: "#substrate", label: "Stack" },
+  { href: "#workbench", label: "Workbench" },
 ] as const;
 
 export function MarketingNav() {

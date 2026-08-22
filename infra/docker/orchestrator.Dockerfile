@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /build/target/release/attest-orchestrator /usr/local/bin/attest-orchestrator
 COPY --from=builder /build/agents /agents/
+COPY ml/triager/artifacts/ /artifacts/
 
 ENV ORCHESTRATOR_PORT=4300
 ENV ARTIFACTS_DIR=/artifacts

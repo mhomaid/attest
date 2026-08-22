@@ -54,13 +54,16 @@ pub async fn apply_phase1_ddl(db: &Client, kafka_brokers: &str) -> anyhow::Resul
         }
     }
 
-    // Split on `;` and execute each non-empty statement individually.
-    // We strip leading comment lines only for the emptiness check — the full
-    // chunk (including comments) is sent to the server, which handles them fine.
-    for stmt in ddl.split(';').map(str::trim).filter(|s| {
-        s.lines()
-            .any(|l| !l.trim_start().starts_with("--") && !l.trim().is_empty())
-    }) {
+    // Drop `--` comment lines first. A semicolon inside a comment (common in
+    // prose) would otherwise split the next CREATE statement and prepend the
+    // leftover comment text as invalid SQL.
+    let ddl: String = ddl
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for stmt in ddl.split(';').map(str::trim).filter(|s| !s.is_empty()) {
         tracing::debug!("applying DDL: {}…", &stmt[..stmt.len().min(60)]);
         db.simple_query(stmt)
             .await
