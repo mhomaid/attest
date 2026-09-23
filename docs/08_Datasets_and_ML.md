@@ -3,6 +3,8 @@
 **Product:** Attest
 **Document type:** What data we use to develop, test, and demo. What ML models we use, where we train, and where we don't. Read this before any ML engineer starts work.
 
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
+
 ---
 
 ## 1. The honest framing
@@ -90,7 +92,7 @@ This is a deliberate departure from the agentic-SOC marketing default ("LLMs eve
 
 | Item | Choice | Rationale |
 |---|---|---|
-| Model | **XGBoost** (gradient-boosted trees) | Empirically validated state of the art on tabular security data; Mohamed has prior production experience |
+| Model | **XGBoost** (gradient-boosted trees) | Strong, well-understood baseline for tabular data; fast CPU inference; native SHAP support via TreeSHAP |
 | Inputs | Alert features: severity, source, entity reputation, baseline deviation, threat intel hits, time of day, asset criticality, recent context, prior dispositions on similar alerts | All computed in the streaming substrate; no pre-existing model dependency |
 | Output | Calibrated probability per disposition class (`true_positive`, `false_positive`, `needs_investigation`) + per-feature SHAP attribution |  |
 | Training data | Golden case corpus + DARPA OpTC labeled scenarios + AgentDojo + design-partner accumulated dispositions | See Section 2 of this doc |
@@ -234,7 +236,7 @@ These catch maybe 60–70% of attacks; cheap and run inline.
 **Approach:** Off-the-shelf gradient-boosted tree on flow features.
 
 - Features: standard NetFlow / Zeek-style flow statistics.
-- Model: XGBoost (Mohamed has prior production experience here).
+- Model: XGBoost.
 - Training data: CICIDS + UNSW-NB15 + customer-specific 30-day baseline.
 - Output: anomaly score per flow, fed into the streaming detection pipeline.
 

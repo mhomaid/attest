@@ -1,9 +1,10 @@
 # 01 — Product Requirements Document
 
-**Product:** Attest (working name)
-**Owner:** Mohamed Homaid
-**Status:** Draft v0.1 — for review with founding team and design partners
+**Product:** Attest
+**Status:** Draft v0.1
 **Last updated:** April 2026
+
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
 
 ---
 
@@ -233,14 +234,6 @@ Sam's MSSP serves 30 tenants. A new IOC appears in threat intel. The Hunter Agen
 - Triage agent autonomous closure rate (no human intervention) on benign cases: ≥ 80%.
 - False-positive rate on agent autonomous closures: ≤ 0.1%.
 - Self-Improving Detection Mesh net-new detections proposed per week per customer: ≥ 5.
-- Net Promoter Score ≥ 60 by month 12.
-
-### 9.3 Business metrics
-
-- Design partners signed: 3 by Day 90; 10 by Day 180.
-- ARR run-rate: $2–4M by Day 360.
-- Logo retention: 95%+.
-- Net dollar retention: 130%+.
 
 ## 10. Out of scope (for v1)
 
@@ -253,13 +246,12 @@ Sam's MSSP serves 30 tenants. A new IOC appears in threat intel. The Hunter Agen
 
 The wedge is sharp on purpose. Win one architectural battle, then expand.
 
-## 11. Open questions for design partners
+## 11. Open questions
 
-1. How willing are regulated buyers to deploy Attest in BYOC vs. SaaS, and what compliance evidence do they require for each?
-2. What is the right pricing primitive — per ingested TB, per detection-hour, per agent-action, hybrid?
-3. Which two SOAR vendors should be deeply integrated at GA?
-4. How much of the existing detection content (Sigma, Elastic, Splunk SPL) must we auto-translate vs. ask customers to rewrite?
-5. Is the Detection Engineering Agent best positioned as autonomous-by-default or human-driven-by-default?
+1. What compliance evidence do regulated operators need for BYOC vs. SaaS deployment?
+2. Which two SOAR platforms should be deeply integrated first?
+3. How much existing detection content (Sigma, Elastic, Splunk SPL) should be auto-translated vs. rewritten?
+4. Should the Detection Engineering Agent be autonomous-by-default or human-driven-by-default?
 6. What governance certifications (NIST AI RMF, ISO/IEC 42001) do regulated buyers most want for the agentic layer?
 
 ## 12. Appendix: glossary

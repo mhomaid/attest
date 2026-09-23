@@ -3,6 +3,8 @@
 **Product:** Attest
 **Document type:** Authoritative tech stack decisions. Supersedes the stack notes in `02_Architecture.md` where they differ.
 
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
+
 ---
 
 ## 1. Stack at a glance

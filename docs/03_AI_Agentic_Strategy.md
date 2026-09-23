@@ -3,6 +3,8 @@
 **Product:** Attest
 **Document type:** AI strategy and agent design philosophy. Read this if you want to understand *why* the agentic plane is built the way it is.
 
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README. Where this document differs from `08_Datasets_and_ML.md` and `09_Agent_Harness.md` (notably the hybrid classifier-first Triager), those documents win.
+
 ---
 
 ## 1. The thesis

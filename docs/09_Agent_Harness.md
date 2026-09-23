@@ -3,6 +3,8 @@
 **Product:** Attest
 **Document type:** Specification of the agent runtime, evaluation, and verification framework. The technical spine of the Verifiable Agentic SOC.
 
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
+
 ---
 
 ## 1. Why this document exists
@@ -471,8 +473,7 @@ The MVP version ships with reduced scope but full architectural shape. Specifica
 | Hallucination Guardrails | ✅ Citation enforcement and retrieval-before-reasoning for LLM paths in MVP |
 | Time-travel Debugger (UI) | ✅ Reads any of the three envelope variants; renders SHAP attribution for classifier paths and reasoning trace for LLM paths; alternative-branch exploration deferred to GA v1 |
 
-**MVP team allocation for the harness:** 1 Rust engineer for ~3 weeks builds the orchestrator (with execution-path abstraction) + policy engine + MCP gateway + attestation builder. 1 Python ML engineer for ~3 weeks trains the Triager classifier + builds the calibration layer + evaluation runner. Both are part of the founding 12-person team described in `05_Roadmap.md` Section 3.3.
-
+**MVP team allocation for the harness:** 1 Rust engineer for ~3 weeks builds the orchestrator (with execution-path abstraction) + policy engine + MCP gateway + attestation builder. 1 Python ML engineer for ~3 weeks trains the Triager classifier + builds the calibration layer + evaluation runner.
 **This is small.** The reason it's small is that the architectural decisions are made up front; the implementation follows mechanically. The Triager classifier is the single most consequential ML deliverable in the MVP — it determines whether ~80% of alert volume processes in milliseconds or seconds, and whether Attest's unit economics work at scale.
 
 ## 6. Local development experience

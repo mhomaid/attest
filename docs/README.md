@@ -1,67 +1,45 @@
-# Attest
+# Attest — design documentation
 
-**Working title** for an AI-agentic, streaming-first security operations platform. Author: Mohamed Homaid.
+This directory holds the design specification for Attest, a streaming-first security operations platform with a verifiable agentic SOC.
 
-This package is a complete product blueprint — written as if Attest were a real internal program at a Series A security company. It exists so a reader can evaluate three things in one sitting:
-
-1. Whether the author understands the streaming-first SIEM space at the level of someone who has built data platforms at scale.
-2. Whether the proposed product actually solves a real, current, unsolved problem.
-3. Whether the technical and organizational plan is credible.
+> **Design documents describe the target architecture, not the current state.** For what is implemented today, see the Status table in the [root README](../README.md). Where a document and the code disagree, the code is the source of truth for current behavior and the document is the source of truth for intent. Either way, the mismatch is worth an issue.
 
 ## The thesis in one paragraph
 
-The next generation of SIEM is not "AI-bolted-on streaming SIEM." It is the recognition that **AI agents are simultaneously the most dangerous new class of attacker and the most powerful new class of defender**, and that no current platform — including the strongest streaming-first players — is purpose-built for that reality. Attest is a streaming-first, composable security operations platform with three first-of-kind capabilities: an **Agent-Aware Detection Fabric** that treats AI agents as first-class entities for detection; a **Verifiable Agentic SOC** where every autonomous decision is cryptographically attested, confidence-calibrated, and shadow-checked against deterministic rules; and a **Self-Improving Detection Mesh** where specialized agents continuously author, test, deploy, tune, and retire detections under human governance.
+AI agents are now both a new class of attacker and a new class of defender, and security platforms have to handle both. Attest is a streaming-first, composable security operations platform built around three capabilities:
 
-## Documentation
-
-The `docs/` directory is the canonical specification of HELIX/Attest. Read it
-before contributing.
-
-- Start: `docs/README.md`
-- For new engineers: `docs/02_Architecture.md` → `docs/07_Stack_Revised.md` → `docs/09_Agent_Harness.md`
-- For frontend engineers: `docs/12_Workbench.md`
-- For PRs that change architecture: file an ADR in `docs/decisions/`
-
-When code and docs disagree, that is a bug. Open an issue.
+- **Agent-Aware Detection Fabric.** It treats AI agents as first-class entities for detection.
+- **Verifiable Agentic SOC.** Every autonomous decision is cryptographically attested, confidence-calibrated, and shadow-checked against deterministic rules.
+- **Self-Improving Detection Mesh.** Specialized agents author, test, deploy, tune, and retire detections under human governance.
 
 ## Reading order
 
 | # | Document | What it answers |
 |---|---|---|
-| 00 | [Executive Summary](./00_Pitch.md) | Why this, why now, what we win on |
-| 01 | [Product Requirements Document](./01_PRD.md) | What we're building and for whom |
-| 02 | [Technical Architecture](./02_Architecture.md) | How it's built (original) |
-| 03 | [AI & Agentic Strategy](./03_AI_Agentic_Strategy.md) | How AI is woven through every layer |
-| 04 | [Competitive Differentiation](./04_Differentiation.md) | Where we beat Abstract, Microsoft, Google, Splunk, Databricks |
-| 05 | [MVP & Roadmap](./05_Roadmap.md) | What ships in 90 days, 6 months, 12 months |
-| 06 | [Go-to-Market & Positioning](./06_GTM.md) | How we sell it |
-| 07 | [Revised Tech Stack](./07_Stack_Revised.md) | All-Rust, Redpanda, MinIO, Railway, Next.js — supersedes stack notes in 02 |
-| 08 | [Datasets & ML Strategy](./08_Datasets_and_ML.md) | What data we use, what models we use, what we train |
-| 09 | [Agent Harness](./09_Agent_Harness.md) | Technical spec of the Verifiable Agentic SOC runtime |
-| 10 | [Build Order](./10_Build_Order.md) | The 90-day implementation sequence with E2E tests for every feature |
-| 11 | [Repo Structure](./11_Repo_Structure.md) | Top-level repository layout when you sit down to `git init` |
-| 12 | [Workbench](./12_Workbench.md) | Workbench stack, UI/UX principles for SOC analysts, flows, components, PostHog + Sentry observability |
+| 01 | [Product Requirements](./01_PRD.md) | What is being built, for whom, and the functional requirements |
+| 02 | [Technical Architecture](./02_Architecture.md) | The six-plane model, data flow, and deployment topology |
+| 03 | [AI & Agentic Strategy](./03_AI_Agentic_Strategy.md) | Why the agentic plane is designed the way it is |
+| 03 | [Architecture Diagrams](./03_Architecture_Diagrams.md) | Mermaid diagrams, from broadest to most detailed |
+| 07 | [Tech Stack](./07_Stack_Revised.md) | All-Rust services, Redpanda, MinIO/Iceberg, ClickHouse, Next.js. Supersedes the stack notes in 02 |
+| 08 | [Datasets & ML](./08_Datasets_and_ML.md) | Which data and models are used, and what is trained versus not |
+| 09 | [Agent Harness](./09_Agent_Harness.md) | Execution paths, the attestation envelope, calibration, and evaluation |
+| 10 | [Build Order](./10_Build_Order.md) | Implementation sequence, with an end-to-end test per feature |
+| 11 | [Repo Structure](./11_Repo_Structure.md) | Top-level repository layout |
+| 12 | [Workbench](./12_Workbench.md) | Analyst workbench: stack, UI/UX principles, flows, observability |
+| 15 | [Streaming Engine ADR](./15_Streaming_Engine_Decision.md) | Arroyo vs. Flink vs. RisingWave, with revisit triggers |
 
-## Recommended reading paths
+Gaps in the numbering are intentional; numbers are stable identifiers, not a sequence.
 
-**For Abstract Security leadership (interviewer pitch):**
-00 → 04 → 02 + 07 → 03
+## Reading paths
 
-**For an engineer evaluating credibility:**
-07 → 02 → 09 → 10
+- **Evaluating the architecture:** 07 → 02 → 09 → 15
+- **About to write backend code:** 07 → 09 → 10 → 11
+- **About to write frontend code:** 12 → 07 (§8) → 11 (`apps/workbench/`)
+- **Interested in the ML and verification story:** 08 → 09 → 03
 
-**For an investor or board:**
-00 → 04 → 05 → 06
+## Conventions
 
-**For someone about to start writing code:**
-07 → 09 → 10 → 11 → 12
-
-**For a frontend engineer scaffolding the workbench:**
-12 → 07 (§8) → 11 (apps/workbench/) → 10 (Phase 8)
-
-## Conventions used
-
-- **Attest** is a placeholder codename. Rename freely.
-- Where this document references real companies (Abstract Security, Microsoft Sentinel, Splunk, etc.), it does so to map the competitive landscape, not to disparage. Abstract Security in particular has built the strongest streaming-first foundation in the market; Attest is positioned as the *next architectural layer above what they've built*, not a replacement for it.
-- All technical claims (volumes, latencies, costs, frameworks) are stated as design targets, not current state.
-- **Documents 07, 08, and 09 supersede earlier documents where they differ.** Specifically: doc 07 supersedes the tech stack table in doc 02; docs 08 and 09 supersede the Triager-as-LLM design implied in doc 03 with the hybrid classifier-first design. Earlier documents are preserved in their original form for context, but the canonical decisions live in the later docs.
+- **Later documents supersede earlier ones where they differ.** Doc 07 supersedes the stack table in doc 02. Docs 08 and 09 supersede the LLM-only Triager implied in doc 03 with the hybrid classifier-first design. Earlier documents are kept for context.
+- **Numbers are design targets.** Volumes, latencies, and costs are targets unless a benchmark in the repo backs them.
+- **Vendor names map the landscape.** References to other products describe where Attest fits, not claims about their internals.
+- **Architecture changes get an ADR.** File them in [`decisions/`](./decisions/).

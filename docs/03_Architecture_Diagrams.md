@@ -4,6 +4,8 @@
 **Document type:** Visual architecture reference — all Mermaid diagrams for the platform.
 Companion to `02_Architecture.md`. Diagrams are organized from broadest to most detailed.
 
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
+
 ---
 
 ## 1. C4 Level 1 — System Context

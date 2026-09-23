@@ -1,7 +1,9 @@
 # 02 — Technical Architecture
 
 **Product:** Attest
-**Document type:** Architecture overview, intended for engineering leadership and design-partner CTOs.
+**Document type:** Architecture overview.
+
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
 
 > **A note on this document.** This is the canonical architecture overview — the six-plane model, the data flow, the agentic plane structure, the deployment topology. For specific stack decisions (which streaming engine, which warm-tier query engine, which LLM provider), see `07_Stack_Revised.md` — its decisions supersede earlier text where they differ. For the agent harness implementation specification (execution paths, attestation envelope variants, calibration), see `09_Agent_Harness.md`. For ML model strategy and the hybrid Triager design, see `08_Datasets_and_ML.md`. For the analyst-facing workbench (Next.js stack, UI/UX principles, information architecture, critical flows, observability), see `12_Workbench.md`. This document was kept in sync with those four as of the current revision.
 
@@ -11,7 +13,7 @@
 
 These principles drive every component decision. When in doubt, fall back to them.
 
-1. **Streaming-first, not stream-flavored.** Data is processed in motion by default. Storage is a tier of the stream, not the other way around. This is the difference between Abstract Security's approach and a legacy Splunk pretending to be real-time.
+1. **Streaming-first, not stream-flavored.** Data is processed in motion by default. Storage is a tier of the stream, not the other way around — as opposed to a batch-indexed SIEM with a real-time layer bolted on.
 
 2. **Composable by contract.** Every component speaks open standards (OCSF, OTEL, MCP, Sigma, Iceberg). Customers can replace any block. Lock-in is not a moat; it is technical debt charged to the buyer.
 
@@ -84,7 +86,7 @@ The **agentic plane never reaches into the storage plane directly.** It calls in
 - mTLS to ingest endpoints; persistent on-disk buffer for network outages.
 - Backpressure-aware; never drops data without acknowledgment.
 
-**Why Rust:** Mohamed's prior work showed 3.75× throughput, 13× lower memory vs. JVM equivalents. Edge collection is the unforgiving hot path; latency and footprint are non-negotiable.
+**Why Rust:** no GC pauses, a small and predictable memory footprint, and a single static binary to ship to customer environments. Edge collection is the unforgiving hot path; latency and footprint are non-negotiable.
 
 ### 3.2 Ingest backbone
 
@@ -403,7 +405,7 @@ No existing SIEM does this because none has the agent telemetry schema.
 - **Multi-tenancy:** Tenant ID propagated through every event, every query, every agent action. Per-tenant encryption keys (BYOK via AWS KMS, GCP KMS, Azure Key Vault).
 - **GitOps:** All configuration (detections, pipelines, policies, agent definitions) is Git-backed. Configuration changes flow through PR review, signed at build, immutable at runtime.
 - **Infrastructure:**
-  - **Railway** for MVP and early design partners — fast iteration, low ops, sufficient for pre-Series A.
+  - **Railway** for MVP and early design partners — fast iteration, low ops, sufficient for early-stage scale.
   - **Terraform** modules for BYOC deployments on AWS (EKS), GCP (GKE), Azure (AKS). Same container artifacts deploy to either Railway or K8s.
   - **Helm** charts for self-hosted and air-gapped reference deployments.
 - **Observability:** Prometheus + Grafana. Per-tenant SLO dashboards. Customer-facing status page.
@@ -471,7 +473,7 @@ These are design targets. Every change must be benchmarked against them in CI.
 
 A typical mid-market design partner runs Attest on Railway for **$800–$1,500/month of platform cost** plus LLM API spend (~$2K–$5K/month at MVP volumes). See `07_Stack_Revised.md` Section 10 for the cost breakdown.
 
-For BYOC and post-Series A SaaS deployments, the topology scales horizontally on the same container artifacts deployed to EKS/GKE/AKS.
+For BYOC and larger multi-tenant SaaS deployments, the topology scales horizontally on the same container artifacts deployed to EKS/GKE/AKS.
 
 ## 14. Build vs. buy
 

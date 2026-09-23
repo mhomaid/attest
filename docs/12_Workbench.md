@@ -1,7 +1,9 @@
 # 12 — Workbench: Stack, UI/UX, and Flows
 
-**Product:** Attest (working name: Attest)
+**Product:** Attest
 **Document type:** Technical and design specification of the analyst-facing workbench. Read this when you sit down to scaffold the front end.
+
+> **Design document.** Describes the target architecture. For what is implemented today, see the Status table in the root README.
 
 > **A note on this document.** This is the canonical specification for everything that runs in a browser. It supersedes any web-stack details mentioned briefly in `02_Architecture.md` §6, `07_Stack_Revised.md` §8, and `11_Repo_Structure.md`. Those documents are correct at the level they describe; this one fills in the rest.
 
@@ -20,7 +22,7 @@ Everything else in this document follows from those two ideas.
 
 ## 2. Canonical stack
 
-The stack inherits the author's Next.js skill defaults, with Attest-specific overrides where the product warrants them.
+The stack follows mainstream Next.js App Router defaults, with Attest-specific overrides where the product warrants them.
 
 | Layer | Technology | Notes for Attest |
 |---|---|---|

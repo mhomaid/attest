@@ -3,6 +3,8 @@
 **Product:** Attest
 **Document type:** The implementation sequence with end-to-end tests for every feature. Read this when you sit down to write code.
 
+> **Plan document.** Describes the intended build sequence. For what is implemented today, see the Status table in the root README.
+
 ---
 
 ## 1. The principle this document enforces
@@ -14,7 +16,7 @@ This document is organized as a sequence of phases. Each phase has:
 - **End-to-end test:** the executable proof it works.
 - **Done means:** the explicit acceptance criteria.
 
-The phases sum to the 90-day MVP described in `05_Roadmap.md`. After MVP, the same discipline continues for GA v1 (covered in `05_Roadmap.md` Section 4).
+The phases sum to a 90-day MVP. After MVP, the same discipline continues for GA v1.
 
 ## 2. Pre-phase 0: foundations that exist before any code
 

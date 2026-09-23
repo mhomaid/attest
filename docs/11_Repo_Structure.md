@@ -3,6 +3,8 @@
 **Product:** Attest
 **Document type:** Top-level repository layout. Folders only. Read this when you sit down to `git init`.
 
+> **Design document.** Describes the target layout. The actual tree may be smaller; directories are added when there is code to put in them.
+
 ---
 
 ## 1. Principle
@@ -196,19 +198,18 @@ tools/
 
 ```
 docs/
-├── 00_Pitch.md
+├── README.md                   # Index and reading paths
 ├── 01_PRD.md
 ├── 02_Architecture.md
 ├── 03_AI_Agentic_Strategy.md
-├── 04_Differentiation.md
-├── 05_Roadmap.md
-├── 06_GTM.md
+├── 03_Architecture_Diagrams.md
 ├── 07_Stack_Revised.md
 ├── 08_Datasets_and_ML.md
 ├── 09_Agent_Harness.md
 ├── 10_Build_Order.md
 ├── 11_Repo_Structure.md        # This document
 ├── 12_Workbench.md             # Workbench stack, UI/UX, flows, observability
+├── 15_Streaming_Engine_Decision.md  # ADR: Arroyo vs. Flink vs. RisingWave
 ├── decisions/                  # ADRs (Architecture Decision Records)
 └── runbooks/                   # On-call runbooks (added during GA v1 hardening)
 ```
