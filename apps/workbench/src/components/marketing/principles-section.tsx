@@ -6,8 +6,8 @@ const principles = [
   },
   {
     id: "P2",
-    title: "Every decision is reproducible",
-    body: "Model id, prompt hash, tool inputs/outputs, intermediate beliefs, calibrated confidence, policy version. Enough state to replay last Tuesday’s containment in ninety seconds.",
+    title: "Every decision is on the record",
+    body: "Model id, prompt hash, tool-call hashes, intermediate beliefs, evidence citations, calibrated confidence. Signed together, so any edit is detectable. Deterministic replay of classifier decisions is next.",
   },
   {
     id: "P3",

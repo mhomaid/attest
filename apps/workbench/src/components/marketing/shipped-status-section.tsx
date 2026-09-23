@@ -13,8 +13,8 @@ const path = [
   },
   {
     label: "Triage",
-    hint: "~28 ms ONNX",
-    detail: "ONNX XGBoost + SHAP + novelty + a calibration sidecar. About 28 ms, no LLM required.",
+    hint: "<5 ms ONNX",
+    detail: "ONNX XGBoost + SHAP + novelty + a calibration sidecar. Inference under 5 ms, no LLM required.",
   },
   {
     label: "Attest",

@@ -2,7 +2,7 @@
 
 Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer into Redpanda, are continuously aggregated by RisingWave materialized views, persisted as Parquet files in MinIO via Apache Iceberg, and queried at scale by ClickHouse — all exposed through a REST control-plane and a live Next.js SOC workbench.
 
-The agent layer runs on top of the data tier. A Hybrid Triager routes every alert through an XGBoost classifier (sub-30 ms) or escalates structurally novel cases to an LLM. When the verdict is `needs_investigation`, an **Investigator** agent runs a tool loop through the MCP gateway (including optional warm-tier SQL). Every agent decision produces a cryptographically signed `AttestationEnvelope` — not a black box.
+The agent layer runs on top of the data tier. A Hybrid Triager routes every alert through an XGBoost classifier (P99 under 5 ms per inference, asserted in CI) or escalates structurally novel cases to an LLM. When the verdict is `needs_investigation`, an **Investigator** agent runs a tool loop through the MCP gateway (including optional warm-tier SQL). Every agent decision produces a cryptographically signed `AttestationEnvelope` — not a black box.
 
 ## Documentation
 
@@ -252,7 +252,7 @@ Converts an `OcsfEvent` into the 8-dimensional `AlertFeatures` vector the classi
 
 #### Pillar 4 — `attest-attestation` (Signed Evidence Envelopes)
 
-Every agent decision produces a tamper-evident, replayable `AttestationEnvelope` signed with Ed25519:
+Every agent decision produces a tamper-evident `AttestationEnvelope` signed with Ed25519 (any field change fails verification — see `tampered_envelope_fails_verification`). Deterministic replay of classifier decisions from the envelope is planned:
 
 ```
 AttestationEnvelope {
@@ -318,7 +318,8 @@ GET /healthz
 **E2E acceptance gate (all passing):**
 - Known brute-force pattern → `classifier` path, calibrated confidence ≥ 0.5, latency < 500 ms
 - OOD structurally novel alert → `hybrid` path, `escalated_stub` verdict, novelty score > 0
-- Classifier path P99 latency over HTTP < 200 ms (measured: **28 ms**)
+- Classifier path P99 latency over HTTP < 200 ms, end to end including the calibration sidecar (measured: **28 ms**)
+- Classifier inference + attribution in-process, release build: P99 < 5 ms over 1,000 runs (measured: **0.45 ms**; `classifier_predict_p99_under_budget`)
 
 Run with `make e2e-phase4a` (automatically starts services, runs tests, cleans up).
 
@@ -400,7 +401,7 @@ Single event ──► POST /api/simulate ──► Collector :4000 ──► Or
 
 ### Phase 7 — Investigator agent + warm-tier MCP + attestation trace
 
-**The problem it solves:** When the triager returns `needs_investigation`, a dedicated **Investigator** LLM runs a tool loop (MCP gateway → control-plane warm tier and stubs), produces a second signed envelope, and analysts need a **replayable trace** per case.
+**The problem it solves:** When the triager returns `needs_investigation`, a dedicated **Investigator** LLM runs a tool loop (MCP gateway → control-plane warm tier and stubs), produces a second signed envelope, and analysts need an **inspectable trace** per case.
 
 #### Components
 

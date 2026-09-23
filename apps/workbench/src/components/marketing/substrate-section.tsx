@@ -54,7 +54,7 @@ const stack = [
     category: "Storage",
     icon: Warehouse,
     label: "ClickHouse",
-    detail: "Iceberg table function · sub-30 s aggregate queries · warm tier API",
+    detail: "s3() over warm Parquet · sub-30 s aggregate queries · warm tier API",
   },
   // ── Detection ───────────────────────────────────────────────────
   {
@@ -74,7 +74,7 @@ const stack = [
     category: "AI / Triage",
     icon: BrainCircuit,
     label: "Hybrid Triager",
-    detail: "XGBoost + ONNX <50 ms primary · Claude Sonnet / Qwen 3 7B escalation",
+    detail: "XGBoost + ONNX <5 ms primary · Claude Sonnet / Qwen 3 7B escalation",
   },
   {
     category: "AI / Triage",

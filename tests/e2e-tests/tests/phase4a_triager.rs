@@ -196,16 +196,20 @@ async fn triager_classifier_p99_latency_under_200ms() {
         let t0 = Instant::now();
         let resp = post_triage(&client, &url, alert.clone()).await;
         let lat = t0.elapsed().as_millis() as u64;
-        latencies_ms.push(lat);
-        // Only measure classifier-path responses for the latency budget
-        if resp["execution_path"].as_str() != Some("classifier") {
-            continue;
+        // Only classifier-path responses count toward the latency budget
+        if resp["execution_path"].as_str() == Some("classifier") {
+            latencies_ms.push(lat);
         }
     }
 
+    assert!(
+        !latencies_ms.is_empty(),
+        "no classifier-path responses out of {n}; the benign alert should not escalate"
+    );
     latencies_ms.sort_unstable();
-    let p99 = latencies_ms[((n as f64 * 0.99) as usize).min(n - 1)];
-    println!("Classifier P99 latency over HTTP: {p99}ms (n={n})");
+    let m = latencies_ms.len();
+    let p99 = latencies_ms[((m as f64 * 0.99) as usize).min(m - 1)];
+    println!("Classifier P99 latency over HTTP: {p99}ms (n={m})");
 
     assert!(
         p99 < 200,

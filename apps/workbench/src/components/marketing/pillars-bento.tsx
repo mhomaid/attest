@@ -70,9 +70,9 @@ export function PillarsBento() {
             <Scale className="h-7 w-7 text-signal-good" aria-hidden />
             <h3 className="mt-3 text-lg font-semibold">Verifiable Agentic SOC</h3>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Triager, Investigator, Hunter, Detection Engineer, Responder: specialized agents
-              with signed traces, calibrated confidence, deterministic shadow checks, and replayable
-              decisions for auditors.
+              Specialized agents with signed traces, calibrated confidence, and deterministic
+              shadow checks. Triager and Investigator run today; Hunter, Detection Engineer,
+              and Responder are on the roadmap.
             </p>
           </motion.article>
 
@@ -131,12 +131,12 @@ export function FabricSection() {
             {[
               {
                 title: "Stream & hot path",
-                body: "Sub-second materialized views and alerts on Redpanda-backed pipelines.",
+                body: "Streaming materialized views and alerts on Redpanda-backed pipelines.",
                 icon: Boxes,
               },
               {
                 title: "Warm & compliance",
-                body: "OCSF-normalized Iceberg on your bucket; auditors replay the same rows.",
+                body: "OCSF-normalized Parquet on your bucket; auditors query the same rows.",
                 icon: FileCheck2,
               },
               {

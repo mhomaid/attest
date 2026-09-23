@@ -11,7 +11,7 @@ const cases = [
   },
   {
     title: "Autonomous triage with a verifiable verdict",
-    body: "Classifier and LLM paths both emit signed envelopes: data sources, tools, model versions, calibrated confidence, and replay for compliance.",
+    body: "Classifier and LLM paths both emit signed envelopes: data sources, tools, model versions, and calibrated confidence, signed for compliance.",
   },
   {
     title: "Agent-aware detection of rogue internal AI",

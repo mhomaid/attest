@@ -55,8 +55,8 @@ const features: Feature[] = [
   {
     title: "ML Classifier",
     description:
-      "XGBoost triage model served via tract-onnx at ~28 ms P99. SHAP explanations and a calibration sidecar keep confidence scores honest.",
-    tags: ["XGBoost", "ONNX", "~28 ms", "SHAP"],
+      "XGBoost triage model served via tract-onnx, P99 under 5 ms per inference (CI-asserted). SHAP explanations and a calibration sidecar keep confidence scores honest.",
+    tags: ["XGBoost", "ONNX", "<5 ms", "SHAP"],
     icon: BrainCircuit,
     status: "shipped",
   },
@@ -87,8 +87,8 @@ const features: Feature[] = [
   {
     title: "Ed25519 Attestation",
     description:
-      "Every agent decision is a signed envelope: artifact hashes, feature vector, tool-call log, verdict. Replay it from the workbench trace panel.",
-    tags: ["Ed25519", "Signed envelopes", "Replay"],
+      "Every agent decision is a signed envelope: artifact hashes, feature vector, tool-call log, verdict. Tampering fails verification; inspect it in the workbench trace panel.",
+    tags: ["Ed25519", "Signed envelopes", "Tamper-evident"],
     icon: Key,
     status: "shipped",
   },

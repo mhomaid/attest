@@ -1,0 +1,37 @@
+{
+  "brute_force": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  },
+  "exfiltration": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  },
+  "geo_anomaly": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  },
+  "logging_disabled": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  },
+  "mfa_bypass": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  },
+  "benign": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  },
+  "default": {
+    "brier_score": 0.0,
+    "ece": 0.0,
+    "n_samples": 80
+  }
+}

@@ -32,6 +32,11 @@ jobs:
       - name: test
         run: cargo test --workspace
 
+      - name: classifier latency budget (release)
+        run: |
+          test -f ml/triager/artifacts/model.onnx
+          cargo test --release -p attest-onnx-runtime --test classifier_integration -- --nocapture
+
   python:
     name: Python (uv · pytest)
     runs-on: ubuntu-latest

@@ -10,8 +10,8 @@ const heroPath = [
   { label: "CloudTrail", hint: "JSON in", detail: "A ConsoleLogin lands on the collector as raw AWS JSON." },
   { label: "Collector", hint: "OCSF 1.3", detail: "Normalized to a FlatEvent and published onto Kafka." },
   { label: "Detect", hint: "HELIQL → RW", detail: "RisingWave views and compiled rules watch the stream." },
-  { label: "Triage", hint: "~28 ms ONNX", detail: "XGBoost + SHAP + calibration. No LLM required on this path." },
-  { label: "Attest", hint: "Ed25519", detail: "The verdict becomes a signed envelope an auditor can replay." },
+  { label: "Triage", hint: "<5 ms ONNX", detail: "XGBoost + SHAP + calibration. No LLM required on this path." },
+  { label: "Attest", hint: "Ed25519", detail: "The verdict becomes a signed envelope an auditor can verify." },
   { label: "Queue", hint: "Workbench", detail: "The same artifacts show up live on this site." },
 ] as const;
 

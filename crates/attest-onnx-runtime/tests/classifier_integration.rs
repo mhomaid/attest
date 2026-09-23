@@ -4,6 +4,7 @@
 use attest_feature_extractor::FeatureExtractor;
 use attest_onnx_runtime::{NoveltyDetector, OnnxClassifier};
 use std::path::PathBuf;
+use std::time::Instant;
 
 fn artifacts_dir() -> Option<PathBuf> {
     // Try explicit env var first (for CI / Railway)
@@ -96,6 +97,66 @@ fn classifier_predicts_benign_for_routine_login() {
         "benign login should have P(TP) < 0.20; got {score:.4}"
     );
     println!("Benign P(TP)={score:.4}");
+}
+
+/// Latency budget for one classifier-path prediction: inference plus the eight
+/// perturbation passes behind the per-feature attributions. Public latency
+/// claims rely on the release budget (CI runs this test with `--release`);
+/// unoptimized builds are ~50x slower, so the debug budget is only a smoke check.
+const PREDICT_P99_BUDGET_MS: f64 = if cfg!(debug_assertions) { 100.0 } else { 5.0 };
+
+#[test]
+fn classifier_predict_p99_under_budget() {
+    let Some(dir) = artifacts_dir() else {
+        eprintln!("SKIP: ARTIFACTS_DIR not set");
+        return;
+    };
+
+    let model_path = dir.join("model.onnx");
+    let bg_path = dir.join("shap_background.npy");
+    if !model_path.exists() {
+        eprintln!("SKIP: model.onnx not found at {model_path:?}");
+        return;
+    }
+
+    let classifier = OnnxClassifier::load(&model_path, Some(bg_path.to_str().unwrap()))
+        .expect("failed to load classifier");
+
+    let features = FeatureExtractor::extract_from_json(&serde_json::json!({
+        "severity_score": 0.80,
+        "source_class_id": 3002.0,
+        "entity_reputation_score": 0.70,
+        "baseline_deviation": 3.5,
+        "threat_intel_hit_count": 2.0,
+        "hour_of_day": 3.0,
+        "asset_criticality": 0.50,
+        "prior_disposition_ratio": 0.85,
+    }));
+
+    for _ in 0..50 {
+        classifier
+            .predict(&features)
+            .expect("warm-up prediction failed");
+    }
+
+    let n = 1_000;
+    let mut latencies_ms: Vec<f64> = (0..n)
+        .map(|_| {
+            let t0 = Instant::now();
+            classifier.predict(&features).expect("prediction failed");
+            t0.elapsed().as_secs_f64() * 1_000.0
+        })
+        .collect();
+    latencies_ms.sort_by(|a, b| a.total_cmp(b));
+
+    let p50 = latencies_ms[n / 2];
+    let p99 = latencies_ms[(n * 99) / 100];
+    println!("classifier predict (n={n}): p50={p50:.2}ms p99={p99:.2}ms");
+
+    assert!(
+        p99 < PREDICT_P99_BUDGET_MS,
+        "classifier predict P99 {p99:.2}ms exceeds {PREDICT_P99_BUDGET_MS}ms budget"
+    );
 }
 
 #[test]

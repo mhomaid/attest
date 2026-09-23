@@ -5,7 +5,7 @@ const planes = [
     id: "workbench",
     name: "Workbench plane",
     stack: "Next.js 16 · Better Auth · Zustand · WebSocket",
-    body: "SOC console: live queue, case investigation, SHAP + attestation replay, Simulate Lab, Load Lab, admin health.",
+    body: "SOC console: live queue, case investigation, SHAP + attestation trace, Simulate Lab, Load Lab, admin health.",
   },
   {
     id: "agentic",

@@ -10,14 +10,14 @@ const agents = [
   {
     name: "Hybrid Triager",
     status: "live" as const,
-    model: "XGBoost ONNX · ~28 ms P99 · LLM escalation",
+    model: "XGBoost ONNX · P99 < 5 ms inference · LLM escalation",
     body: "Eight-feature classifier, Mahalanobis novelty, isotonic calibration. In-distribution high-confidence cases stay on the classifier path. Novel or low-confidence cases escalate.",
   },
   {
     name: "Investigator",
     status: "live" as const,
     model: "OpenAI-compat · Qwen / Anthropic",
-    body: "Tool loop through the MCP gateway (hot tier, warm SQL, threat-intel stubs). Second signed envelope. Workbench renders the replayable trace.",
+    body: "Tool loop through the MCP gateway (hot tier, warm SQL, threat-intel stubs). Second signed envelope. Workbench renders the step-by-step trace.",
   },
   {
     name: "Hunter",
@@ -79,7 +79,7 @@ export function AgentsSection() {
           }}
           left={{
             label: "Classifier",
-            hint: "ONNX · ~28 ms",
+            hint: "ONNX · <5 ms",
             detail: "In-distribution high-confidence cases stay on XGBoost. SHAP + calibration, no LLM.",
           }}
           right={{
@@ -90,7 +90,7 @@ export function AgentsSection() {
           join={{
             label: "Attest",
             hint: "Ed25519 envelope",
-            detail: "Both paths emit a signed envelope: hashes, tools, verdict, replayable later.",
+            detail: "Both paths emit a signed envelope: hashes, tools, verdict. Any edit breaks the signature.",
           }}
           end={{
             label: "Workbench",
