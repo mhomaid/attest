@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 attest-common = { path = "../attest-common" }
 chrono = { workspace = true }
+hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tracing = { workspace = true }

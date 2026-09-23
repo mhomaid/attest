@@ -5,5 +5,21 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dependencies]
+[[bin]]
+name = "attest"
+path = "src/main.rs"
 
+[dependencies]
+anyhow = { workspace = true }
+attest-attestation = { path = "../attest-attestation" }
+attest-feature-extractor = { path = "../attest-feature-extractor" }
+attest-onnx-runtime = { path = "../attest-onnx-runtime" }
+clap = { workspace = true }
+hex = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+tempfile = "3"

@@ -607,6 +607,19 @@ dependencies = [
 [[package]]
 name = "attest-cli"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "attest-attestation",
+ "attest-feature-extractor",
+ "attest-onnx-runtime",
+ "chrono",
+ "clap",
+ "hex",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "uuid",
+]
 
 [[package]]
 name = "attest-collector"
@@ -691,8 +704,10 @@ version = "0.1.0"
 dependencies = [
  "attest-common",
  "chrono",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tracing",
 ]
 

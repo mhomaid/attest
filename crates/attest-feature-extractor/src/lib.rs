@@ -84,6 +84,32 @@ impl AlertFeatures {
         );
         m
     }
+
+    /// Rebuild the vector from a named map (as stored on `ClassifierEvidence`).
+    /// Every column in `COLUMN_ORDER` must be present.
+    pub fn from_named_map(map: &HashMap<String, f64>) -> Result<Self, String> {
+        let get = |name: &str| {
+            map.get(name)
+                .copied()
+                .ok_or_else(|| format!("missing feature `{name}`"))
+        };
+        Ok(Self {
+            severity_score: get("severity_score")?,
+            source_class_id: get("source_class_id")?,
+            entity_reputation_score: get("entity_reputation_score")?,
+            baseline_deviation: get("baseline_deviation")?,
+            threat_intel_hit_count: get("threat_intel_hit_count")?,
+            hour_of_day: get("hour_of_day")?,
+            asset_criticality: get("asset_criticality")?,
+            prior_disposition_ratio: get("prior_disposition_ratio")?,
+        })
+    }
+
+    /// SHA-256 of the comma-joined column names — matches `ml/triager/artifacts/feature_hash.txt`.
+    pub fn column_order_hash() -> String {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(Self::COLUMN_ORDER.join(",").as_bytes()))
+    }
 }
 
 /// Extracts `AlertFeatures` from an OCSF event.
@@ -207,5 +233,14 @@ mod tests {
         for col in AlertFeatures::COLUMN_ORDER {
             assert!(m.contains_key(*col), "missing column: {col}");
         }
+        let back = AlertFeatures::from_named_map(&m).unwrap();
+        assert_eq!(back.to_vec_f32(), f.to_vec_f32());
+        assert!(AlertFeatures::from_named_map(&HashMap::new()).is_err());
+    }
+
+    #[test]
+    fn column_order_hash_matches_committed_artifact() {
+        let expected = include_str!("../../../ml/triager/artifacts/feature_hash.txt").trim();
+        assert_eq!(AlertFeatures::column_order_hash(), expected);
     }
 }
