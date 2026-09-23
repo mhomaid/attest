@@ -20,6 +20,7 @@ use rdkafka::{
 };
 
 use crate::state::MetricsSnapshot;
+use attest_storage_clickhouse::ClickHouseClient;
 
 struct SamplerState {
     prev_hwm: i64,
@@ -31,7 +32,7 @@ struct SamplerState {
 
 pub async fn run_sampler(
     brokers: String,
-    ch_url: String,
+    clickhouse: ClickHouseClient,
     load_gen_url: Option<String>,
     _orchestrator_url: Option<String>, // triage_p95_ms now comes directly from load-gen /status
     metrics_tx: broadcast::Sender<MetricsSnapshot>,
@@ -56,7 +57,7 @@ pub async fn run_sampler(
 
         let snap = sample_once(
             &brokers,
-            &ch_url,
+            &clickhouse,
             load_gen_url.as_deref(),
             &http_client,
             &state,
@@ -71,7 +72,7 @@ pub async fn run_sampler(
 
 async fn sample_once(
     brokers: &str,
-    ch_url: &str,
+    clickhouse: &ClickHouseClient,
     load_gen_url: Option<&str>,
     http: &reqwest::Client,
     state: &Arc<Mutex<SamplerState>>,
@@ -93,7 +94,13 @@ async fn sample_once(
     st.prev_alerts_hwm = alerts_hwm;
 
     // ── ClickHouse: event row count (confirms warm-path storage) ────────────
-    let ch_rows = clickhouse_row_count(ch_url, http).await;
+    let ch_rows = clickhouse
+        .count_rows("cloudtrail_events")
+        .await
+        .unwrap_or_else(|e| {
+            debug!("clickhouse row count unavailable: {e}");
+            st.prev_ch_rows
+        });
     let clickhouse_rows_per_sec = ch_rows.saturating_sub(st.prev_ch_rows);
     st.prev_ch_rows = ch_rows;
 
@@ -201,20 +208,6 @@ async fn kafka_topic_hwm(brokers: &str, topic: &str) -> i64 {
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
-async fn clickhouse_row_count(ch_url: &str, http: &reqwest::Client) -> u64 {
-    let query = "SELECT count() FROM cloudtrail_events FORMAT TabSeparated";
-    let url = format!("{}/?query={}", ch_url, urlencoding(query));
-    match http.get(&url).send().await {
-        Ok(r) if r.status().is_success() => r
-            .text()
-            .await
-            .ok()
-            .and_then(|t| t.trim().parse::<u64>().ok())
-            .unwrap_or(0),
-        _ => 0,
-    }
-}
-
 async fn load_gen_status(load_gen_url: &str, http: &reqwest::Client) -> (bool, u64, f32) {
     let url = format!("{load_gen_url}/status");
     match http.get(&url).send().await {
@@ -229,18 +222,4 @@ async fn load_gen_status(load_gen_url: &str, http: &reqwest::Client) -> (bool, u
         }
         _ => (false, 0, 0.0),
     }
-}
-
-fn urlencoding(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 2);
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            b' ' => out.push('+'),
-            b => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    out
 }

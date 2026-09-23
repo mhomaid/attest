@@ -647,6 +647,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "attest-common",
+ "attest-storage-clickhouse",
  "attest-telemetry",
  "axum 0.8.9",
  "chrono",
@@ -664,14 +665,6 @@ dependencies = [
  "utoipa-scalar",
  "uuid",
 ]
-
-[[package]]
-name = "attest-detection-compiler"
-version = "0.1.0"
-
-[[package]]
-name = "attest-detection-dsl"
-version = "0.1.0"
 
 [[package]]
 name = "attest-detection-runtime"
@@ -731,10 +724,6 @@ dependencies = [
  "tracing",
  "wiremock",
 ]
-
-[[package]]
-name = "attest-ingester"
-version = "0.1.0"
 
 [[package]]
 name = "attest-load-gen"
@@ -804,6 +793,7 @@ dependencies = [
  "attest-inference-router",
  "attest-onnx-runtime",
  "attest-policy-engine",
+ "attest-shadow-check",
  "attest-telemetry",
  "axum 0.8.9",
  "chrono",
@@ -838,10 +828,21 @@ dependencies = [
 [[package]]
 name = "attest-shadow-check"
 version = "0.1.0"
+dependencies = [
+ "attest-attestation",
+ "attest-policy-engine",
+]
 
 [[package]]
 name = "attest-storage-clickhouse"
 version = "0.1.0"
+dependencies = [
+ "axum 0.8.9",
+ "reqwest",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
 
 [[package]]
 name = "attest-storage-iceberg"
@@ -866,10 +867,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "attest-stream-runtime"
-version = "0.1.0"
-
-[[package]]
 name = "attest-telemetry"
 version = "0.1.0"
 dependencies = [
@@ -883,10 +880,6 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
 ]
-
-[[package]]
-name = "attest-test-utils"
-version = "0.1.0"
 
 [[package]]
 name = "autocfg"

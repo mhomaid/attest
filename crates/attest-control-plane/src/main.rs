@@ -15,6 +15,7 @@ mod routes;
 mod state;
 
 use anyhow::Context;
+use attest_storage_clickhouse::ClickHouseClient;
 use axum::{
     middleware::from_fn,
     routing::{get, post},
@@ -39,7 +40,7 @@ use crate::{
         events::{get_recent_event, EventQuery, EventRow},
         healthz::{healthz, HealthResponse},
         metrics::ws_metrics,
-        warm::{post_warm_query, ChUrl, WarmQueryRequest, WarmQueryResponse},
+        warm::{post_warm_query, WarmClient, WarmQueryRequest, WarmQueryResponse},
     },
     state::AppState,
 };
@@ -86,9 +87,7 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(8080);
-    let ch_url: ChUrl = Arc::new(
-        std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".into()),
-    );
+    let warm_client: WarmClient = Arc::new(ClickHouseClient::from_env());
     let kafka_brokers = std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "redpanda:9092".into());
     let poll_secs: u64 = std::env::var("ALERT_POLL_SECS")
         .ok()
@@ -153,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
     // ── Metrics sampler task (1 Hz) ─────────────────────────────────────────
     {
         let brokers = std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "redpanda:9092".into());
-        let ch = (*ch_url).clone();
+        let ch = ClickHouseClient::from_env().with_timeout(Duration::from_secs(2));
         let tx = metrics_tx.clone();
         tokio::spawn(async move {
             metrics::sampler::run_sampler(brokers, ch, load_gen_url, orchestrator_url, tx).await;
@@ -176,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/metrics/stream", get(ws_metrics))
         .with_state(state)
         .route("/v1/warm/query", post(post_warm_query))
-        .with_state(ch_url)
+        .with_state(warm_client)
         .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
         .layer(cors)
         .layer(from_fn(attest_telemetry::axum_trace_propagation));

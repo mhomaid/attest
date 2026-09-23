@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
+use attest_storage_clickhouse::{ClickHouseClient, QueryError};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tracing::error;
+use tracing::{error, warn};
 use utoipa::ToSchema;
 
-pub type ChUrl = std::sync::Arc<String>;
+pub type WarmClient = Arc<ClickHouseClient>;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct WarmQueryRequest {
@@ -18,76 +21,51 @@ pub struct WarmQueryResponse {
     pub row_count: usize,
 }
 
-/// Run a raw SELECT against the ClickHouse warm-tier.
+/// Run a read-only SELECT against the ClickHouse warm tier.
 ///
-/// Only `SELECT` statements are permitted; writes are rejected.
+/// Queries are validated before they reach ClickHouse: a single SELECT/WITH statement, no
+/// network or file table functions, `s3()` only against the warm bucket, no `SETTINGS`
+/// overrides. ClickHouse additionally enforces `readonly`, a 30 s execution limit and a
+/// 10 000-row result limit.
 #[utoipa::path(
     post,
     path = "/v1/warm/query",
     request_body(content = WarmQueryRequest, description = "SQL SELECT to execute"),
     responses(
         (status = 200, description = "Query results", body = WarmQueryResponse),
-        (status = 400, description = "Non-SELECT statement rejected"),
-        (status = 500, description = "ClickHouse error"),
+        (status = 400, description = "Query rejected by the warm-tier guard"),
+        (status = 502, description = "ClickHouse error"),
     ),
     tag = "warm"
 )]
-
 pub async fn post_warm_query(
-    State(ch_url): State<ChUrl>,
+    State(client): State<WarmClient>,
     Json(req): Json<WarmQueryRequest>,
 ) -> impl IntoResponse {
-    let trimmed = req.sql.trim().to_lowercase();
-    if !trimmed.starts_with("select") {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "only SELECT statements are permitted"})),
-        )
-            .into_response();
-    }
-
-    match run_query(&ch_url, &req.sql).await {
-        Ok(resp) => (StatusCode::OK, Json(json!(resp))).into_response(),
+    match client.query(&req.sql).await {
+        Ok(rows) => {
+            let row_count = rows.len();
+            (
+                StatusCode::OK,
+                Json(json!(WarmQueryResponse { rows, row_count })),
+            )
+                .into_response()
+        }
+        Err(QueryError::Rejected(reason)) => {
+            warn!(%reason, "warm query rejected");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": reason.to_string() })),
+            )
+                .into_response()
+        }
         Err(e) => {
             error!("warm query error: {e}");
             (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": e.to_string() })),
             )
                 .into_response()
         }
     }
-}
-
-async fn run_query(ch_url: &str, sql: &str) -> anyhow::Result<WarmQueryResponse> {
-    // ClickHouse HTTP API: POST the SQL with FORMAT JSON appended.
-    let query = format!("{sql} FORMAT JSONCompact");
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(ch_url)
-        .body(query)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("HTTP request to ClickHouse failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("ClickHouse error {status}: {body}"));
-    }
-
-    // ClickHouse JSONCompact format: { "data": [[v1,v2,...], ...], ... }
-    let json: Value = resp
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to parse ClickHouse response: {e}"))?;
-
-    let rows: Vec<Vec<Value>> = json
-        .get("data")
-        .and_then(|d| d.as_array())
-        .map(|rows| rows.iter().filter_map(|r| r.as_array().cloned()).collect())
-        .unwrap_or_default();
-
-    let row_count = rows.len();
-    Ok(WarmQueryResponse { rows, row_count })
 }

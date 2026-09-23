@@ -31,6 +31,11 @@ export async function GET(req: NextRequest) {
   const username = params.get("username") ?? "";
   const actionId = params.get("action_id") ?? "";
 
+  // eventId is interpolated into warm-tier SQL below.
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(eventId)) {
+    return NextResponse.json({ error: "invalid event_id" }, { status: 400 });
+  }
+
   // Run all four checks concurrently.
   const [rwResult, detResult, iceResult, mcpResult] = await Promise.all([
     // RisingWave: baseline materialized view should include this user.
