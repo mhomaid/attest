@@ -185,6 +185,10 @@ impl TriageEngine {
         })
     }
 
+    pub fn attestation_log(&self) -> &AttestationLog {
+        &self.attestation_log
+    }
+
     /// Run the Hybrid triage loop and return a signed verdict.
     pub async fn run_triage(&self, req: TriageRequest) -> Result<TriageVerdict> {
         let t0 = Instant::now();

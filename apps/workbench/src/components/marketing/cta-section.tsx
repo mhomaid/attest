@@ -21,26 +21,27 @@ export function CtaSection() {
               Make your AI SOC show its work
             </h2>
             <p className="mt-3 text-muted-foreground">
-              Clone it, break the log, watch verify catch it. Then point it at your own CloudTrail.
+              Clone it, break the log, watch verify catch it. Testers and focused PRs are welcome —
+              open an issue first if the change is larger than a bug fix.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a
-                href="#quickstart"
-                onClick={() => analytics.marketing_cta_clicked("cta_run_locally")}
+                href="#try"
+                onClick={() => analytics.marketing_cta_clicked("cta_try_demo")}
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
               >
-                Run it locally
+                Try a live verdict
                 <ArrowRight className="h-4 w-4" />
               </a>
               <a
-                href="https://github.com/mhomaid/attest"
+                href="https://github.com/mhomaid/attest/issues/new"
                 target="_blank"
                 rel="noreferrer"
-                onClick={() => analytics.marketing_cta_clicked("cta_github")}
+                onClick={() => analytics.marketing_cta_clicked("cta_open_issue")}
                 className="inline-flex items-center gap-2 rounded-md border border-border bg-background/60 px-4 py-2.5 text-sm font-medium"
               >
                 <Star className="h-4 w-4" />
-                Star on GitHub
+                Open an issue or PR
               </a>
             </div>
           </div>

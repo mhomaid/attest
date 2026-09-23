@@ -6,13 +6,15 @@
 //! - **Hybrid** — both classifier evidence + LLM evidence + escalation reason
 //!
 //! Ed25519 signing ensures tamper-evidence. The append-only `AttestationLog` writes
-//! newline-delimited JSON to `ATTEST_LOG_PATH` (default `./attestations.ndjson`).
+//! newline-delimited JSON to `ATTEST_LOG_PATH` (default `./attestations.ndjson`) and,
+//! when `ATTEST_LOG_S3_BUCKET` is set, a durable object-store replica.
 
 pub mod envelope;
 pub mod log;
 pub mod pin;
 pub mod signer;
 pub mod trace_step;
+pub mod verify;
 
 pub use envelope::{
     AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, CrossReviewBlock,
@@ -24,3 +26,4 @@ pub use log::AttestationLog;
 pub use pin::{check_pin, AgentPin};
 pub use signer::Signer;
 pub use trace_step::{execution_path_snake, TraceStep, TRACE_STEPS_TOPIC};
+pub use verify::{verify_log, LineResult, VerifyReport};

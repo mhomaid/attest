@@ -22,7 +22,7 @@ flowchart LR
   CP --> Orch
   Orch --> ONNX[ONNX classifier]
   Orch --> MCP[MCP gateway]
-  Orch --> Log[(attestations.ndjson)]
+  Orch --> Log[(hash-chained attestation log<br/>NDJSON + optional S3)]
   CP --> WB[workbench]
   Orch --> WB
 ```
@@ -33,7 +33,7 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 
 | Component | Status | Notes |
 |---|---|---|
-| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest`; shared types in `attest-common` |
+| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` (tenant from `X-Tenant-Id`, else `TENANT_ID`). `POST /ingest/s3` or an S3 object-created notification fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. No ingest auth yet: keep the collector on a private network. |
 | RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1 |
 | Warm storage | Partial | **Parquet on MinIO today.** The crate is named `attest-storage-iceberg` but there is no Iceberg catalog dependency in the write path. Iceberg is planned. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
@@ -45,7 +45,7 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | MCP gateway + tool policy | Working | Per-role authorize; warm-query exfil cap; poisoned tool results denied |
 | Signed attestation envelopes | Working | Ed25519 over SHA-256 of sorted-key canonical JSON |
 | `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
-| Attestation log durability | Partial | Hash-chained local NDJSON. No external anchoring yet |
+| Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3/MinIO first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
 | Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers |
 | Hunter / responder / coordinator agents | Planned | Design only |
 | AADF / SIDM / eval harness | Planned | Design docs in `docs/` |
@@ -71,7 +71,10 @@ cp apps/workbench/.env.local.example apps/workbench/.env.local
 cd apps/workbench && bun install && bun run dev
 ```
 
-Sign in at http://localhost:3000/login as `analyst@attest.local` / `analyst-dev`.
+Sign in at http://localhost:3000/login as `analyst@attest.local` / `analyst-dev`
+(or the public demo user `demo@attest.local` / `try-attest`). The homepage **Try a live
+verdict** button runs ingest → triage → verify for tenant `demo` against your local collector
+and orchestrator.
 
 ```sh
 # Health
@@ -123,7 +126,8 @@ the signature, that `system_prompt_hash` is present, and that tool-call timestam
 order — it does **not** regenerate the model output.
 
 The orchestrator prints its verifying key at startup (`ATTEST_SIGNING_KEY` unset → ephemeral
-key, fine for local, useless for audit).
+key, fine for local, useless for audit: after a restart, earlier envelopes no longer verify
+against the new key). Any long-lived deployment must set it.
 
 ## Tests
 
@@ -160,7 +164,8 @@ the present tense — the table above is the source of truth for today.
 
 ## Roadmap
 
-- Hash-chain / anchor the attestation log so deleting an envelope is detectable
+- Anchor the attestation chain tip externally (transparency log / object lock)
+- Authenticated, per-tenant ingest tokens on the collector
 - Content-addressed store for tool args/results (replay investigator steps from recorded responses)
 - Iceberg catalog on top of the existing Parquet layout
 - TreeSHAP (or an honest rename everywhere if we keep the perturbation approximation)

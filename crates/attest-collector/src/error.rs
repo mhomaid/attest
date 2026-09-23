@@ -10,4 +10,7 @@ pub enum CollectorError {
 
     #[error("kafka error: {0}")]
     Kafka(String),
+
+    #[error("s3 fetch failed: {0}")]
+    S3(String),
 }

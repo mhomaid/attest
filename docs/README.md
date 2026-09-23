@@ -43,4 +43,4 @@ Gaps in the numbering are intentional; numbers are stable identifiers, not a seq
 - **Later documents supersede earlier ones where they differ.** Doc 07 supersedes the stack table in doc 02. Docs 08 and 09 supersede the LLM-only Triager implied in doc 03 with the hybrid classifier-first design. Earlier documents are kept for context.
 - **Numbers are design targets.** Volumes, latencies, and costs are targets unless a benchmark in the repo backs them.
 - **Vendor names map the landscape.** References to other products describe where Attest fits, not claims about their internals.
-- **Architecture changes get an ADR.** File them in [`decisions/`](./decisions/).
+- **Architecture changes get an ADR.** Add it to this directory, following the format of [15 Streaming Engine ADR](./15_Streaming_Engine_Decision.md).

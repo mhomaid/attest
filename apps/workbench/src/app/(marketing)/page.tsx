@@ -10,6 +10,7 @@ import { QuickstartSection } from "@/components/marketing/quickstart-section";
 import { DeploymentSection } from "@/components/marketing/deployment-section";
 import { StackDiagramSection } from "@/components/marketing/stack-diagram-section";
 import { StatusStrip } from "@/components/marketing/status-strip";
+import { TryDemoSection } from "@/components/marketing/try-demo-section";
 import { WorkbenchTourSection } from "@/components/marketing/workbench-tour-section";
 
 export default function HomePage() {
@@ -19,6 +20,7 @@ export default function HomePage() {
       <main>
         <HeroSection />
         <StatusStrip />
+        <TryDemoSection />
         <PipelineSection />
         <AgentGuardsSection />
         <CompareSection />

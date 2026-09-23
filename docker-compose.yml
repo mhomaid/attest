@@ -85,6 +85,8 @@ services:
         mc alias set local http://minio:9000 minioadmin minioadmin;
         mc mb --ignore-existing local/attest-warm;
         mc policy set public local/attest-warm;
+        mc mb --ignore-existing local/attest-attestations;
+        mc mb --ignore-existing local/attest-cloudtrail;
         mc mb --ignore-existing local/risingwave;
         echo 'MinIO buckets ready';
       "
@@ -221,11 +223,17 @@ services:
       KAFKA_BROKERS: redpanda:9092
       TENANT_ID: local-dev
       PORT: "4000"
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://minio:9000
+      COLLECTOR_S3_ALLOWED_BUCKETS: attest-cloudtrail
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-collector
     depends_on:
       - redpanda
       - tempo
+      - minio
     profiles:
       - platform
 
@@ -327,6 +335,12 @@ services:
       ESCALATION_THRESHOLD: "0.60"
       NOVELTY_THRESHOLD: "0.70"
       ATTEST_LOG_PATH: /data/attestations.ndjson
+      ATTEST_LOG_S3_BUCKET: attest-attestations
+      ATTEST_LOG_S3_PREFIX: attestations
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:4242
       SYSTEM_PROMPT_PATH: /agents/triager/system_prompt_v1.md
       REVIEWER_PROMPT_PATH: /agents/triager/reviewer_prompt_v1.md
@@ -345,6 +359,7 @@ services:
       - mcp-gateway
       - tempo
       - redpanda
+      - minio
     profiles:
       - platform
 

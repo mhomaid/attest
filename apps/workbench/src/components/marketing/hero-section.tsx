@@ -68,12 +68,19 @@ export function HeroSection() {
           className="mt-8 flex flex-wrap items-center gap-3"
         >
           <a
-            href="#pipeline"
-            onClick={() => analytics.marketing_cta_clicked("hero_how_it_works")}
+            href="#try"
+            onClick={() => analytics.marketing_cta_clicked("hero_try_demo")}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_-4px] shadow-primary/50 transition-opacity hover:opacity-90"
           >
-            See how it works
+            Try a live verdict
             <ArrowRight className="h-4 w-4" />
+          </a>
+          <a
+            href="#pipeline"
+            onClick={() => analytics.marketing_cta_clicked("hero_how_it_works")}
+            className="inline-flex items-center gap-2 rounded-md border border-border/80 bg-card/50 px-5 py-2.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:bg-card"
+          >
+            See how it works
           </a>
           <a
             href="https://github.com/mhomaid/attest"
