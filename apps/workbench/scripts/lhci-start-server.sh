@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Production server for Lighthouse. `next dev` scores ~0.75 on GitHub runners
-# (compile-on-request); the 0.9 budget is for the standalone build we ship.
+# Production standalone server for Lighthouse.
+# Prints LHCI_SERVER_READY only after 127.0.0.1:3000 accepts TCP — do not use
+# a generic "Ready" pattern; Next can log that before the socket is open, and
+# GitHub runners resolve localhost to IPv6 while Next binds IPv4.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export DATABASE_URL="${DATABASE_URL:-postgres://attest:attest@127.0.0.1:5432/attest}"
-# Must not be the public repo secret — auth.ts refuses that when NODE_ENV=production.
 if [ -z "${BETTER_AUTH_SECRET:-}" ] || [ "$BETTER_AUTH_SECRET" = "local-dev-better-auth-secret-min-32-chars!!" ]; then
   export BETTER_AUTH_SECRET="lhci-better-auth-secret-min-32-chars!!"
 fi
 export NODE_ENV=production
 export PORT="${PORT:-3000}"
-export HOSTNAME="${HOSTNAME:-0.0.0.0}"
+export HOSTNAME="127.0.0.1"
 export NEXT_TELEMETRY_DISABLED=1
 
 if [ ! -f .next/standalone/server.js ] && [ ! -f .next/standalone/apps/workbench/server.js ]; then
@@ -36,4 +37,24 @@ else
   exit 1
 fi
 
-exec node server.js
+node server.js &
+server_pid=$!
+cleanup() { kill "$server_pid" 2>/dev/null || true; }
+trap cleanup EXIT INT TERM
+
+for _ in $(seq 1 60); do
+  if curl -sf --max-time 1 "http://127.0.0.1:${PORT}" >/dev/null; then
+    echo "LHCI_SERVER_READY"
+    wait "$server_pid"
+    exit $?
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    echo "error: workbench server exited before opening port ${PORT}" >&2
+    wait "$server_pid" || true
+    exit 1
+  fi
+  sleep 1
+done
+
+echo "error: workbench server did not accept connections on 127.0.0.1:${PORT} within 60s" >&2
+exit 1

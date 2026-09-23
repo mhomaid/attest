@@ -4,7 +4,7 @@
  */
 module.exports = async function lhciPuppeteerAuth(browser) {
   const page = await browser.newPage();
-  const origin = process.env.LHCI_ORIGIN ?? "http://localhost:3000";
+  const origin = process.env.LHCI_ORIGIN ?? "http://127.0.0.1:3000";
   const seedSecret = process.env.AUTH_SEED_SECRET ?? "ci-auth-seed-secret";
 
   await fetch(`${origin}/api/auth/seed-analyst`, {
