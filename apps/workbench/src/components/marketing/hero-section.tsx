@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, GitBranch } from "lucide-react";
 import { GridBackground } from "@/components/marketing/grid-background";
 import { VerifyDemo } from "@/components/marketing/verify-demo";
+import { analytics } from "@/lib/analytics";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -68,6 +69,7 @@ export function HeroSection() {
         >
           <a
             href="#pipeline"
+            onClick={() => analytics.marketing_cta_clicked("hero_how_it_works")}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_-4px] shadow-primary/50 transition-opacity hover:opacity-90"
           >
             See how it works
@@ -77,6 +79,7 @@ export function HeroSection() {
             href="https://github.com/mhomaid/attest"
             target="_blank"
             rel="noreferrer"
+            onClick={() => analytics.marketing_cta_clicked("hero_github")}
             className="inline-flex items-center gap-2 rounded-md border border-border/80 bg-card/50 px-5 py-2.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:bg-card"
           >
             <GitBranch className="h-4 w-4" />

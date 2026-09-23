@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/shared/providers";
@@ -17,17 +18,27 @@ const geistMono = Geist_Mono({
   adjustFontFallback: true,
 });
 
-export const metadata = {
-  title: "Attest: Verifiable Agentic SIEM",
-  description:
-    "Streaming-first security operations with agent-aware detection, signed agent reasoning, and a self-improving detection mesh. Explore the analyst workbench.",
+const title = "Attest: every AI verdict is a signed object you can check";
+const description =
+  "Open-source SOC where every triage verdict is Ed25519-signed and hash-chained, and agent tool calls pass five policy guards. Change one field and attest verify fails.";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://attest.homaid.dev"),
+  title,
+  description,
   icons: {
     icon: "/icon.svg",
   },
   openGraph: {
-    title: "Attest: Verifiable Agentic SIEM",
-    description:
-      "AI agents as first-class entities on both sides of the attack. Portable detections, OCSF + Iceberg, multi-agent SOC you can audit.",
+    title,
+    description,
+    type: "website",
+    siteName: "Attest",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
   },
 };
 

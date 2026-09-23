@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ShieldX } from "lucide-react";
 import { useEffect, useState } from "react";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 type Attack = {
@@ -50,7 +51,7 @@ const attacks: Attack[] = [
   {
     name: "Model swap",
     tactic: "Someone quietly replaces the classifier",
-    layer: "check_pin",
+    layer: "attest verify --pin-model",
     request: [
       "envelope  triager-hybrid-v1",
       '  model_artifact_hash: "c07d…e41a"',
@@ -121,7 +122,10 @@ export function AgentGuardsSection() {
                 <li key={a.name}>
                   <button
                     type="button"
-                    onClick={() => setActive(i)}
+                    onClick={() => {
+                      setActive(i);
+                      analytics.marketing_demo_step("guards", a.name);
+                    }}
                     aria-current={active === i ? "true" : undefined}
                     className={cn(
                       "flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors",

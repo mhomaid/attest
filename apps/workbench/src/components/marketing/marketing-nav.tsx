@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Menu, Shield } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -47,17 +48,18 @@ export function MarketingNav() {
 
         <div className="flex items-center gap-2">
           <Link
-            href="/workbench/queue"
-            className="hidden rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-medium text-foreground sm:inline-flex"
-          >
-            Open workbench
-          </Link>
-          <Link
             href="/login"
-            className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+            className="hidden rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
           >
             Sign in
           </Link>
+          <a
+            href="#quickstart"
+            onClick={() => analytics.marketing_cta_clicked("nav_run_locally")}
+            className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+          >
+            Run it locally
+          </a>
           <button
             type="button"
             className="rounded-md p-2 md:hidden"
@@ -88,7 +90,7 @@ export function MarketingNav() {
           ))}
           <Link
             href="/login"
-            className="mt-1 rounded-md bg-primary py-2 text-center text-sm font-medium text-primary-foreground"
+            className="rounded-md px-2 py-2 text-sm text-muted-foreground"
             onClick={() => setOpen(false)}
           >
             Sign in

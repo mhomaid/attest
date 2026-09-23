@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 const pages = [
   {
     href: "/workbench/queue",
@@ -77,12 +75,7 @@ export function WorkbenchTourSection() {
           {pages.map((page) => (
             <li key={page.name} className="grid gap-2 px-4 py-4 sm:grid-cols-[11rem_1fr]">
               <div>
-                <Link
-                  href={page.href}
-                  className="text-sm font-semibold text-foreground underline-offset-4 hover:underline"
-                >
-                  {page.name}
-                </Link>
+                <p className="text-sm font-semibold text-foreground">{page.name}</p>
                 <p className="mt-1 font-mono text-[10px] leading-relaxed text-muted-foreground">
                   {page.live}
                 </p>

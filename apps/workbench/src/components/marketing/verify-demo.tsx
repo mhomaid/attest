@@ -2,15 +2,16 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const steps = [
   { label: "Sign", out: "$ attest verify attestations.ndjson --key 4c1e…", tone: "idle" },
-  { label: "Verify", out: "PASS  3/3 envelopes · chain intact", tone: "pass" },
+  { label: "Verify", out: "PASS ×3  ·  verified 3/3", tone: "pass" },
   { label: "Tamper", out: "$ sed -i 's/benign/true_positive/' attestations.ndjson", tone: "idle" },
-  { label: "Caught", out: "FAIL  a91c…  signature mismatch", tone: "fail" },
+  { label: "Caught", out: "FAIL  5a3e…0001  signature mismatch", tone: "fail" },
   { label: "Delete row", out: "$ sed -i '2d' attestations.ndjson", tone: "idle" },
-  { label: "Caught", out: "FAIL  7be2…  chain break: prev_hash ≠ expected", tone: "fail" },
+  { label: "Caught", out: "FAIL  5a3e…0003  chain break: prev_hash=1beb… expected=59f1…", tone: "fail" },
 ] as const;
 
 const STEP_MS = 1900;
@@ -45,7 +46,10 @@ export function VerifyDemo() {
             <button
               key={`${s.label}-${i}`}
               type="button"
-              onClick={() => setPhase(i)}
+              onClick={() => {
+                setPhase(i);
+                analytics.marketing_demo_step("verify", s.label);
+              }}
               aria-current={phase === i ? "step" : undefined}
               className={cn(
                 "rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors",

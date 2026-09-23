@@ -1,10 +1,13 @@
 import { AgentGuardsSection } from "@/components/marketing/agent-guards-section";
+import { CompareSection } from "@/components/marketing/compare-section";
 import { CtaSection } from "@/components/marketing/cta-section";
 import { DetectionsCatalogSection } from "@/components/marketing/detections-catalog-section";
 import { HeroSection } from "@/components/marketing/hero-section";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { PipelineSection } from "@/components/marketing/pipeline-section";
+import { QuickstartSection } from "@/components/marketing/quickstart-section";
+import { StatusStrip } from "@/components/marketing/status-strip";
 import { WorkbenchTourSection } from "@/components/marketing/workbench-tour-section";
 
 export default function HomePage() {
@@ -13,8 +16,11 @@ export default function HomePage() {
       <MarketingNav />
       <main>
         <HeroSection />
+        <StatusStrip />
         <PipelineSection />
         <AgentGuardsSection />
+        <CompareSection />
+        <QuickstartSection />
         <DetectionsCatalogSection />
         <WorkbenchTourSection />
         <CtaSection />

@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
+import { PostHogPageview } from "@/components/shared/posthog-pageview";
 
 /** Sentinel-style shell: public landing only. Workbench uses the root body stack under `/workbench`. */
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <div className="marketing sf-grid-page relative flex min-h-dvh flex-col">
+      <PostHogPageview />
       <div
         className="pointer-events-none fixed inset-0 z-[1] overflow-hidden"
         aria-hidden

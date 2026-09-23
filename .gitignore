@@ -64,5 +64,6 @@ ml/.venv/
 .lighthouseci/
 # Attestation logs — local run artifacts, never commit
 *.ndjson
+!examples/**/*.ndjson
 # Scratch / debug JSON dumps
 test.json

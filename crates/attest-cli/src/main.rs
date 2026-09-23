@@ -26,6 +26,12 @@ enum Command {
         /// Hex-encoded 32-byte Ed25519 verifying key.
         #[arg(long)]
         key: String,
+        /// Fail envelopes whose classifier `model_artifact_hash` differs from this SHA-256.
+        #[arg(long)]
+        pin_model: Option<String>,
+        /// Fail envelopes whose LLM `system_prompt_hash` differs from this SHA-256.
+        #[arg(long)]
+        pin_prompt: Option<String>,
     },
     /// Replay one action. Classifier decisions are re-inferred; LLM decisions are integrity-checked.
     Replay {
@@ -56,12 +62,22 @@ fn main() -> ExitCode {
 fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     let ok = match cli.command {
-        Command::Verify { log, key } => {
+        Command::Verify {
+            log,
+            key,
+            pin_model,
+            pin_prompt,
+        } => {
             let envelopes = attest_cli::read_log(&log)?;
             if envelopes.is_empty() {
                 anyhow::bail!("{} contains no envelopes", log.display());
             }
-            let report = attest_cli::verify_log(&envelopes, &key);
+            let mut report = attest_cli::verify_log(&envelopes, &key);
+            let pins = attest_cli::Pins {
+                model_artifact_hash: pin_model,
+                system_prompt_hash: pin_prompt,
+            };
+            attest_cli::apply_pins(&mut report, &envelopes, &pins);
             attest_cli::write_report_verify(&report);
             report.all_ok()
         }
