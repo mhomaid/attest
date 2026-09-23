@@ -1017,9 +1017,10 @@ fn parse_synthetic_tool_calls_from_content(content: &str) -> Option<Vec<ToolCall
             return None;
         }
         a
-    } else if let Some(obj) = v.as_object() {
+    } else {
         // Single tool-call object — must have a tool/name key but NOT a verdict key,
         // to avoid misidentifying a valid verdict as a tool call.
+        let obj = v.as_object()?;
         let has_tool_key = obj.contains_key("tool") || obj.contains_key("name");
         let is_verdict = obj.contains_key("verdict");
         if !has_tool_key || is_verdict {
@@ -1027,8 +1028,6 @@ fn parse_synthetic_tool_calls_from_content(content: &str) -> Option<Vec<ToolCall
         }
         arr_owned = vec![v.clone()];
         &arr_owned
-    } else {
-        return None;
     };
 
     let mut out = Vec::new();

@@ -1,5 +1,5 @@
 ## ── builder ────────────────────────────────────────────────────────────────
-FROM rust:1.95-slim AS builder
+FROM rust:1.98-slim AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential \

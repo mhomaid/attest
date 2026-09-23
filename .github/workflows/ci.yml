@@ -19,7 +19,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake libcurl4-openssl-dev libssl-dev pkg-config
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
 
@@ -197,10 +197,15 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+
       - name: Run Lighthouse CI
         env:
           DATABASE_URL: postgres://attest:attest@localhost:5432/attest
           ALLOW_AUTH_SEED: "1"
           AUTH_SEED_SECRET: ci-auth-seed-secret
           BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: npx --yes @lhci/cli@0.14.0 autorun --config=apps/workbench/lighthouserc.cjs

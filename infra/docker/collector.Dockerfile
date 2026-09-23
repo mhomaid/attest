@@ -2,7 +2,7 @@
 # Stage 1: build static binary using the official Rust image.
 # Stage 2: minimal runtime image — target is <50 MB.
 
-FROM rust:1.95-slim AS builder
+FROM rust:1.98-slim AS builder
 
 # cmake and libssl are needed by rdkafka's cmake-build feature.
 RUN apt-get update && apt-get install -y --no-install-recommends \
