@@ -7,6 +7,7 @@ import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { PipelineSection } from "@/components/marketing/pipeline-section";
 import { QuickstartSection } from "@/components/marketing/quickstart-section";
+import { DeploymentSection } from "@/components/marketing/deployment-section";
 import { StackDiagramSection } from "@/components/marketing/stack-diagram-section";
 import { StatusStrip } from "@/components/marketing/status-strip";
 import { WorkbenchTourSection } from "@/components/marketing/workbench-tour-section";
@@ -22,6 +23,7 @@ export default function HomePage() {
         <AgentGuardsSection />
         <CompareSection />
         <StackDiagramSection />
+        <DeploymentSection />
         <QuickstartSection />
         <DetectionsCatalogSection />
         <WorkbenchTourSection />

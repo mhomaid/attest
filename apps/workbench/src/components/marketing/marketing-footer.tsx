@@ -6,6 +6,8 @@ const product = [
   { href: "/#pipeline", label: "Pipeline" },
   { href: "/#guards", label: "Guards" },
   { href: "/#detections", label: "HELIQL" },
+  { href: "/#stack", label: "Planes" },
+  { href: "/#deploy", label: "Deploy" },
   { href: "/#quickstart", label: "Quickstart" },
 ] as const;
 

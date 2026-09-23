@@ -27,6 +27,6 @@ export const analytics = {
   hunt_query_run: () => capture("hunt_query_run"),
   marketing_cta_clicked: (cta: string) => capture("marketing_cta_clicked", { cta }),
   marketing_quickstart_copied: (step: string) => capture("marketing_quickstart_copied", { step }),
-  marketing_demo_step: (demo: "verify" | "guards", step: string) =>
+  marketing_demo_step: (demo: "verify" | "guards" | "deploy", step: string) =>
     capture("marketing_demo_step", { demo, step }),
 };

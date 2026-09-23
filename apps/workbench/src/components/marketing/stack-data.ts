@@ -1,158 +1,85 @@
 export const REPO_URL = "https://github.com/mhomaid/attest";
 
-export type StackComponent = {
+export type Status = "live" | "planned";
+
+export type PlaneComponent = {
   name: string;
   tech: string;
   role: string;
-  path: string;
+  path?: string;
+  status?: Status;
 };
 
-export type StackLayer = {
+export type Plane = {
   id: string;
   name: string;
   summary: string;
-  components: StackComponent[];
+  group: "control" | "data";
+  components: PlaneComponent[];
 };
 
 export const repoLink = (path: string) => `${REPO_URL}/tree/main/${path}`;
 
-export const stackLayers: StackLayer[] = [
+export const isPlanned = (c: PlaneComponent) => c.status === "planned";
+
+/** Top to bottom, as drawn in docs/02_Architecture.md §2. */
+export const planes: Plane[] = [
   {
-    id: "ingest",
-    name: "Ingest",
-    summary: "Raw vendor logs in, one normalized schema out.",
+    id: "workbench",
+    name: "Workbench plane",
+    summary: "Where analysts work. Reads the same artifacts; keeps no second copy.",
+    group: "control",
     components: [
       {
-        name: "attest-collector",
-        tech: "Rust · axum 0.8",
-        role: "Accepts CloudTrail JSON and normalizes it to OCSF. Okta and M365 are next.",
-        path: "crates/attest-collector",
+        name: "Workbench",
+        tech: "Next.js 16 · Bun · Tailwind v4",
+        role: "Queue, cases, hunt, Simulate and Load labs, and this site. Zustand, Better Auth.",
+        path: "apps/workbench",
       },
       {
-        name: "OCSF 1.3",
-        tech: "attest-common",
-        role: "Shared event types every other service speaks.",
-        path: "crates/attest-common",
+        name: "Control-plane API",
+        tech: "Rust · axum 0.8 · utoipa",
+        role: "REST and WebSocket API for events, baselines, warm SQL and fired detections.",
+        path: "crates/attest-control-plane",
       },
       {
-        name: "load-gen",
-        tech: "Rust",
-        role: "Replays benign and attack traffic for load and demo runs.",
-        path: "tools/load-gen",
+        name: "ws-gateway",
+        tech: "Rust · tokio",
+        role: "Streams an agent's reasoning trace to the case view as it runs.",
+        path: "apps/ws-gateway",
       },
     ],
   },
   {
-    id: "stream",
-    name: "Stream",
-    summary: "Every event is on a bus and in streaming SQL within seconds.",
+    id: "agentic",
+    name: "Agentic plane",
+    summary: "Agents decide and sign. They never open a database or a credential.",
+    group: "data",
     components: [
-      {
-        name: "Kafka / Redpanda",
-        tech: "rdkafka 0.36",
-        role: "Event bus, one topic per source, partitioned by tenant.",
-        path: "docker-compose.yml",
-      },
-      {
-        name: "RisingWave",
-        tech: "Streaming SQL",
-        role: "Hot tier: recent events and 30-day entity baselines as materialized views.",
-        path: "infra/risingwave",
-      },
-      {
-        name: "Arroyo",
-        tech: "Streaming SQL",
-        role: "Multi-step sequences (login then S3 access) and Parquet ETL.",
-        path: "infra/arroyo",
-      },
-    ],
-  },
-  {
-    id: "detect",
-    name: "Detect",
-    summary: "Rules are code: one language, compiled to the stream.",
-    components: [
-      {
-        name: "HELIQL",
-        tech: "Rust · pest",
-        role: "Detection language compiled to RisingWave materialized views. Imports Sigma.",
-        path: "crates/attest-heliql",
-      },
-      {
-        name: "detection-runtime",
-        tech: "Rust",
-        role: "Deploys compiled rules and publishes fired alerts.",
-        path: "crates/attest-detection-runtime",
-      },
-      {
-        name: "10 detections",
-        tech: "AWS · Okta · M365",
-        role: "MITRE-mapped reference rules in the repo. AWS rules run live today.",
-        path: "detections",
-      },
-    ],
-  },
-  {
-    id: "store",
-    name: "Store",
-    summary: "Open formats you own. No proprietary copy of your data.",
-    components: [
-      {
-        name: "Apache Iceberg + Parquet",
-        tech: "iceberg 0.9 · arrow 58",
-        role: "Warm tier on MinIO locally, S3 in production.",
-        path: "crates/attest-storage-iceberg",
-      },
-      {
-        name: "ClickHouse",
-        tech: "s3() over Parquet",
-        role: "Hunting queries over the same warm files, no ETL copy.",
-        path: "crates/attest-storage-clickhouse",
-      },
-      {
-        name: "Postgres 18",
-        tech: "Alembic migrations",
-        role: "Sessions, users and platform state.",
-        path: "infra/db",
-      },
-    ],
-  },
-  {
-    id: "decide",
-    name: "Decide",
-    summary: "A fast classifier for known patterns, an LLM only for novel ones.",
-    components: [
-      {
-        name: "Feature extractor",
-        tech: "Rust",
-        role: "Turns an alert into the classifier's fixed feature vector.",
-        path: "crates/attest-feature-extractor",
-      },
-      {
-        name: "ONNX classifier",
-        tech: "XGBoost · tract-onnx",
-        role: "Trained in Python, served in-process in under 5 ms with SHAP values.",
-        path: "crates/attest-onnx-runtime",
-      },
       {
         name: "Orchestrator",
         tech: "Rust · tokio",
-        role: "Runs the hybrid loop: classify, escalate when novel, sign the result.",
+        role: "Hybrid loop: classify, escalate when novel, sign the result.",
         path: "crates/attest-orchestrator",
       },
       {
+        name: "Triager classifier",
+        tech: "XGBoost · tract-onnx",
+        role: "Feature extractor plus ONNX model in-process, under 5 ms, with SHAP-style attributions.",
+        path: "crates/attest-onnx-runtime",
+      },
+      {
+        name: "Calibration sidecar",
+        tech: "Python · uv",
+        role: "Isotonic calibration and novelty parameters; training harness.",
+        path: "ml/triager",
+      },
+      {
         name: "Inference router",
-        tech: "Claude Sonnet 4.5",
-        role: "One client for LLM calls on the escalation path.",
+        tech: "Anthropic · OpenAI-compatible",
+        role: "One LLM client for the escalation path: Claude, or a local model server.",
         path: "crates/attest-inference-router",
       },
-    ],
-  },
-  {
-    id: "govern",
-    name: "Govern",
-    summary: "The model never touches data or credentials directly.",
-    components: [
       {
         name: "MCP gateway",
         tech: "Rust · axum",
@@ -171,87 +98,203 @@ export const stackLayers: StackLayer[] = [
         role: "Deterministic second opinion before any auto-close.",
         path: "crates/attest-shadow-check",
       },
-    ],
-  },
-  {
-    id: "prove",
-    name: "Prove",
-    summary: "Every verdict is signed, chained and replayable offline.",
-    components: [
       {
-        name: "Attestation envelopes",
+        name: "Attestation + attest CLI",
         tech: "ed25519-dalek · SHA-256",
-        role: "Signed, hash-chained record of every agent decision.",
+        role: "Signed, hash-chained envelopes; verify, replay and pin-check offline.",
         path: "crates/attest-attestation",
       },
       {
-        name: "attest CLI",
-        tech: "Rust · clap",
-        role: "verify, replay and pin-check a log with no running services.",
-        path: "crates/attest-cli",
-      },
-      {
-        name: "Agent definitions",
-        tech: "JSON + prompts",
-        role: "Published model and prompt hashes that envelopes are pinned to.",
-        path: "agents",
+        name: "Hunter · Responder · Coordinator",
+        tech: "Agents",
+        role: "Further agent roles. Policies exist; the agents are design only.",
+        status: "planned",
       },
     ],
   },
   {
-    id: "serve",
-    name: "Serve",
-    summary: "APIs and the analyst console on top of the same artifacts.",
+    id: "detection",
+    name: "Detection plane",
+    summary: "Write a rule once; compile it to the stream or to a hunt.",
+    group: "data",
     components: [
       {
-        name: "Control plane",
-        tech: "axum 0.8 · utoipa",
-        role: "REST and WebSocket API with OpenAPI docs.",
-        path: "crates/attest-control-plane",
+        name: "HELIQL compiler",
+        tech: "Rust · pest",
+        role: "Detection language compiled to RisingWave materialized views. Imports Sigma.",
+        path: "crates/attest-heliql",
       },
       {
-        name: "ws-gateway",
+        name: "Detection runtime",
         tech: "Rust",
-        role: "Streams an agent's reasoning trace to the case view as it runs.",
-        path: "apps/ws-gateway",
+        role: "Deploys compiled rules and publishes fired alerts to Kafka.",
+        path: "crates/attest-detection-runtime",
       },
       {
-        name: "Workbench",
-        tech: "Next.js 16 · Bun · Tailwind v4",
-        role: "Analyst console and this site. Zustand, Better Auth, framer-motion.",
-        path: "apps/workbench",
+        name: "10 detections",
+        tech: "AWS · Okta · M365",
+        role: "MITRE-mapped reference rules in the repo. AWS rules run live today.",
+        path: "detections",
       },
     ],
   },
   {
-    id: "operate",
-    name: "Operate",
-    summary: "Traced, monitored and shipped from one repo.",
+    id: "storage",
+    name: "Storage plane",
+    summary: "Open formats you own. Leave with your data in a day.",
+    group: "data",
     components: [
       {
-        name: "OpenTelemetry + Tempo",
-        tech: "OTLP",
-        role: "Traces across every Rust service.",
-        path: "crates/attest-telemetry",
+        name: "Apache Iceberg + Parquet",
+        tech: "iceberg 0.9 · arrow 58",
+        role: "Warm tier on MinIO locally, S3 in production.",
+        path: "crates/attest-storage-iceberg",
       },
       {
-        name: "Sentry + PostHog",
-        tech: "Errors · product analytics",
-        role: "Frontend errors and usage, with PII stripped.",
-        path: "apps/workbench",
+        name: "ClickHouse",
+        tech: "s3() over Parquet",
+        role: "Hunting queries over the same warm files, no ETL copy.",
+        path: "crates/attest-storage-clickhouse",
       },
       {
-        name: "Docker + Railway",
-        tech: "Compose · Railway",
+        name: "Cold archive",
+        tech: "S3 Glacier",
+        role: "Seven-year compliance retention.",
+        status: "planned",
+      },
+    ],
+  },
+  {
+    id: "streaming",
+    name: "Streaming plane",
+    summary: "Raw logs in, normalized OCSF on a bus within seconds.",
+    group: "data",
+    components: [
+      {
+        name: "Edge collector",
+        tech: "Rust · axum 0.8",
+        role: "CloudTrail JSON in, OCSF 1.3 out.",
+        path: "crates/attest-collector",
+      },
+      {
+        name: "Kafka / Redpanda",
+        tech: "rdkafka 0.36",
+        role: "Event bus, one topic per source, partitioned by tenant.",
+        path: "docker-compose.yml",
+      },
+      {
+        name: "RisingWave",
+        tech: "Streaming SQL",
+        role: "Recent events and 30-day entity baselines as materialized views.",
+        path: "infra/risingwave",
+      },
+      {
+        name: "Arroyo",
+        tech: "Streaming SQL",
+        role: "Multi-step sequences (login then S3 access) and Parquet ETL.",
+        path: "infra/arroyo",
+      },
+      {
+        name: "Okta · M365 · EDR collectors",
+        tech: "OCSF 1.3",
+        role: "More sources on the same normalizer.",
+        status: "planned",
+      },
+    ],
+  },
+  {
+    id: "control",
+    name: "Control plane",
+    summary: "Identity, config and infrastructure. Everything is in Git.",
+    group: "control",
+    components: [
+      {
+        name: "Identity + sessions",
+        tech: "Better Auth · Postgres 18",
+        role: "Analyst accounts and sessions; Alembic migrations.",
+        path: "infra/db",
+      },
+      {
+        name: "GitOps",
+        tech: "GitHub Actions · Dependabot",
+        role: "Detections, agent definitions and pipelines are versioned and CI-tested.",
+        path: ".github",
+      },
+      {
+        name: "Infrastructure",
+        tech: "Docker Compose · Railway",
         role: "One compose file locally, one Railway project in the cloud.",
         path: "infra/railway",
       },
       {
-        name: "GitHub Actions",
-        tech: "CI · Dependabot",
-        role: "Rust tests, lint and Playwright on every push; weekly dependency updates.",
-        path: ".github",
+        name: "Observability",
+        tech: "OpenTelemetry · Tempo · Sentry",
+        role: "Traces across Rust services; frontend errors with PII stripped.",
+        path: "crates/attest-telemetry",
+      },
+      {
+        name: "Enterprise identity",
+        tech: "OIDC · SCIM",
+        role: "SSO and provisioning via Okta, Entra or Auth0.",
+        status: "planned",
+      },
+      {
+        name: "Per-tenant keys",
+        tech: "BYOK · KMS",
+        role: "Customer-held encryption keys per tenant.",
+        status: "planned",
+      },
+      {
+        name: "Terraform + Helm",
+        tech: "EKS · GKE · AKS",
+        role: "Same containers deployed into your cloud or an air-gapped site.",
+        status: "planned",
       },
     ],
+  },
+];
+
+export type Deployment = {
+  id: string;
+  name: string;
+  status: Status;
+  controlIn: "attest" | "customer";
+  dataIn: "attest" | "customer";
+  note: string;
+};
+
+/** docs/02_Architecture.md §10. */
+export const deployments: Deployment[] = [
+  {
+    id: "railway",
+    name: "Railway",
+    status: "live",
+    controlIn: "attest",
+    dataIn: "attest",
+    note: "Running today: one Railway project hosts both the control plane and the data plane.",
+  },
+  {
+    id: "saas",
+    name: "SaaS",
+    status: "planned",
+    controlIn: "attest",
+    dataIn: "attest",
+    note: "Multi-tenant control plane; each customer gets a single-tenant data plane with its own compute and storage.",
+  },
+  {
+    id: "byoc",
+    name: "Your cloud (BYOC)",
+    status: "planned",
+    controlIn: "attest",
+    dataIn: "customer",
+    note: "The data plane runs in your VPC. Your events, your Iceberg warm tier and the agents never leave your cloud.",
+  },
+  {
+    id: "airgap",
+    name: "Air-gapped",
+    status: "planned",
+    controlIn: "customer",
+    dataIn: "customer",
+    note: "Everything on your hardware via Helm, with open-weights models served locally. No outbound calls.",
   },
 ];

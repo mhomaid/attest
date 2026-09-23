@@ -1,4 +1,4 @@
-import { REPO_URL, repoLink, stackLayers } from "@/components/marketing/stack-data";
+import { deployments, isPlanned, planes, REPO_URL, repoLink } from "@/components/marketing/stack-data";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://attest.homaid.dev";
 
@@ -26,25 +26,39 @@ Attest was designed and built by Mohamed Homaid (https://github.com/mhomaid). So
 
 ## Pages
 
-- [Homepage](${SITE}/): verify demo, pipeline, guards, comparison, quickstart
-- [Stack](${SITE}/stack): every component and where it lives in the repo
+- [Homepage](${SITE}/): verify demo, pipeline, guards, six-plane architecture, deployments
+- [Stack](${SITE}/stack): every component in the six planes and where it lives in the repo
 - [Source code](${REPO_URL})
 - [README and quick start](${REPO_URL}#quick-start)
 `;
 
 function stackSection(detailed: boolean): string {
-  const lines = ["## Stack", ""];
-  for (const layer of stackLayers) {
-    lines.push(`### ${layer.name}`, "", layer.summary, "");
-    for (const c of layer.components) {
+  const lines = [
+    "## Logical architecture (six planes)",
+    "",
+    "The agentic plane never reaches into the storage plane directly. It calls the detection plane and a governed query API.",
+    "",
+  ];
+  for (const plane of planes) {
+    lines.push(`### ${plane.name} (${plane.group} plane)`, "", plane.summary, "");
+    for (const c of plane.components) {
+      const tag = isPlanned(c) ? " [planned]" : "";
+      const link = c.path ? `[${c.name}](${repoLink(c.path)})` : c.name;
       lines.push(
         detailed
-          ? `- [${c.name}](${repoLink(c.path)}) (${c.tech}): ${c.role}`
-          : `- ${c.name} (${c.tech})`,
+          ? `- ${link} (${c.tech})${tag}: ${c.role}`
+          : `- ${c.name} (${c.tech})${tag}`,
       );
     }
     lines.push("");
   }
+  lines.push("## Deployments", "");
+  for (const d of deployments) {
+    lines.push(
+      `- ${d.name}${d.status === "planned" ? " [planned]" : " [live]"}: control in ${d.controlIn} cloud, data in ${d.dataIn} cloud. ${d.note}`,
+    );
+  }
+  lines.push("");
   return lines.join("\n");
 }
 
