@@ -910,6 +910,149 @@ pub async fn run_investigator_llm_loop(
     Err(LlmLoopError::MaxIterations(max_iterations))
 }
 
+/// Parameters for Hunter / Responder (and future specialists) that share the
+/// investigator loop shape but have their own role + tool catalog.
+pub struct SpecialistSpec {
+    pub role: &'static str,
+    pub agent_id: String,
+    pub tools: Vec<ToolDef>,
+    pub require_retrieval: bool,
+}
+
+/// Multi-turn specialist loop used by Hunter and Responder.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_specialist_llm_loop(
+    client: &dyn ChatClient,
+    mcp: &McpClient,
+    spec: SpecialistSpec,
+    system_prompt: &str,
+    system_prompt_hash: &str,
+    user_message: &str,
+    calibrated_confidence: f32,
+    max_iterations: u8,
+    action_id: Uuid,
+) -> Result<InvestigatorLlmResult, LlmLoopError> {
+    let mut messages = vec![
+        ChatMessage::system(system_prompt),
+        ChatMessage::user(user_message.to_string()),
+    ];
+    let mut tool_call_records = Vec::new();
+    let mut intermediate_beliefs = Vec::new();
+    let mut _successful_call_ids: Vec<String> = Vec::new();
+    let tools = spec.tools;
+
+    for iteration in 0..max_iterations {
+        let req = ChatRequest::new(messages.clone(), tools.clone());
+        let resp = client.chat(req).await.map_err(LlmLoopError::Provider)?;
+
+        let synthetic_tools = if resp.has_tool_calls() {
+            None
+        } else {
+            parse_synthetic_tool_calls_from_content(&resp.content)
+                .or_else(|| parse_python_tool_calls(&resp.content))
+        };
+        let tool_round: Vec<ToolCall> = if resp.has_tool_calls() {
+            resp.tool_calls.clone()
+        } else {
+            synthetic_tools.unwrap_or_default()
+        };
+
+        if !tool_round.is_empty() {
+            intermediate_beliefs.push(IntermediateBelief {
+                iteration,
+                content_summary: format!("requesting {} tool calls", tool_round.len()),
+                self_reported_confidence: None,
+                timestamp: Utc::now(),
+            });
+            messages.push(ChatMessage::Assistant {
+                content: resp.content.clone(),
+                tool_calls: Some(tool_round.clone()),
+            });
+            for tc in &tool_round {
+                let result = mcp
+                    .invoke(
+                        &spec.agent_id,
+                        action_id,
+                        spec.role,
+                        &tc.name,
+                        &tc.arguments,
+                        calibrated_confidence,
+                    )
+                    .await;
+                let (tool_output, record) = match result {
+                    Ok(r) => (
+                        r.result
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| r.error.unwrap_or_else(|| "tool denied".into())),
+                        r.record,
+                    ),
+                    Err(e) => (
+                        format!("error: {e}"),
+                        ToolCallRecord {
+                            tool_id: tc.name.clone(),
+                            args_hash: hex::encode(Sha256::digest(
+                                serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                            )),
+                            result_hash: hex::encode(Sha256::digest(e.to_string().as_bytes())),
+                            latency_ms: 0,
+                            policy_decision: "error".into(),
+                            timestamp: Utc::now(),
+                        },
+                    ),
+                };
+                if record.policy_decision == "allow" {
+                    _successful_call_ids.push(tc.id.clone());
+                }
+                tool_call_records.push(record);
+                messages.push(ChatMessage::tool_result(tc.id.clone(), tool_output));
+            }
+            continue;
+        }
+
+        let raw = resp.content.trim().to_string();
+        let model_verdict: ModelVerdict = serde_json::from_str(&extract_json_block(&raw))
+            .map_err(|e| LlmLoopError::InvalidVerdict(e.to_string()))?;
+
+        if spec.require_retrieval && !has_retrieved_evidence(&tool_call_records) {
+            return Ok(InvestigatorLlmResult {
+                evidence: build_llm_evidence_for_model(
+                    client.provider(),
+                    client.model_id(),
+                    system_prompt_hash,
+                    tool_call_records,
+                    intermediate_beliefs,
+                    vec![],
+                    iteration + 1,
+                    0,
+                ),
+                verdict: attest_attestation::Verdict::NeedsInvestigation,
+            });
+        }
+
+        intermediate_beliefs.push(IntermediateBelief {
+            iteration,
+            content_summary: truncate_summary(&model_verdict.reasoning, 300),
+            self_reported_confidence: model_verdict.confidence,
+            timestamp: Utc::now(),
+        });
+        return Ok(InvestigatorLlmResult {
+            evidence: build_llm_evidence_for_model(
+                client.provider(),
+                client.model_id(),
+                system_prompt_hash,
+                tool_call_records,
+                intermediate_beliefs,
+                model_verdict.evidence_citations,
+                iteration + 1,
+                0,
+            ),
+            verdict: parse_verdict(&model_verdict.verdict),
+        });
+    }
+
+    Err(LlmLoopError::MaxIterations(max_iterations))
+}
+
 /// Run a single-round reviewer pass for cross-agent review.
 ///
 /// Sends the primary verdict to a second LLM invocation (no tools, low
@@ -1129,6 +1272,11 @@ fn parse_python_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
         "query_warm_tier",
         "analyze_code_snippet",
         "sandbox_detonate",
+        "propose_detection_pr",
+        "request_human_review",
+        "idp_revoke_session",
+        "edr_isolate_host",
+        "firewall_block_ioc",
     ];
     if !KNOWN_TOOLS.contains(&func_name) {
         return None;

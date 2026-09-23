@@ -5,7 +5,7 @@ workbench notes, Railway lessons). It is **not** the project README.
 
 For what is implemented today, start with the Status table in the [root README](../README.md).
 A few details below are historical (for example the warm-tier SQL gate is now a real
-tokenizer, not a `starts_with("select")` check; warm storage is Parquet, not an Iceberg catalog).
+tokenizer, not a `starts_with("select")` check; warm storage now commits Iceberg snapshots).
 
 ---
 

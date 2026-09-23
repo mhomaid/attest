@@ -13,7 +13,7 @@ flowchart LR
   CT[CloudTrail / Okta / M365] --> Col[attest-collector]
   Col --> RP[(Redpanda)]
   RP --> RW[RisingWave hot tier]
-  RP --> PQ[Parquet on MinIO]
+  RP --> PQ[Iceberg on MinIO]
   RP --> Det[HELIQL detections]
   PQ --> CH[ClickHouse warm query]
   RW --> CP[control-plane]
@@ -35,7 +35,7 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 |---|---|---|
 | CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` (tenant from `X-Tenant-Id`, else `TENANT_ID`). `POST /ingest/s3` or an S3 object-created notification fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. No ingest auth yet: keep the collector on a private network. |
 | RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1 |
-| Warm storage | Partial | **Parquet on MinIO today.** The crate is named `attest-storage-iceberg` but there is no Iceberg catalog dependency in the write path. Iceberg is planned. |
+| Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet data files + snapshot commits via iceberg-rust. Catalog pointer is `metadata/version-hint.text` so a restarted writer reloads the same table. Warehouse is `s3://attest-warm` (MinIO) or a local `file://` dir. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
 | HELIQL detections | Working | `attest-heliql` parses and compiles; 10 rules in `detections/` |
 | Hybrid triager (classifier path) | Working | ONNX via `tract-onnx`; release P99 &lt; 5 ms asserted |
@@ -47,9 +47,9 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
 | Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3/MinIO first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
 | Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers |
-| Hunter / responder / coordinator agents | Planned | Design only |
+| Hunter / responder / coordinator agents | Working | Coordinator is deterministic routing (`POST /v1/coordinate`). Hunter (`POST /v1/hunt`) and Responder (`POST /v1/respond`) are LLM paths with a signed-envelope fallback when no model is configured. Responder actions are shadow-checked and only *planned* against a real IdP/EDR. |
 | AADF / SIDM / eval harness | Planned | Design docs in `docs/` |
-| Helm / Terraform | Planned | — |
+| Helm / Terraform | Working | Reference chart in `infra/helm/attest`. AWS BYOC module in `infra/terraform/aws` (warm S3 bucket + optional Helm release onto an existing EKS cluster). |
 
 ## Quick start
 
@@ -167,10 +167,10 @@ the present tense — the table above is the source of truth for today.
 - Anchor the attestation chain tip externally (transparency log / object lock)
 - Authenticated, per-tenant ingest tokens on the collector
 - Content-addressed store for tool args/results (replay investigator steps from recorded responses)
-- Iceberg catalog on top of the existing Parquet layout
 - TreeSHAP (or an honest rename everywhere if we keep the perturbation approximation)
-- Eval harness (`eval/`) and the remaining agents (hunter, responder, coordinator)
-- Pin service image tags; Helm/Terraform
+- Eval harness (`eval/`)
+- Pin service image tags; REST Iceberg catalog (today is MemoryCatalog + version-hint on the warehouse)
+- Live IdP/EDR connectors behind the Responder (today the tools record a planned action)
 
 ## License and contributing
 

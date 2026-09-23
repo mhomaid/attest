@@ -46,6 +46,10 @@ pub struct InvokeRequest {
     /// Optional calibrated confidence passed from the orchestrator for policy checks.
     #[serde(default)]
     pub calibrated_confidence: f32,
+    #[serde(default)]
+    pub target_is_protected: bool,
+    #[serde(default)]
+    pub blast_radius: u32,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -156,6 +160,12 @@ async fn handle_invoke(
     // 1. Policy check
     let policy_ctx = PolicyContext {
         calibrated_confidence: req.calibrated_confidence,
+        target_is_protected: req.target_is_protected,
+        blast_radius: if req.blast_radius == 0 {
+            1
+        } else {
+            req.blast_radius
+        },
         ..Default::default()
     };
     let policy_decision = authorize(&req.agent_role, &req.tool_id, &policy_ctx);

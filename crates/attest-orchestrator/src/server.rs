@@ -11,6 +11,8 @@
 //!   GET  /v1/attestations/{id}      — one envelope
 //!   GET  /docs              — Scalar interactive API docs
 
+use crate::coordinator::{route, CoordinateRequest};
+use crate::specialists::{run_hunt, run_respond, HuntRequest, RespondRequest};
 use crate::triage::{TriageEngine, TriageRequest};
 use attest_attestation::{verify_log, Verdict};
 use axum::{
@@ -82,6 +84,9 @@ pub struct CaseOverrideResponse {
     paths(
         healthz,
         handle_triage,
+        handle_coordinate,
+        handle_hunt,
+        handle_respond,
         handle_agent_info,
         handle_metrics,
         handle_case_override,
@@ -99,6 +104,12 @@ pub struct CaseOverrideResponse {
         crate::triage::TriageRequest,
         crate::triage::TriageVerdict,
         crate::triage::InvestigationSummary,
+        crate::coordinator::CoordinateRequest,
+        crate::coordinator::CoordinateDecision,
+        crate::specialists::HuntRequest,
+        crate::specialists::HuntResult,
+        crate::specialists::RespondRequest,
+        crate::specialists::RespondResult,
     )),
     info(
         title = "Attest Orchestrator",
@@ -119,6 +130,9 @@ pub fn build_router(engine: TriageEngine) -> Router {
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/triage", post(handle_triage))
+        .route("/v1/coordinate", post(handle_coordinate))
+        .route("/v1/hunt", post(handle_hunt))
+        .route("/v1/respond", post(handle_respond))
         .route("/agent", get(handle_agent_info))
         .route("/metrics", get(handle_metrics))
         .route("/v1/cases/{case_id}/override", post(handle_case_override))
@@ -187,6 +201,99 @@ async fn handle_triage(
                 Json(serde_json::json!({ "error": e.to_string() })),
             )
         }
+    }
+}
+
+fn load_prompt(env_key: &str, default_path: &str) -> (String, String) {
+    let path = std::env::var(env_key).unwrap_or_else(|_| default_path.into());
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let hash = {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(text.as_bytes()))
+    };
+    (text, hash)
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/coordinate",
+    request_body = CoordinateRequest,
+    responses((status = 200, description = "Routing decision", body = crate::coordinator::CoordinateDecision)),
+    tag = "agents"
+)]
+async fn handle_coordinate(Json(req): Json<CoordinateRequest>) -> impl IntoResponse {
+    (StatusCode::OK, Json(route(req)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/hunt",
+    request_body = HuntRequest,
+    responses((status = 200, description = "Hunt result", body = crate::specialists::HuntResult)),
+    tag = "agents"
+)]
+async fn handle_hunt(
+    State(state): State<OrchestratorState>,
+    Json(req): Json<HuntRequest>,
+) -> impl IntoResponse {
+    let (prompt, hash) = load_prompt("HUNTER_PROMPT_PATH", "./agents/hunter/system_prompt_v1.md");
+    let agent_id = std::env::var("HUNTER_AGENT_ID").unwrap_or_else(|_| "hunter-v1".into());
+    match run_hunt(
+        req,
+        state.engine.llm(),
+        state.engine.mcp(),
+        state.engine.signer(),
+        state.engine.attestation_log(),
+        &prompt,
+        &hash,
+        &agent_id,
+    )
+    .await
+    {
+        Ok(out) => (StatusCode::OK, Json(serde_json::to_value(&out).unwrap())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/respond",
+    request_body = RespondRequest,
+    responses((status = 200, description = "Responder result", body = crate::specialists::RespondResult)),
+    tag = "agents"
+)]
+async fn handle_respond(
+    State(state): State<OrchestratorState>,
+    Json(req): Json<RespondRequest>,
+) -> impl IntoResponse {
+    let (prompt, hash) = load_prompt(
+        "RESPONDER_PROMPT_PATH",
+        "./agents/responder/system_prompt_v1.md",
+    );
+    let agent_id = std::env::var("RESPONDER_AGENT_ID").unwrap_or_else(|_| "responder-v1".into());
+    match run_respond(
+        req,
+        state.engine.llm(),
+        state.engine.mcp(),
+        state.engine.signer(),
+        state.engine.attestation_log(),
+        state.engine.shadow(),
+        &prompt,
+        &hash,
+        &agent_id,
+    )
+    .await
+    {
+        Ok(out) => (StatusCode::OK, Json(serde_json::to_value(&out).unwrap())).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 

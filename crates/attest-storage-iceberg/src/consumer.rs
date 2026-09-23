@@ -1,4 +1,4 @@
-use crate::writer::{FlatEvent, ParquetBatchWriter};
+use crate::writer::{FlatEvent, IcebergBatchWriter};
 use anyhow::Result;
 use rdkafka::{
     consumer::{CommitMode, Consumer, StreamConsumer},
@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 
 pub struct IcebergConsumer {
     consumer: StreamConsumer,
-    writer: Arc<ParquetBatchWriter>,
+    writer: Arc<IcebergBatchWriter>,
     batch_size: usize,
     flush_interval: Duration,
 }
@@ -21,7 +21,7 @@ impl IcebergConsumer {
         brokers: &str,
         group_id: &str,
         topic: &str,
-        writer: Arc<ParquetBatchWriter>,
+        writer: Arc<IcebergBatchWriter>,
         batch_size: usize,
         flush_interval_secs: u64,
     ) -> Result<Self> {
@@ -43,7 +43,7 @@ impl IcebergConsumer {
         })
     }
 
-    /// Run the consume → batch → write loop until the process is signalled.
+    /// Run the consume → batch → Iceberg commit loop until the process is signalled.
     pub async fn run(self) -> Result<()> {
         let mut buffer: Vec<FlatEvent> = Vec::with_capacity(self.batch_size);
         let mut ticker = interval(self.flush_interval);
@@ -55,7 +55,7 @@ impl IcebergConsumer {
                     if !buffer.is_empty() {
                         let elapsed = last_flush.elapsed();
                         info!("flush timer: {} events after {:.1}s", buffer.len(), elapsed.as_secs_f32());
-                        flush(&self.writer, &mut buffer, &self.consumer).await;
+                        flush(&self.writer, &mut buffer).await;
                         last_flush = Instant::now();
                     }
                 }
@@ -70,7 +70,7 @@ impl IcebergConsumer {
                                         buffer.push(event);
                                         if buffer.len() >= self.batch_size {
                                             info!("batch full ({} events), flushing", buffer.len());
-                                            flush(&self.writer, &mut buffer, &self.consumer).await;
+                                            flush(&self.writer, &mut buffer).await;
                                             last_flush = Instant::now();
                                         }
                                     }
@@ -87,7 +87,7 @@ impl IcebergConsumer {
                 _ = tokio::signal::ctrl_c() => {
                     info!("shutdown signal; flushing {} remaining events", buffer.len());
                     if !buffer.is_empty() {
-                        flush(&self.writer, &mut buffer, &self.consumer).await;
+                        flush(&self.writer, &mut buffer).await;
                     }
                     break;
                 }
@@ -97,14 +97,13 @@ impl IcebergConsumer {
     }
 }
 
-async fn flush(
-    writer: &ParquetBatchWriter,
-    buffer: &mut Vec<FlatEvent>,
-    _consumer: &StreamConsumer,
-) {
+async fn flush(writer: &IcebergBatchWriter, buffer: &mut Vec<FlatEvent>) {
     match writer.write_batch(buffer).await {
-        Ok(path) => info!("flushed {} events → {}", buffer.len(), path),
-        Err(e) => error!("flush error: {e}"),
+        Ok(commit) => info!(
+            "flushed {} events → snapshot {} ({})",
+            commit.records, commit.snapshot_id, commit.data_path
+        ),
+        Err(e) => error!("Iceberg flush error: {e}"),
     }
     buffer.clear();
 }

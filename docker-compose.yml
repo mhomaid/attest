@@ -275,6 +275,7 @@ services:
       S3_SECRET_KEY: minioadmin
       S3_REGION: us-east-1
       TABLE_PREFIX: cloudtrail
+      ICEBERG_WAREHOUSE: s3://attest-warm
       BATCH_SIZE: "1000"
       FLUSH_INTERVAL_SECS: "30"
     depends_on:
