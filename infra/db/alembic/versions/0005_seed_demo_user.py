@@ -18,8 +18,8 @@ branch_labels = None
 depends_on = None
 
 _SQL_PATH = Path(__file__).resolve().parent.parent.parent / "sql" / "0005_seed_demo_user.sql"
-_SEED_USER_ID = "33333333-3333-4333-8333-333333333333"
-_ACCOUNT_ID = "44444444-4444-4444-8444-444444444444"
+_SEED_USER_ID = "77777777-7777-4777-8777-777777777777"
+_ACCOUNT_ID = "88888888-8888-4888-8888-888888888888"
 
 
 def upgrade() -> None:

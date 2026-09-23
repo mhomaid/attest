@@ -295,7 +295,32 @@ async fn read_objects(sink: &ObjectSink) -> Result<Vec<AttestationEnvelope>> {
             serde_json::from_slice(&bytes).context("envelope object JSON")?;
         out.push(env);
     }
-    Ok(out)
+    Ok(order_by_chain(out))
+}
+
+/// Walk `prev_hash` from genesis so a listing that is not lexical still
+/// reconstructs append order (needed after a restart).
+fn order_by_chain(envs: Vec<AttestationEnvelope>) -> Vec<AttestationEnvelope> {
+    if envs.len() <= 1 {
+        return envs;
+    }
+    use std::collections::HashMap;
+    let mut by_prev: HashMap<String, AttestationEnvelope> = HashMap::new();
+    let mut extra = Vec::new();
+    for env in envs {
+        if by_prev.insert(env.prev_hash.clone(), env.clone()).is_some() {
+            extra.push(env);
+        }
+    }
+    let mut out = Vec::with_capacity(by_prev.len());
+    let mut cursor = GENESIS_HASH.to_string();
+    while let Some(env) = by_prev.remove(&cursor) {
+        cursor = env.chain_hash();
+        out.push(env);
+    }
+    out.extend(by_prev.into_values());
+    out.extend(extra);
+    out
 }
 
 async fn read_ndjson(path: &Path) -> Result<Vec<AttestationEnvelope>> {
