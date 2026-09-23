@@ -33,7 +33,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Phase 2 — Iceberg warm tier
 arrow = "58.1"
 parquet = { version = "58.1", features = ["async"] }
-object_store = { version = "0.13", features = ["aws"] }
+object_store = { version = "0.14", features = ["aws"] }
 iceberg = "0.9"
 iceberg-catalog-rest = "0.9"
 # Phase 3 — HELIQL DSL + detection runtime
