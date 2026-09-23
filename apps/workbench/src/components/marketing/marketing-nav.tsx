@@ -53,10 +53,10 @@ export function MarketingNav() {
             Open workbench
           </Link>
           <Link
-            href="/workbench/queue"
+            href="/login"
             className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           >
-            See the console
+            Sign in
           </Link>
           <button
             type="button"
@@ -87,11 +87,11 @@ export function MarketingNav() {
             </a>
           ))}
           <Link
-            href="/workbench/queue"
-            className="mt-1 rounded-md border border-border py-2 text-center text-sm"
+            href="/login"
+            className="mt-1 rounded-md bg-primary py-2 text-center text-sm font-medium text-primary-foreground"
             onClick={() => setOpen(false)}
           >
-            Open workbench
+            Sign in
           </Link>
         </div>
       </div>

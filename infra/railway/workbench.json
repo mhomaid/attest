@@ -16,8 +16,8 @@
     "ORCHESTRATOR_URL": "http://orchestrator.railway.internal:4300",
     "WORKBENCH_API_URL": "http://workbench-api.railway.internal:4400",
     "ARROYO_URL": "http://arroyo.railway.internal:5115",
-    "NEXT_PUBLIC_APP_URL": "https://attest-wb.up.railway.app",
-    "BETTER_AUTH_URL": "https://attest-wb.up.railway.app",
+    "NEXT_PUBLIC_APP_URL": "https://attest.homaid.dev",
+    "BETTER_AUTH_URL": "https://attest.homaid.dev",
     "NEXT_PUBLIC_CP_WS_URL": "wss://control-plane-production-b6e3.up.railway.app",
     "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
     "ALLOW_AUTH_SEED": "0"

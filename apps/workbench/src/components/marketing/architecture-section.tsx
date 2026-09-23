@@ -23,7 +23,7 @@ const planes = [
     id: "storage",
     name: "Storage plane",
     stack: "RisingWave hot · Parquet / Iceberg warm · ClickHouse",
-    body: "Hot views for last-N events and 30-day baselines. Warm Parquet on MinIO (S3 in prod). ClickHouse reads the same files — no ETL copy.",
+    body: "Hot views for last-N events and 30-day baselines. Warm Parquet on MinIO (S3 in prod). ClickHouse reads the same files; there is no ETL copy.",
   },
   {
     id: "streaming",
@@ -94,7 +94,7 @@ export function ArchitectureSection() {
         </h3>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
           One event fans out to the hot tier, the warm lake, the detection
-          runtime, and — if a rule fires — the hybrid triager. The workbench
+          runtime, and, if a rule fires, the hybrid triager. The workbench
           reads the same artifacts; it does not keep a second copy of truth.
         </p>
         <VerticalFlow hops={hops} className="mt-6 max-w-2xl" />

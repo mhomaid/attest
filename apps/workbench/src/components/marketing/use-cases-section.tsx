@@ -7,7 +7,7 @@ const cases = [
   },
   {
     title: "Portable detection across time horizons",
-    body: "One HELIQL rule: real-time streams, 30-day retro hunts, and federated push-down — no triplicate authoring.",
+    body: "One HELIQL rule: real-time streams, 30-day retro hunts, and federated push-down. No triplicate authoring.",
   },
   {
     title: "Autonomous triage with a verifiable verdict",
@@ -19,7 +19,7 @@ const cases = [
   },
   {
     title: "Closed-loop detection improvement",
-    body: "Precision, recall, and drift inform the Detection Engineer agent’s next PR — humans stay in control via review.",
+    body: "Precision, recall, and drift inform the Detection Engineer agent’s next PR. Humans stay in control via review.",
   },
 ] as const;
 

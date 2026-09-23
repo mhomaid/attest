@@ -56,6 +56,14 @@ export const auth = betterAuth({
       updatedAt: "updated_at",
     },
   },
-  emailAndPassword: { enabled: true },
-  trustedOrigins: [baseURL],
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: false,
+    minPasswordLength: 8,
+  },
+  trustedOrigins: [
+    baseURL,
+    "https://attest.homaid.dev",
+    "https://attest-wb.up.railway.app",
+  ],
 });

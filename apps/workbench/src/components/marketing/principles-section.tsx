@@ -7,7 +7,7 @@ const principles = [
   {
     id: "P2",
     title: "Every decision is reproducible",
-    body: "Model id, prompt hash, tool inputs/outputs, intermediate beliefs, calibrated confidence, policy version — enough state to replay last Tuesday’s containment in ninety seconds.",
+    body: "Model id, prompt hash, tool inputs/outputs, intermediate beliefs, calibrated confidence, policy version. Enough state to replay last Tuesday’s containment in ninety seconds.",
   },
   {
     id: "P3",
@@ -27,7 +27,7 @@ const principles = [
   {
     id: "P6",
     title: "Specialization beats one mega-agent",
-    body: "Triager, Investigator, Hunter, Detection Engineer, Responder — distinct prompts, models, tool catalogs, and policies. The coordinator plans; it does not verdict.",
+    body: "Triager, Investigator, Hunter, Detection Engineer, Responder: distinct prompts, models, tool catalogs, and policies. The coordinator plans; it does not verdict.",
   },
   {
     id: "P7",

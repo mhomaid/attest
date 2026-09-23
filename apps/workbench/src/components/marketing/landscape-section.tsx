@@ -1,4 +1,4 @@
-/** Industry context cited in product docs — not a performance claim about Attest. */
+/** Industry context cited in product docs, not a performance claim about Attest. */
 export function LandscapeSection() {
   return (
     <section className="border-b border-border/60 bg-secondary/20 py-10">
@@ -10,7 +10,7 @@ export function LandscapeSection() {
           {[
             { value: "< 2 days", label: "Mean time to exploit (2026, industry trend)" },
             { value: "~25 min", label: "Agentic ransomware chains (reported ranges)" },
-            { value: "90%+", label: "Incidents involving identity — including AI agents" },
+            { value: "90%+", label: "Incidents involving identity, including AI agents" },
           ].map((stat) => (
             <div
               key={stat.label}

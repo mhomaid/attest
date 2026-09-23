@@ -67,7 +67,7 @@ export function AgentsSection() {
           Status labels are honest. The Triager and Investigator are real
           services with E2E tests. Hunter, Detection Engineer, and Responder
           are specified in the blueprint and shown here so the design is
-          complete — they are not claimed as shipped.
+          complete. They are not claimed as shipped.
         </p>
 
         <BranchFlow
@@ -95,7 +95,7 @@ export function AgentsSection() {
           end={{
             label: "Workbench",
             hint: "Queue + trace",
-            detail: "The analyst sees the same artifacts — SHAP bars or the investigator stepper.",
+            detail: "The analyst sees the same artifacts: SHAP bars or the investigator stepper.",
           }}
         />
 

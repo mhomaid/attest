@@ -18,14 +18,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Attest — Verifiable Agentic SIEM",
+  title: "Attest: Verifiable Agentic SIEM",
   description:
     "Streaming-first security operations with agent-aware detection, signed agent reasoning, and a self-improving detection mesh. Explore the analyst workbench.",
   icons: {
     icon: "/icon.svg",
   },
   openGraph: {
-    title: "Attest — Verifiable Agentic SIEM",
+    title: "Attest: Verifiable Agentic SIEM",
     description:
       "AI agents as first-class entities on both sides of the attack. Portable detections, OCSF + Iceberg, multi-agent SOC you can audit.",
   },

@@ -126,7 +126,7 @@ export function SubstrateSection() {
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">
             A streaming-first, attestation-native stack built end-to-end in Rust
-            and deployed on Railway — from raw CloudTrail to verifiable AI verdicts.
+            and deployed on Railway, from raw CloudTrail to verifiable AI verdicts.
           </p>
         </div>
 

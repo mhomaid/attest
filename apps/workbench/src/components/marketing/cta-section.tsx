@@ -22,15 +22,15 @@ export function CtaSection() {
             </h2>
             <p className="mt-3 text-muted-foreground">
               The workbench is a dense SOC surface: live queue, case investigation, attested
-              reasoning, and MITRE-oriented coverage — start with the interactive shell while the
+              reasoning, and MITRE-oriented coverage. Start with the interactive shell while the
               platform lands.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                href="/workbench/queue"
+                href="/login"
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
               >
-                Open the queue
+                Sign in
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <a

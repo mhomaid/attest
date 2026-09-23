@@ -39,7 +39,7 @@ const features: Feature[] = [
   {
     title: "Warm Storage & Analytics",
     description:
-      "Parquet on MinIO with daily Hive partitions. ClickHouse s3() reads the same files — sub-30s aggregates, no second copy of the lake.",
+      "Parquet on MinIO with daily Hive partitions. ClickHouse s3() reads the same files: sub-30s aggregates, no second copy of the lake.",
     tags: ["Apache Iceberg", "ClickHouse", "Parquet"],
     icon: Layers,
     status: "shipped",
@@ -47,7 +47,7 @@ const features: Feature[] = [
   {
     title: "Detection Runtime",
     description:
-      "HELIQL — a portable DSL that compiles to RisingWave streaming SQL and ClickHouse batch. 10 reference rules shipped in detections/.",
+      "HELIQL is a portable DSL that compiles to RisingWave streaming SQL and ClickHouse batch. 10 reference rules shipped in detections/.",
     tags: ["HELIQL DSL", "RisingWave", "Sigma-compatible"],
     icon: FileCode2,
     status: "shipped",
@@ -87,7 +87,7 @@ const features: Feature[] = [
   {
     title: "Ed25519 Attestation",
     description:
-      "Every agent decision is a signed envelope: artifact hashes, feature vector, tool-call log, verdict — replayable from the workbench trace panel.",
+      "Every agent decision is a signed envelope: artifact hashes, feature vector, tool-call log, verdict. Replay it from the workbench trace panel.",
     tags: ["Ed25519", "Signed envelopes", "Replay"],
     icon: Key,
     status: "shipped",
@@ -119,7 +119,7 @@ const features: Feature[] = [
   {
     title: "Responder Agent",
     description:
-      "Policy-gated containment: isolate host, revoke session, ticket. Explicitly out of MVP — recommendations only until shadow-check is mature.",
+      "Policy-gated containment: isolate host, revoke session, ticket. Explicitly out of MVP; recommendations only until shadow-check is mature.",
     tags: ["Out of MVP", "SOAR later"],
     icon: ShieldAlert,
     status: "planned",
@@ -155,7 +155,7 @@ export function PhasesSection() {
           Everything in the stack
         </h2>
         <p className="mt-4 max-w-3xl text-muted-foreground">
-          From raw ingest to signed verdicts — each capability is a discrete
+          From raw ingest to signed verdicts, each capability is a discrete
           layer. Cards tagged shipped are in this repo with an E2E gate;
           planned cards are the blueprint, not a claim.
         </p>

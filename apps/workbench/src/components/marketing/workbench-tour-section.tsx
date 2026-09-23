@@ -53,7 +53,7 @@ const pages = [
     href: "/workbench/admin",
     name: "Admin",
     live: "healthz on control-plane, collector, Arroyo",
-    body: "Service table with Scalar /docs links. Use this page — not Settings — for live health.",
+    body: "Service table with Scalar /docs links. Use this page, not Settings, for live health.",
   },
 ] as const;
 

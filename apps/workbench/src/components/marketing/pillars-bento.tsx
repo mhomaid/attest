@@ -34,7 +34,7 @@ export function PillarsBento() {
           Built for the convergent product everyone is racing toward
         </h2>
         <p className="mt-4 max-w-3xl text-muted-foreground">
-          Streaming SIEM, agentic SOC, AI-threat detection, and detection lifecycle — native from
+          Streaming SIEM, agentic SOC, AI-threat detection, and detection lifecycle, native from
           day one. Each pillar is described in the Attest blueprint (
           <code className="rounded bg-secondary px-1 py-0.5 font-mono text-xs">docs/</code>
           ).
@@ -70,7 +70,7 @@ export function PillarsBento() {
             <Scale className="h-7 w-7 text-signal-good" aria-hidden />
             <h3 className="mt-3 text-lg font-semibold">Verifiable Agentic SOC</h3>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Triager, Investigator, Hunter, Detection Engineer, Responder — specialized agents
+              Triager, Investigator, Hunter, Detection Engineer, Responder: specialized agents
               with signed traces, calibrated confidence, deterministic shadow checks, and replayable
               decisions for auditors.
             </p>
@@ -87,7 +87,7 @@ export function PillarsBento() {
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                   Map MITRE coverage, draft HELIQL from natural language, backtest on your
                   history, shadow-deploy, watch precision and drift, auto-tune thresholds, and
-                  retire what no longer holds — every change is a Git-backed PR humans approve.
+                  retire what no longer holds. Every change is a Git-backed PR humans approve.
                 </p>
               </div>
               <ul className="grid shrink-0 gap-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
@@ -124,7 +124,7 @@ export function FabricSection() {
             <p className="mt-4 text-muted-foreground">
               Write once in Attest&apos;s detection language: run in-stream on RisingWave / Arroyo,
               query warm history on ClickHouse over Iceberg, and federate to existing warehouses
-              — without rewriting your logic three times.
+              without rewriting your logic three times.
             </p>
           </div>
           <ul className="grid flex-1 gap-3 sm:grid-cols-2">
@@ -146,7 +146,7 @@ export function FabricSection() {
               },
               {
                 title: "Open contracts",
-                body: "OCSF, Sigma, MCP, OTEL GenAI — compose and swap by design.",
+                body: "OCSF, Sigma, MCP, OTEL GenAI. Compose and swap by design.",
                 icon: GitBranch,
               },
             ].map((card) => (
