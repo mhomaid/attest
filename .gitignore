@@ -61,7 +61,7 @@ eval/reports/*
 
 # ML build artifacts
 ml/.venv/
-ml/uv.lock
+.lighthouseci/
 # Attestation logs — local run artifacts, never commit
 *.ndjson
 # Scratch / debug JSON dumps

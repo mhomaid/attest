@@ -13,7 +13,7 @@ jobs:
     name: Rust (fmt · clippy · test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -41,20 +41,20 @@ jobs:
     name: Python (uv · pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10
 
       - name: Run tests
         working-directory: ml
-        run: uv sync && uv run pytest triager/ test_smoke.py -q
+        run: uv sync --frozen && uv run pytest triager/ test_smoke.py -q
 
   typescript:
     name: TypeScript (bun · typecheck · lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -62,7 +62,7 @@ jobs:
           bun-version: "1.3.x"
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
         run: bun run typecheck
@@ -80,19 +80,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: [rust, python, typescript]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Start core services
-        run: docker compose up -d redpanda postgres minio clickhouse risingwave
+      - name: Start core services (blocks until every healthcheck passes)
+        run: docker compose up -d --wait --wait-timeout 240 redpanda postgres minio clickhouse risingwave
 
-      - name: Wait for services
-        run: sleep 20
-
-      - name: Smoke — healthz
+      - name: Smoke — round-trip through each service
         run: |
-          docker compose ps
-          curl -sf http://localhost:9092 || true
-          curl -sf http://localhost:8123/ping || echo "ClickHouse not yet ready (acceptable in scaffold)"
+          set -euo pipefail
+          docker compose exec -T redpanda rpk topic create ci-smoke
+          echo '{"smoke":true}' | docker compose exec -T redpanda rpk topic produce ci-smoke
+          docker compose exec -T redpanda rpk topic consume ci-smoke --num 1 --format '%v\n' | grep -qx '{"smoke":true}'
+          test "$(curl -sf 'http://localhost:8123/?query=SELECT%201')" = "1"
+          docker compose exec -T postgres psql -U attest -d attest -tAc 'SELECT 1' | grep -qx 1
+          docker compose exec -T postgres psql -h risingwave -p 4566 -U root -d dev -tAc 'SELECT 1' | grep -qx 1
+
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
 
   workbench-e2e:
     name: Workbench (Playwright)
@@ -113,14 +118,14 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.x"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           version: "latest"
 
@@ -131,7 +136,7 @@ jobs:
         run: uv sync --frozen && uv run alembic upgrade head
 
       - name: Install workspace deps
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Install Playwright browsers
         working-directory: apps/workbench
@@ -165,14 +170,14 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.x"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           version: "latest"
 
@@ -183,9 +188,9 @@ jobs:
         run: uv sync --frozen && uv run alembic upgrade head
 
       - name: Install workspace deps
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
