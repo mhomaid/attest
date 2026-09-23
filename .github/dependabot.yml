@@ -1,31 +1,63 @@
+# Dependabot: one grouped PR per ecosystem, no major bumps, at most 2 open PRs each.
+# Majors (rand 0.8→0.10, react-table 8→9, …) need a human branch, not a weekly flood.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      rust:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: npm
     directory: /apps/workbench
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      workbench:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: pip
     directory: /ml
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      ml:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: pip
     directory: /infra/db
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      db:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      actions:
+        update-types: ["minor", "patch"]
