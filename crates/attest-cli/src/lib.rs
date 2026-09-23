@@ -54,27 +54,67 @@ pub fn read_log(path: &Path) -> Result<Vec<AttestationEnvelope>> {
 }
 
 /// Verify every envelope in `log` against `verifying_key_hex`.
+///
+/// Also fails when `agent_action_id` repeats, or — when any row has a
+/// `prev_hash` — when the hash chain is broken by a delete or reorder.
 pub fn verify_log(log: &[AttestationEnvelope], verifying_key_hex: &str) -> VerifyReport {
-    let results = log
-        .iter()
-        .map(|env| match Signer::verify(env, verifying_key_hex) {
-            Ok(true) => LineResult {
-                action_id: env.agent_action_id,
-                ok: true,
-                detail: format!("pass ({})", path_label(&env.execution_path)),
-            },
-            Ok(false) => LineResult {
-                action_id: env.agent_action_id,
-                ok: false,
-                detail: "signature mismatch".into(),
-            },
-            Err(e) => LineResult {
+    use std::collections::HashSet;
+
+    let chained = log.iter().any(|e| !e.prev_hash.is_empty());
+    let mut seen: HashSet<Uuid> = HashSet::new();
+    let mut expected_prev = attest_attestation::GENESIS_HASH.to_string();
+    let mut results = Vec::with_capacity(log.len());
+
+    for env in log {
+        if !seen.insert(env.agent_action_id) {
+            results.push(LineResult {
                 action_id: env.agent_action_id,
                 ok: false,
-                detail: format!("invalid signature material: {e}"),
-            },
-        })
-        .collect();
+                detail: "duplicate agent_action_id (replay / confused deputy)".into(),
+            });
+            continue;
+        }
+
+        let sig = match Signer::verify(env, verifying_key_hex) {
+            Ok(true) => None,
+            Ok(false) => Some("signature mismatch".into()),
+            Err(e) => Some(format!("invalid signature material: {e}")),
+        };
+        if let Some(detail) = sig {
+            results.push(LineResult {
+                action_id: env.agent_action_id,
+                ok: false,
+                detail,
+            });
+            if chained {
+                expected_prev = env.chain_hash();
+            }
+            continue;
+        }
+
+        if chained && env.prev_hash != expected_prev {
+            results.push(LineResult {
+                action_id: env.agent_action_id,
+                ok: false,
+                detail: format!(
+                    "chain break: prev_hash={} expected={}",
+                    env.prev_hash, expected_prev
+                ),
+            });
+            expected_prev = env.chain_hash();
+            continue;
+        }
+
+        results.push(LineResult {
+            action_id: env.agent_action_id,
+            ok: true,
+            detail: format!("pass ({})", path_label(&env.execution_path)),
+        });
+        if chained {
+            expected_prev = env.chain_hash();
+        }
+    }
+
     VerifyReport { results }
 }
 

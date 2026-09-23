@@ -9,7 +9,9 @@
 use crate::registry::ToolRegistry;
 use crate::tools;
 use crate::warm_limit::WarmTierLimiter;
-use attest_policy_engine::{authorize, AgentRole, PolicyContext, PolicyDecision};
+use attest_policy_engine::{
+    authorize, authorize_query, inspect_tool_result, AgentRole, PolicyContext, PolicyDecision,
+};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -158,6 +160,12 @@ async fn handle_invoke(
     };
     let policy_decision = authorize(&req.agent_role, &req.tool_id, &policy_ctx);
 
+    let policy_decision = if policy_decision.is_allowed() {
+        authorize_query(&req.tool_id, &req.args)
+    } else {
+        policy_decision
+    };
+
     if !policy_decision.is_allowed() {
         let log = ToolCallLog {
             call_id: Uuid::new_v4(),
@@ -210,15 +218,27 @@ async fn handle_invoke(
     let dispatch_result = tools::dispatch(&req.tool_id, &req.args, &state.warm_limiter).await;
     let latency_ms = t0.elapsed().as_millis() as u64;
 
-    let (result, result_hash, error) = match dispatch_result {
+    let (result, result_hash, error, denied) = match dispatch_result {
         Ok(v) => {
-            let h = hex::encode(Sha256::digest(
-                serde_json::to_string(&v).unwrap_or_default(),
-            ));
-            (Some(v), h, None)
+            let inspect = inspect_tool_result(&v);
+            if !inspect.is_allowed() {
+                (
+                    None,
+                    String::new(),
+                    Some(format!("{inspect:?}")),
+                    Some(inspect),
+                )
+            } else {
+                let h = hex::encode(Sha256::digest(
+                    serde_json::to_string(&v).unwrap_or_default(),
+                ));
+                (Some(v), h, None, None)
+            }
         }
-        Err(e) => (None, String::new(), Some(e.to_string())),
+        Err(e) => (None, String::new(), Some(e.to_string()), None),
     };
+
+    let policy_decision = denied.unwrap_or(policy_decision);
 
     let log = ToolCallLog {
         call_id: Uuid::new_v4(),
@@ -228,7 +248,7 @@ async fn handle_invoke(
         args_hash,
         result_hash,
         latency_ms,
-        policy_decision,
+        policy_decision: policy_decision.clone(),
         timestamp,
     };
 
@@ -239,7 +259,12 @@ async fn handle_invoke(
         "tool call completed"
     );
 
-    let status = if error.is_some() {
+    let status = if matches!(
+        policy_decision,
+        PolicyDecision::Deny { .. } | PolicyDecision::Escalate { .. }
+    ) {
+        StatusCode::FORBIDDEN
+    } else if error.is_some() {
         StatusCode::INTERNAL_SERVER_ERROR
     } else {
         StatusCode::OK

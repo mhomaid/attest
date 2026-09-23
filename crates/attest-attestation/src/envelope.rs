@@ -195,6 +195,10 @@ pub enum EvidenceBlock {
     Override(OverrideEvidence),
 }
 
+/// First envelope in a log, or the predecessor of a genesis row.
+pub const GENESIS_HASH: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
+
 /// Common signed wrapper shared by all three envelope variants.
 ///
 /// The `signature` field covers a canonical JSON serialization of all fields
@@ -211,6 +215,10 @@ pub struct AttestationEnvelope {
     pub verdict: Verdict,
     pub evidence: EvidenceBlock,
     pub timing: TimingBlock,
+    /// SHA-256 hex of the previous envelope (`GENESIS_HASH` for the first).
+    /// Empty means a pre-chain log row — `attest verify` skips the chain then.
+    #[serde(default)]
+    pub prev_hash: String,
     /// Hex-encoded Ed25519 signature over the canonical envelope body.
     pub signature: String,
     pub signed_at: DateTime<Utc>,
@@ -224,6 +232,15 @@ pub struct TimingBlock {
 }
 
 impl AttestationEnvelope {
+    /// SHA-256 hex of this signed row. The next envelope's `prev_hash` must match.
+    pub fn chain_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(self.canonical_bytes());
+        h.update(self.signature.as_bytes());
+        hex::encode(h.finalize())
+    }
+
     /// Produce the canonical bytes that are signed/verified.
     /// All fields except `signature` are included in sorted-key JSON.
     pub fn canonical_bytes(&self) -> Vec<u8> {
@@ -239,6 +256,7 @@ impl AttestationEnvelope {
             verdict: &'a Verdict,
             evidence: &'a EvidenceBlock,
             timing: &'a TimingBlock,
+            prev_hash: &'a str,
             signed_at: &'a DateTime<Utc>,
         }
         let body = Body {
@@ -251,6 +269,7 @@ impl AttestationEnvelope {
             verdict: &self.verdict,
             evidence: &self.evidence,
             timing: &self.timing,
+            prev_hash: &self.prev_hash,
             signed_at: &self.signed_at,
         };
         let value = serde_json::to_value(&body).expect("envelope serialisation is infallible");

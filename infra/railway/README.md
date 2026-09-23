@@ -92,7 +92,7 @@ Image") or with the CLI. These services do **not** need a public domain.
 
 ### MinIO
 
-- **Image**: `minio/minio:latest`
+- **Image**: `quay.io/minio/minio:latest`
 - **Start command**: `server /data --console-address :9001`
 - **Environment**:
   - `MINIO_ROOT_USER=<secret>`

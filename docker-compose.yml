@@ -40,7 +40,7 @@ services:
       - redpanda
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: attest
       POSTGRES_USER: attest
@@ -48,7 +48,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # Postgres 18+ stores data under /var/lib/postgresql/<version>/docker.
+      # Mount the parent so the image can initialize a fresh cluster.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U attest -d attest"]
       interval: 5s

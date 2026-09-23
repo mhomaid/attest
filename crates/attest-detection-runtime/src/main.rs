@@ -99,14 +99,38 @@ async fn main() -> Result<()> {
     }
     info!("{} detections loaded", detections.len());
 
-    // ── Connect to RisingWave ───────────────────────────────────────────────
+    // ── Connect to RisingWave (retry — it may still be booting) ─────────────
     let conn_str = format!(
         "host={} port={} user=root dbname=dev",
         cli.rw_host, cli.rw_port
     );
-    let (db, conn) = tokio_postgres::connect(&conn_str, NoTls)
-        .await
-        .context("RisingWave connection failed")?;
+    let (db, conn) = {
+        const ATTEMPTS: u32 = 30;
+        let mut delay = Duration::from_secs(2);
+        let mut last_err = None;
+        let mut connected = None;
+        for attempt in 1..=ATTEMPTS {
+            match tokio_postgres::connect(&conn_str, NoTls).await {
+                Ok(pair) => {
+                    connected = Some(pair);
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(attempt, error = %e, "RisingWave not ready; retrying");
+                    last_err = Some(e);
+                    tokio::time::sleep(delay).await;
+                    delay = (delay * 2).min(Duration::from_secs(15));
+                }
+            }
+        }
+        match connected {
+            Some(pair) => pair,
+            None => {
+                return Err(anyhow::Error::from(last_err.unwrap()))
+                    .context("RisingWave connection failed");
+            }
+        }
+    };
 
     tokio::spawn(async move {
         if let Err(e) = conn.await {

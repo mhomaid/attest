@@ -15,9 +15,17 @@ pub async fn deploy(db: &Client, detection: &Detection) -> Result<()> {
         .await
         .with_context(|| format!("DROP VIEW failed for '{}'", detection.id))?;
 
-    db.execute(&create_sql, &[])
-        .await
-        .with_context(|| format!("CREATE VIEW failed for '{}'", detection.id))?;
+    if let Err(e) = db.execute(&create_sql, &[]).await {
+        let msg = e.to_string();
+        if msg.contains("already exists") || msg.contains("under creation") {
+            tracing::info!(
+                detection_id = %detection.id,
+                "view already creating or exists — treating as deployed"
+            );
+        } else {
+            return Err(e).with_context(|| format!("CREATE VIEW failed for '{}'", detection.id));
+        }
+    }
 
     info!(detection_id = %detection.id, "deployed");
     Ok(())

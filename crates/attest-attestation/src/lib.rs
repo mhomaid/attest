@@ -10,6 +10,7 @@
 
 pub mod envelope;
 pub mod log;
+pub mod pin;
 pub mod signer;
 pub mod trace_step;
 
@@ -17,7 +18,9 @@ pub use envelope::{
     AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, CrossReviewBlock,
     EscalationReason, EvidenceBlock, ExecutionPathKind, HybridEvidence, IntermediateBelief,
     LlmEvidence, OverrideEvidence, ShadowCheckDecision, TimingBlock, ToolCallRecord, Verdict,
+    GENESIS_HASH,
 };
 pub use log::AttestationLog;
+pub use pin::{check_pin, AgentPin};
 pub use signer::Signer;
 pub use trace_step::{execution_path_snake, TraceStep, TRACE_STEPS_TOPIC};

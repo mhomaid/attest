@@ -166,6 +166,7 @@ pub async fn try_auto_close(
             finished_at,
             total_ms,
         },
+        prev_hash: String::new(),
         signature: String::new(),
         signed_at: finished_at,
     };

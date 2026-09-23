@@ -69,6 +69,7 @@ fn signed_classifier_envelope(
             finished_at: now,
             total_ms: 4,
         },
+        prev_hash: String::new(),
         signature: String::new(),
         signed_at: now,
     };
@@ -215,6 +216,7 @@ fn replay_llm_is_integrity_only_and_rejects_reordered_tools() {
             finished_at: later,
             total_ms: 2000,
         },
+        prev_hash: String::new(),
         signature: String::new(),
         signed_at: later,
     };
@@ -235,4 +237,112 @@ fn replay_llm_is_integrity_only_and_rejects_reordered_tools() {
     let report = replay(&env, &vk, None).unwrap();
     assert!(report.ok, "{}", report.lines.join("\n"));
     assert!(report.lines.iter().any(|l| l.contains("integrity only")));
+}
+
+fn chain_two(signer: &Signer) -> (AttestationEnvelope, AttestationEnvelope) {
+    let features = test_features();
+    let classifier = OnnxClassifier::load(model_path(), None).unwrap();
+    let (raw, shap) = classifier.predict(&features).unwrap();
+    let mut first = signed_classifier_envelope(signer, &features, raw, shap.clone());
+    first.prev_hash = attest_attestation::GENESIS_HASH.to_string();
+    signer.sign(&mut first);
+    let mut second = signed_classifier_envelope(signer, &features, raw, shap);
+    second.prev_hash = first.chain_hash();
+    signer.sign(&mut second);
+    (first, second)
+}
+
+#[test]
+fn verify_fails_when_a_chained_row_is_deleted() {
+    let signer = Signer::generate();
+    let vk = signer.verifying_key_hex();
+    let features = test_features();
+    let classifier = OnnxClassifier::load(model_path(), None).unwrap();
+    let (raw, shap) = classifier.predict(&features).unwrap();
+    let (first, second) = chain_two(&signer);
+    let mut third = signed_classifier_envelope(&signer, &features, raw, shap);
+    third.prev_hash = second.chain_hash();
+    signer.sign(&mut third);
+
+    let intact = verify_log(&[first.clone(), second.clone(), third.clone()], &vk);
+    assert!(intact.all_ok(), "{:?}", intact.results);
+
+    let deleted = verify_log(&[first, third], &vk);
+    assert!(!deleted.all_ok());
+    assert!(
+        deleted
+            .results
+            .iter()
+            .any(|r| r.detail.contains("chain break")),
+        "{:?}",
+        deleted.results
+    );
+}
+
+#[test]
+fn verify_fails_when_chained_rows_are_reordered() {
+    let signer = Signer::generate();
+    let vk = signer.verifying_key_hex();
+    let (first, second) = chain_two(&signer);
+    let ok = verify_log(&[first.clone(), second.clone()], &vk);
+    assert!(ok.all_ok(), "{:?}", ok.results);
+    let reordered = verify_log(&[second, first], &vk);
+    assert!(!reordered.all_ok());
+    assert!(
+        reordered
+            .results
+            .iter()
+            .any(|r| r.detail.contains("chain break")),
+        "{:?}",
+        reordered.results
+    );
+}
+
+#[test]
+fn verify_fails_on_duplicate_action_id() {
+    let signer = Signer::generate();
+    let vk = signer.verifying_key_hex();
+    let (first, _) = chain_two(&signer);
+    let mut clone = first.clone();
+    clone.prev_hash = first.chain_hash();
+    signer.sign(&mut clone);
+    clone.agent_action_id = first.agent_action_id;
+    let report = verify_log(&[first, clone], &vk);
+    assert!(!report.all_ok());
+    assert!(
+        report
+            .results
+            .iter()
+            .any(|r| r.detail.contains("duplicate agent_action_id")),
+        "{:?}",
+        report.results
+    );
+}
+
+#[test]
+fn pin_rejects_model_and_prompt_swap() {
+    use attest_attestation::{check_pin, AgentPin};
+
+    let signer = Signer::generate();
+    let features = test_features();
+    let classifier = OnnxClassifier::load(model_path(), None).unwrap();
+    let (raw, shap) = classifier.predict(&features).unwrap();
+    let env = signed_classifier_envelope(&signer, &features, raw, shap);
+
+    let pin = AgentPin {
+        agent_id: env.agent_id.clone(),
+        model_artifact_hash: Some("deadbeef".into()),
+        system_prompt_hash: None,
+    };
+    assert!(check_pin(&env, &pin).unwrap_err().to_string().contains("swap"));
+
+    let pin_ok = AgentPin {
+        agent_id: env.agent_id.clone(),
+        model_artifact_hash: Some(match &env.evidence {
+            EvidenceBlock::Classifier(ev) => ev.model_artifact_hash.clone(),
+            _ => panic!("classifier"),
+        }),
+        system_prompt_hash: None,
+    };
+    check_pin(&env, &pin_ok).unwrap();
 }

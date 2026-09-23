@@ -42,10 +42,10 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | Feature attribution | Partial | **SHAP-style**, not TreeSHAP: 8 extra model runs, one feature replaced by the background mean |
 | LLM escalation + investigator | Working | Needs a configured LLM; live suites gated on `ATTEST_PHASE7_LIVE` |
 | Shadow check + auto-close | Working | Real logic in `attest-shadow-check` (orchestrator re-exports it) |
-| MCP gateway + tool policy | Working | Per-role authorize; `query_warm_tier` rate-limited |
+| MCP gateway + tool policy | Working | Per-role authorize; warm-query exfil cap; poisoned tool results denied |
 | Signed attestation envelopes | Working | Ed25519 over SHA-256 of sorted-key canonical JSON |
-| `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only |
-| Attestation log durability | Partial | Local NDJSON. No hash chain or external anchoring yet |
+| `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
+| Attestation log durability | Partial | Hash-chained local NDJSON. No external anchoring yet |
 | Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers |
 | Hunter / responder / coordinator agents | Planned | Design only |
 | AADF / SIDM / eval harness | Planned | Design docs in `docs/` |

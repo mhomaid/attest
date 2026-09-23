@@ -359,10 +359,17 @@ impl TriageEngine {
                 finished_at,
                 total_ms: latency_ms,
             },
+            prev_hash: String::new(),
             signature: String::new(),
             signed_at: finished_at,
         };
-        self.signer.sign(&mut envelope);
+        if let Err(e) = self
+            .attestation_log
+            .sign_and_append(&self.signer, &mut envelope)
+            .await
+        {
+            tracing::error!(error = %e, "failed to write attestation log");
+        }
 
         tracing::info!(
             action_id = %action_id,
@@ -376,8 +383,6 @@ impl TriageEngine {
         );
 
         // 7. Append to log (non-blocking)
-        let log = self.attestation_log.clone();
-        let env_clone = envelope.clone();
         let trace = self.trace_publisher.scoped(
             case_id,
             &tenant_id,
@@ -385,13 +390,7 @@ impl TriageEngine {
             &self.agent.id,
             execution_path.clone(),
         );
-        let verdict_for_trace = verdict.clone();
-        tokio::spawn(async move {
-            if let Err(e) = log.append(&env_clone).await {
-                tracing::error!(error = %e, "failed to write attestation log");
-            }
-            trace.step("envelope", format!("{verdict_for_trace:?}"));
-        });
+        trace.step("envelope", format!("{verdict:?}"));
 
         // 8. Phase 6: attempt auto-close
         let classifier_ev_for_ac = match &envelope.evidence {
@@ -422,23 +421,25 @@ impl TriageEngine {
             )
             .await;
 
-            // If auto-closed, also log the second envelope
+            // If auto-closed, also log the second envelope (chained).
             if let Some(ref ac_env) = result.envelope {
-                let log2 = self.attestation_log.clone();
-                let ac_clone = ac_env.clone();
-                let trace = self.trace_publisher.scoped(
-                    case_id,
-                    &tenant_id,
-                    ac_env.agent_action_id,
-                    &self.agent.id,
-                    ExecutionPathKind::Classifier,
-                );
-                tokio::spawn(async move {
-                    if let Err(e) = log2.append(&ac_clone).await {
-                        tracing::error!(error = %e, "failed to write auto-close attestation log");
-                    }
-                    trace.step("auto_close", "case_auto_closed");
-                });
+                let mut ac_clone = ac_env.clone();
+                if let Err(e) = self
+                    .attestation_log
+                    .sign_and_append(&self.signer, &mut ac_clone)
+                    .await
+                {
+                    tracing::error!(error = %e, "failed to write auto-close attestation log");
+                }
+                self.trace_publisher
+                    .scoped(
+                        case_id,
+                        &tenant_id,
+                        ac_env.agent_action_id,
+                        &self.agent.id,
+                        ExecutionPathKind::Classifier,
+                    )
+                    .step("auto_close", "case_auto_closed");
             }
             result
         } else {
@@ -509,12 +510,17 @@ impl TriageEngine {
                                 finished_at: inv_finished,
                                 total_ms: inv_lat,
                             },
+                            prev_hash: String::new(),
                             signature: String::new(),
                             signed_at: inv_finished,
                         };
-                        self.signer.sign(&mut inv_env);
-                        let log3 = self.attestation_log.clone();
-                        let ic = inv_env.clone();
+                        if let Err(e) = self
+                            .attestation_log
+                            .sign_and_append(&self.signer, &mut inv_env)
+                            .await
+                        {
+                            tracing::error!(error = %e, "failed to write investigator attestation log");
+                        }
                         let trace = self.trace_publisher.scoped(
                             case_id,
                             &tenant_id,
@@ -522,13 +528,7 @@ impl TriageEngine {
                             &self.investigator_agent_id,
                             ExecutionPathKind::Llm,
                         );
-                        let vinv = inv.verdict.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = log3.append(&ic).await {
-                                tracing::error!(error = %e, "failed to write investigator attestation log");
-                            }
-                            trace.step("envelope", format!("{vinv:?}"));
-                        });
+                        trace.step("envelope", format!("{:?}", inv.verdict));
                         investigation = Some(InvestigationSummary {
                             action_id: inv_action_id,
                             verdict: inv.verdict,
@@ -733,6 +733,7 @@ impl TriageEngine {
                 finished_at: started_at,
                 total_ms: 0,
             },
+            prev_hash: String::new(),
             signature: String::new(),
             signed_at: started_at,
         };
@@ -740,8 +741,9 @@ impl TriageEngine {
         envelope.timing.finished_at = finished_at;
         envelope.timing.total_ms = (finished_at - started_at).num_milliseconds().max(0) as u64;
         envelope.signed_at = finished_at;
-        self.signer.sign(&mut envelope);
-        self.attestation_log.append(&envelope).await?;
+        self.attestation_log
+            .sign_and_append(&self.signer, &mut envelope)
+            .await?;
         self.trace_publisher
             .scoped(
                 case_id,

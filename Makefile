@@ -349,7 +349,7 @@ railway-infra: ## Add infrastructure services (Kafka/KRaft, RisingWave, ClickHou
 	@echo "▶ Adding ClickHouse…"
 	railway add --service clickhouse --image clickhouse/clickhouse-server:latest || true
 	@echo "▶ Adding MinIO…"
-	railway add --service minio --image minio/minio:latest || true
+	railway add --service minio --image quay.io/minio/minio:latest || true
 	@echo "▶ Adding Arroyo…"
 	railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest || true
 	@echo ""

@@ -99,6 +99,7 @@ mod tests {
                 finished_at: now,
                 total_ms: 12,
             },
+            prev_hash: String::new(),
             signature: String::new(),
             signed_at: now,
         }

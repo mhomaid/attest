@@ -98,7 +98,7 @@ const stack = [
   {
     category: "Platform",
     icon: Database,
-    label: "Postgres 16",
+    label: "Postgres 18",
     detail: "Better Auth sessions · Alembic migrations in infra/db · Arroyo pipeline state",
   },
   {
