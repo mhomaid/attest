@@ -152,12 +152,18 @@ impl AttestationLog {
     }
 
     /// Read all envelopes (for testing / replay). Returns in append order.
+    ///
+    /// When an object store is configured it is the source of truth — a local
+    /// file can lag a successful durable write, or be missing after a restart.
     pub async fn read_all(&self) -> Result<Vec<AttestationEnvelope>> {
+        if let Some(sink) = &self.objects {
+            let from_obj = read_objects(sink).await?;
+            if !from_obj.is_empty() {
+                return Ok(from_obj);
+            }
+        }
         if self.path.exists() {
             return read_ndjson(&self.path).await;
-        }
-        if let Some(sink) = &self.objects {
-            return read_objects(sink).await;
         }
         Ok(vec![])
     }
@@ -207,6 +213,9 @@ impl AttestationLog {
         file.write_all(line.as_bytes())
             .await
             .context("failed to write attestation envelope")?;
+        file.sync_all()
+            .await
+            .context("failed to fsync attestation log")?;
         Ok(())
     }
 }
@@ -380,12 +389,16 @@ mod tests {
         env
     }
 
+    static LOG_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[tokio::test]
     async fn object_store_survives_deleted_file() {
+        let _guard = LOG_TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("attest-log-{}", Uuid::new_v4()));
         let path = dir.join("attestations.ndjson");
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let log = AttestationLog::with_object_store(&path, store.clone(), "attestations");
+        let prefix = format!("attestations-{}", Uuid::new_v4());
+        let log = AttestationLog::with_object_store(&path, store.clone(), prefix);
         let signer = Signer::generate();
 
         let mut a = dummy(&signer, GENESIS_HASH);
@@ -402,19 +415,21 @@ mod tests {
 
     #[tokio::test]
     async fn append_after_restart_chains_onto_object_history() {
+        let _guard = LOG_TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("attest-log-{}", Uuid::new_v4()));
         let path = dir.join("attestations.ndjson");
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
         let signer = Signer::generate();
 
-        let before = AttestationLog::with_object_store(&path, store.clone(), "attestations");
+        let prefix = format!("attestations-{}", Uuid::new_v4());
+        let before = AttestationLog::with_object_store(&path, store.clone(), &prefix);
         for _ in 0..3 {
             let mut env = dummy(&signer, "");
             before.sign_and_append(&signer, &mut env).await.unwrap();
         }
 
         tokio::fs::remove_file(&path).await.unwrap();
-        let after = AttestationLog::with_object_store(&path, store, "attestations");
+        let after = AttestationLog::with_object_store(&path, store, prefix);
         let mut next = dummy(&signer, "");
         after.sign_and_append(&signer, &mut next).await.unwrap();
 
