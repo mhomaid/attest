@@ -10,22 +10,14 @@
  *   3. Store is empty after rehydration → show the "Event no longer in hot tier" error.
  */
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileX2Icon, LoaderCircleIcon } from "lucide-react";
 import { CaseInvestigationClient } from "@/components/workbench/case-investigation-client";
-import { useCaseStore, selectCase } from "@/lib/stores/case-store";
+import { useCaseStore, useCaseStoreHydrated, selectCase } from "@/lib/stores/case-store";
 
 export function CaseStoreFallback({ caseId }: { caseId: string }) {
-  const [hydrated, setHydrated] = useState(false);
+  const hydrated = useCaseStoreHydrated();
   const cachedEntry = useCaseStore(selectCase(caseId));
-
-  // Rehydrate the persist store on first mount (safe: skipped on server).
-  useEffect(() => {
-    const result = useCaseStore.persist.rehydrate();
-    if (result instanceof Promise) { void result.then(() => setHydrated(true)); }
-    else { setHydrated(true); }
-  }, []);
 
   // Still waiting for sessionStorage to load.
   if (!hydrated) {

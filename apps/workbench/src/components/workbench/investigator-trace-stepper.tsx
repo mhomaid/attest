@@ -11,6 +11,7 @@ import {
   StepperTrigger,
 } from "@/components/reui/stepper";
 import type { KafkaTraceStep } from "@/hooks/use-case-trace-ws";
+import { useNow } from "@/hooks/use-now";
 import type { ExecutionPath } from "@/lib/mock-data";
 import {
   CheckIcon,
@@ -255,17 +256,8 @@ export function TriagePipelineStepper({
     return now;
   });
 
-  // Initialize to 0 so server and client render the same initial HTML.
-  // The real elapsed value is set immediately in the effect below (client-only).
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    setElapsed(Date.now() - startedAt);
-    const id = setInterval(() => {
-      setElapsed(Date.now() - startedAt);
-    }, 200);
-    return () => clearInterval(id);
-  }, [startedAt]);
+  const now = useNow(200);
+  const elapsed = now === null ? 0 : Math.max(0, now - startedAt);
 
   // Derive step states from WS trace steps.
   const llmSteps = liveSteps.filter((s) => {

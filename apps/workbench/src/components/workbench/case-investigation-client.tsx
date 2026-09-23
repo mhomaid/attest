@@ -7,7 +7,7 @@ import type { CaseRecord, FeatureImpact } from "@/lib/mock-data";
 import type { OcsfEvent } from "@/lib/ocsf-to-alert";
 import { useCaseTraceWs } from "@/hooks/use-case-trace-ws";
 import { useTriage } from "@/hooks/use-triage";
-import { useCaseStore } from "@/lib/stores/case-store";
+import { useCaseStore, useCaseStoreHydrated } from "@/lib/stores/case-store";
 import { useEffect, useMemo, useRef } from "react";
 
 type ClassifierEvidence = NonNullable<
@@ -51,15 +51,14 @@ export function CaseInvestigationClient({
   liveBaseline: { regions_seen_30d?: string[] } | null;
 }) {
   const initCase = useCaseStore((s) => s.initCase);
+  const hydrated = useCaseStoreHydrated();
 
-  // Persist the event + baseline on first mount so the fallback component can
+  // Persist the event + baseline once hydrated so the fallback component can
   // render this case even after it expires from the control-plane hot tier.
   useEffect(() => {
-    const result = useCaseStore.persist.rehydrate();
-    const done = () => initCase(eventId, ocsfEvent, liveBaseline);
-    if (result instanceof Promise) { void result.then(done); } else { done(); }
+    if (hydrated) initCase(eventId, ocsfEvent, liveBaseline);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, [hydrated, eventId]);
 
   // Triage fires once on mount — no timeout, orchestrator takes as long as needed.
   const { verdict, loading: triageLoading } = useTriage(eventId, ocsfEvent);

@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCaseStore, type TriageVerdict } from "@/lib/stores/case-store";
+import {
+  useCaseStore,
+  useCaseStoreHydrated,
+  type TriageVerdict,
+} from "@/lib/stores/case-store";
 
 // Module-level guard survives React Strict Mode double-mount in dev.
 const _triageFired = new Set<string>();
@@ -38,26 +42,20 @@ export function useTriage(caseId: string, alert: object | null) {
   const startTriage = useCaseStore((s) => s.startTriage);
   const failTriage = useCaseStore((s) => s.failTriage);
 
-  const [hydrated, setHydrated] = useState(false);
-  const [serverChecked, setServerChecked] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const hydrated = useCaseStoreHydrated();
+  // Keyed by case so switching cases re-runs the server check without a reset.
+  const [serverCheckedFor, setServerCheckedFor] = useState<string | null>(null);
+  const serverChecked = serverCheckedFor === caseId;
   const [error, setError] = useState<string | null>(null);
   const firedRef = useRef(false);
 
-  // Rehydrate the Zustand persist store on first client render.
-  useEffect(() => {
-    const result = useCaseStore.persist.rehydrate();
-    if (result instanceof Promise) {
-      void result.then(() => setHydrated(true));
-    } else {
-      setHydrated(true);
-    }
-  }, []);
+  // Existing sessions may have terminal trace steps but no cached HTTP verdict
+  // because the browser was refreshed before the fetch resolved; that counts as done.
+  const loading = error === null && storeVerdict === null && !hasTerminalTrace;
 
   useEffect(() => {
     if (!hydrated) return;
     let mounted = true;
-    setServerChecked(false);
 
     fetch(`/api/cases/${encodeURIComponent(caseId)}/triage`, { cache: "no-store" })
       .then((r) => r.json() as Promise<TriageStatusResponse>)
@@ -65,20 +63,18 @@ export function useTriage(caseId: string, alert: object | null) {
         if (!mounted) return;
         if (data.verdict) {
           setVerdict(caseId, data.verdict);
-          setLoading(false);
           _triageFired.add(caseId);
           return;
         }
         if (data.status === "failed" && data.error) {
           failTriage(caseId, data.error);
           setError(data.error);
-          setLoading(false);
           return;
         }
-        setServerChecked(true);
+        setServerCheckedFor(caseId);
       })
       .catch(() => {
-        if (mounted) setServerChecked(true);
+        if (mounted) setServerCheckedFor(caseId);
       });
 
     return () => {
@@ -87,24 +83,8 @@ export function useTriage(caseId: string, alert: object | null) {
   }, [caseId, hydrated, setVerdict, failTriage]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    if (!serverChecked) return;
-    if (!hasCase) return;
-
-    // If the store already has a verdict (from this session or a previous one),
-    // do not re-fire triage.
-    if (storeVerdict !== null) {
-      setLoading(false);
-      return;
-    }
-
-    // Existing sessions may have terminal trace steps but no cached HTTP
-    // verdict because the browser was refreshed before the fetch resolved.
-    // Do not start another LLM job in that case.
-    if (hasTerminalTrace) {
-      setLoading(false);
-      return;
-    }
+    if (!hydrated || !serverChecked || !hasCase) return;
+    if (storeVerdict !== null || hasTerminalTrace) return;
 
     // If another mount/refresh already started this case recently, do not
     // launch a second LLM job. Keep the UI in "analysing" and let the WS trace
@@ -113,10 +93,7 @@ export function useTriage(caseId: string, alert: object | null) {
       triageStatus === "running" &&
       triageStartedAt > 0 &&
       Date.now() - triageStartedAt < RUNNING_TTL_MS;
-    if (runningIsFresh) {
-      setLoading(true);
-      return;
-    }
+    if (runningIsFresh) return;
 
     if (triageStatus === "running") {
       _triageFired.delete(caseId);
@@ -126,7 +103,6 @@ export function useTriage(caseId: string, alert: object | null) {
     firedRef.current = true;
     _triageFired.add(caseId);
     startTriage(caseId);
-    setLoading(true);
 
     let mounted = true;
 
@@ -143,21 +119,16 @@ export function useTriage(caseId: string, alert: object | null) {
         // Always write to store (even if navigated away) so the next mount
         // picks it up instantly.
         setVerdict(caseId, data);
-        if (!mounted) return;
-        setLoading(false);
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : "Triage failed";
         failTriage(caseId, message);
-        if (!mounted) return;
-        setError(message);
-        setLoading(false);
+        if (mounted) setError(message);
       });
 
     return () => {
       mounted = false;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     alert,
     caseId,

@@ -62,23 +62,6 @@ function mapSeverity(raw: string): Severity {
   return "medium";
 }
 
-function relativeTime(iso: string): string {
-  try {
-    // RisingWave returns timestamps like "2026-04-27 05:36:45.785834+00:00"
-    const date = new Date(iso.replace(" ", "T"));
-    const diffMs = Date.now() - date.getTime();
-    const diffS = Math.floor(diffMs / 1000);
-    if (diffS < 60) return `${diffS}s ago`;
-    const diffM = Math.floor(diffS / 60);
-    if (diffM < 60) return `${diffM}m ago`;
-    const diffH = Math.floor(diffM / 60);
-    if (diffH < 24) return `${diffH}h ago`;
-    return `${Math.floor(diffH / 24)}d ago`;
-  } catch {
-    return iso;
-  }
-}
-
 export function firedDetectionToAlert(d: FiredDetection): Alert {
   const title =
     DETECTION_TITLES[d.detection_id] ?? toTitleCase(d.detection_id);

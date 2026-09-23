@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,15 +51,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAlertsWs } from "@/hooks/use-alerts-ws";
+import { useNow } from "@/hooks/use-now";
 import type { Alert, Severity } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, now: number): string {
   try {
     const date = new Date(iso.replace(" ", "T"));
-    const s = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+    const s = Math.max(0, Math.floor((now - date.getTime()) / 1000));
     if (s < 60) return `${s}s ago`;
     const m = Math.floor(s / 60);
     if (m < 60) return `${m}m ago`;
@@ -87,20 +88,12 @@ function formatAbsoluteTime(iso: string): string {
 }
 
 function RelativeTime({ iso }: { iso: string }) {
-  const [label, setLabel] = useState(() => relativeTime(iso));
-  const [mounted, setMounted] = useState(false);
-  const tick = useCallback(() => setLabel(relativeTime(iso)), [iso]);
-  useEffect(() => {
-    setMounted(true);
-    tick();
-    const id = setInterval(tick, 30_000);
-    return () => clearInterval(id);
-  }, [tick]);
+  const now = useNow(30_000);
   return (
     <div className="font-mono text-xs">
       <div className="inline-flex items-center gap-1 text-muted-foreground">
         <Clock3 className="h-3 w-3 shrink-0" />
-        <span suppressHydrationWarning>{mounted ? label : ""}</span>
+        <span>{now === null ? "" : relativeTime(iso, now)}</span>
       </div>
       <div className="text-[10px] text-muted-foreground/60" title={iso}>
         {formatAbsoluteTime(iso)}

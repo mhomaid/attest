@@ -177,6 +177,8 @@ export function CaseWorkbench({
 }) {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [approved, setApproved] = useState(false);
+  // Local copy so the UI reflects the override even when the case is not in the store yet.
+  const [localOverrideLabel, setLocalOverrideLabel] = useState<string | null>(null);
   const [httpSteps, setHttpSteps] = useState<HttpTraceStep[]>([]);
 
   const oid = orchestratorCaseId ?? "";
@@ -200,7 +202,7 @@ export function CaseWorkbench({
     if (!triageLoading) loadTrace();
   }, [loadTrace, triageLoading]);
 
-  const overrideApplied = disposition === "override";
+  const overrideApplied = localOverrideLabel !== null || disposition === "override";
   const approvedUi = approved || disposition === "approved";
 
   const handleApprove = () => {
@@ -213,6 +215,7 @@ export function CaseWorkbench({
   const handleOverrideSubmit = (label: OverrideLabel, reason: string) => {
     if (!oid) return;
     setOverrideOpen(false);
+    setLocalOverrideLabel(label);
     storeSetOverride(oid, label);
     analytics.verdict_overridden();
     toast.success("Override submitted");
@@ -233,7 +236,8 @@ export function CaseWorkbench({
       .catch(() => toast.error("Override failed"));
   };
 
-  const overrideLabel = useCaseStore((s) => s.cases[oid]?.overrideLabel ?? "");
+  const storeOverrideLabel = useCaseStore((s) => s.cases[oid]?.overrideLabel ?? "");
+  const overrideLabel = localOverrideLabel ?? storeOverrideLabel;
   const statusLabel = overrideApplied
     ? `Override: ${overrideLabel.replace(/_/g, " ")}`
     : approvedUi

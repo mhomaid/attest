@@ -117,8 +117,10 @@ export function useCaseTraceWs(caseId: string | null) {
 
   useEffect(() => {
     retryMs.current = 500;
-    setWsStatus("connecting");
-    queueMicrotask(() => { connect(); });
+    queueMicrotask(() => {
+      setWsStatus("connecting");
+      connect();
+    });
     return () => {
       if (retryTimer.current) clearTimeout(retryTimer.current);
       retryMs.current = 500;
