@@ -23,13 +23,13 @@ export function MarketingFooter() {
             </p>
             <ul className="mt-3 space-y-2 text-sm">
               <li>
-                <a href="#architecture" className="text-muted-foreground hover:text-foreground">
-                  Architecture
+                <a href="#verify" className="text-muted-foreground hover:text-foreground">
+                  Verify
                 </a>
               </li>
               <li>
-                <a href="#design" className="text-muted-foreground hover:text-foreground">
-                  Design
+                <a href="#pipeline" className="text-muted-foreground hover:text-foreground">
+                  Pipeline
                 </a>
               </li>
               <li>
@@ -55,7 +55,7 @@ export function MarketingFooter() {
               <li>Rust · axum 0.8 · tract-onnx</li>
               <li>Kafka / Redpanda · RisingWave · Arroyo</li>
               <li>OCSF 1.3 · Iceberg · ClickHouse</li>
-              <li>Next.js 16 · Bun · Postgres</li>
+              <li>Next.js 16 · Bun · Postgres 18</li>
             </ul>
           </div>
         </div>

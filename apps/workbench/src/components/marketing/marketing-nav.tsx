@@ -7,12 +7,11 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "#status", label: "Demo" },
-  { href: "#architecture", label: "Architecture" },
-  { href: "#design", label: "Design" },
-  { href: "#agents", label: "Agents" },
-  { href: "#substrate", label: "Stack" },
+  { href: "#verify", label: "Verify" },
+  { href: "#pipeline", label: "Pipeline" },
+  { href: "#detections", label: "Detections" },
   { href: "#workbench", label: "Workbench" },
+  { href: "https://github.com/mhomaid/attest", label: "GitHub" },
 ] as const;
 
 export function MarketingNav() {

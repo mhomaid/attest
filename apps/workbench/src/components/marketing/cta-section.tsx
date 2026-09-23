@@ -34,10 +34,12 @@ export function CtaSection() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <a
-                href="#architecture"
+                href="https://github.com/mhomaid/attest"
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center rounded-md border border-border bg-background/60 px-4 py-2.5 text-sm font-medium"
               >
-                Read the architecture
+                Run it yourself
               </a>
             </div>
           </div>
