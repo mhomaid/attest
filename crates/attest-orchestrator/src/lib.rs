@@ -8,11 +8,13 @@
 pub mod agent;
 pub mod auto_close;
 pub mod calibration;
+pub mod coordinator;
 pub mod guardrails;
 pub mod llm_loop;
 pub mod mcp_client;
 pub mod server;
 pub use attest_shadow_check as shadow_check;
+pub mod specialists;
 pub mod trace_kafka;
 pub mod triage;
 

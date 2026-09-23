@@ -143,6 +143,64 @@ impl ShadowChecker {
             },
         }
     }
+
+    /// Gate a Responder action. Does not consult the auto-close action-class list.
+    pub fn check_responder(
+        &self,
+        tool_id: &str,
+        principal: &str,
+        calibrated_confidence: f32,
+        blast_radius: u32,
+    ) -> ShadowCheckDecision {
+        let mut policies_evaluated: Vec<String> = Vec::new();
+
+        policies_evaluated.push("do_not_touch".into());
+        let target_is_protected = self.do_not_touch.contains(&principal.to_ascii_lowercase());
+        if target_is_protected {
+            return ShadowCheckDecision {
+                allowed: false,
+                reason: format!("principal '{principal}' is on the do-not-touch list"),
+                policies_evaluated,
+            };
+        }
+
+        policies_evaluated.push("tenant_automation".into());
+        if !self.tenant_allows_automation {
+            return ShadowCheckDecision {
+                allowed: false,
+                reason: "tenant has disabled automated actions".into(),
+                policies_evaluated,
+            };
+        }
+
+        policies_evaluated.push(format!("policy_engine_responder:{tool_id}"));
+        let ctx = PolicyContext {
+            calibrated_confidence,
+            target_is_protected: false,
+            recent_actions_last_hour: 0,
+            blast_radius,
+            tenant_allows_automation: self.tenant_allows_automation,
+        };
+        match authorize(&AgentRole::Responder, tool_id, &ctx) {
+            PolicyDecision::Allow => ShadowCheckDecision {
+                allowed: true,
+                reason: format!(
+                    "responder {tool_id} allowed (confidence={calibrated_confidence:.3}, blast_radius={blast_radius})"
+                ),
+                policies_evaluated,
+            },
+            PolicyDecision::Deny { reason } => ShadowCheckDecision {
+                allowed: false,
+                reason,
+                policies_evaluated,
+            },
+            PolicyDecision::Escalate { reason } => ShadowCheckDecision {
+                allowed: false,
+                reason: format!("policy engine escalated: {reason}"),
+                policies_evaluated,
+            },
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -196,5 +254,17 @@ mod tests {
         let dec = checker().check("alice@corp.com", "data_exfiltration", 0.99);
         assert!(!dec.allowed);
         assert!(dec.reason.contains("action class"), "{}", dec.reason);
+    }
+
+    #[test]
+    fn responder_revoke_allowed_when_confident() {
+        let dec = checker().check_responder("idp_revoke_session", "alice@corp.com", 0.95, 1);
+        assert!(dec.allowed, "{}", dec.reason);
+    }
+
+    #[test]
+    fn responder_revoke_blocked_on_do_not_touch() {
+        let dec = checker().check_responder("idp_revoke_session", "ceo@corp.com", 0.99, 1);
+        assert!(!dec.allowed);
     }
 }

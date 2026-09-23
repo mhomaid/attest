@@ -1,14 +1,21 @@
+use crate::catalog::{persist_hint, OpenTable};
 use crate::schema::cloudtrail_arrow_schema;
 use anyhow::{Context, Result};
 use arrow::array::{ArrayRef, StringArray, TimestampMicrosecondArray};
 use arrow::record_batch::RecordBatch;
+use bytes::Bytes;
 use chrono::DateTime;
-use object_store::{path::Path as OsPath, ObjectStore, ObjectStoreExt, PutPayload};
+use iceberg::memory::MemoryCatalog;
+use iceberg::spec::{DataContentType, DataFile, DataFileBuilder, DataFileFormat, Struct};
+use iceberg::table::Table;
+use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::info;
+use uuid::Uuid;
 
 /// The flat JSON shape produced by attest-collector and stored in Redpanda.
 #[derive(Debug, Deserialize)]
@@ -28,47 +35,114 @@ pub struct FlatEvent {
     pub raw: Option<serde_json::Value>,
 }
 
-pub struct ParquetBatchWriter {
-    store: Arc<dyn ObjectStore>,
-    bucket_prefix: String,
+/// Result of committing a Parquet data file as an Iceberg snapshot.
+#[derive(Debug, Clone)]
+pub struct CommitResult {
+    pub data_path: String,
+    pub snapshot_id: i64,
+    pub records: usize,
 }
 
-impl ParquetBatchWriter {
-    pub fn new(store: Arc<dyn ObjectStore>, bucket_prefix: impl Into<String>) -> Self {
+pub struct IcebergBatchWriter {
+    catalog: MemoryCatalog,
+    table: Mutex<Table>,
+}
+
+impl IcebergBatchWriter {
+    pub fn from_open(open: OpenTable) -> Self {
         Self {
-            store,
-            bucket_prefix: bucket_prefix.into(),
+            catalog: open.catalog,
+            table: Mutex::new(open.table),
         }
     }
 
-    /// Convert a slice of `FlatEvent`s into a Parquet file and write it to object storage.
-    /// Returns the object path that was written.
-    pub async fn write_batch(&self, events: &[FlatEvent]) -> Result<String> {
-        let schema = cloudtrail_arrow_schema();
-        let batch = events_to_record_batch(events, schema.clone())?;
+    /// Convert events to Parquet, write the file through Iceberg FileIO, and
+    /// fast-append a snapshot. Returns the data-file path and snapshot id.
+    pub async fn write_batch(&self, events: &[FlatEvent]) -> Result<CommitResult> {
+        if events.is_empty() {
+            anyhow::bail!("refusing to commit an empty Iceberg snapshot");
+        }
 
-        let mut buf: Vec<u8> = Vec::new();
-        let props = WriterProperties::builder().build();
-        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props))?;
-        writer.write(&batch)?;
-        writer.close()?;
+        let parquet = events_to_parquet(events)?;
+        let file_size = parquet.len() as u64;
+        let records = events.len();
 
-        let now = chrono::Utc::now();
-        let path_str = format!(
-            "{}/year={}/month={:02}/day={:02}/{}.parquet",
-            self.bucket_prefix,
-            now.format("%Y"),
-            now.format("%m"),
-            now.format("%d"),
-            uuid::Uuid::new_v4(),
+        let mut table = self.table.lock().await;
+        let data_path = format!(
+            "{}/data/{}.parquet",
+            table.metadata().location(),
+            Uuid::new_v4()
         );
-        let path = OsPath::parse(&path_str).context("invalid object path")?;
-        self.store
-            .put(&path, PutPayload::from_bytes(buf.into()))
-            .await?;
-        info!("wrote {} events → {}", events.len(), path_str);
-        Ok(path_str)
+
+        table
+            .file_io()
+            .new_output(&data_path)
+            .map_err(|e| anyhow::anyhow!("{e}"))?
+            .write(Bytes::from(parquet))
+            .await
+            .map_err(|e| anyhow::anyhow!("write parquet: {e}"))?;
+
+        let data_file = data_file_for(&table, &data_path, file_size, records as u64)?;
+        let tx = Transaction::new(&table);
+        let tx = tx
+            .fast_append()
+            .add_data_files(vec![data_file])
+            .apply(tx)
+            .map_err(|e| anyhow::anyhow!("fast_append: {e}"))?;
+        let updated = tx
+            .commit(&self.catalog)
+            .await
+            .map_err(|e| anyhow::anyhow!("iceberg commit: {e}"))?;
+        persist_hint(&updated).await?;
+
+        let snapshot_id = updated
+            .metadata()
+            .current_snapshot()
+            .map(|s| s.snapshot_id())
+            .context("commit produced no current snapshot")?;
+        *table = updated;
+
+        info!(
+            records,
+            snapshot_id,
+            path = %data_path,
+            "committed Iceberg snapshot"
+        );
+        Ok(CommitResult {
+            data_path,
+            snapshot_id,
+            records,
+        })
     }
+
+    #[allow(dead_code)]
+    pub async fn snapshot_count(&self) -> usize {
+        self.table.lock().await.metadata().snapshots().count()
+    }
+}
+
+fn data_file_for(table: &Table, path: &str, file_size: u64, records: u64) -> Result<DataFile> {
+    DataFileBuilder::default()
+        .content(DataContentType::Data)
+        .file_path(path.to_string())
+        .file_format(DataFileFormat::Parquet)
+        .file_size_in_bytes(file_size)
+        .record_count(records)
+        .partition_spec_id(table.metadata().default_partition_spec_id())
+        .partition(Struct::empty())
+        .build()
+        .map_err(|e| anyhow::anyhow!("data file: {e}"))
+}
+
+fn events_to_parquet(events: &[FlatEvent]) -> Result<Vec<u8>> {
+    let schema = cloudtrail_arrow_schema();
+    let batch = events_to_record_batch(events, schema.clone())?;
+    let mut buf: Vec<u8> = Vec::new();
+    let props = WriterProperties::builder().build();
+    let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props))?;
+    writer.write(&batch)?;
+    writer.close()?;
+    Ok(buf)
 }
 
 fn events_to_record_batch(

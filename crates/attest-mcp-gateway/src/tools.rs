@@ -25,6 +25,11 @@ pub async fn dispatch(
         "get_user_baseline" => get_user_baseline(args).await,
         "analyze_code_snippet" => analyze_code_snippet(args).await,
         "sandbox_detonate" => sandbox_detonate(args).await,
+        "propose_detection_pr" => propose_detection_pr(args).await,
+        "request_human_review" => request_human_review(args).await,
+        "idp_revoke_session" => planned_action("idp_revoke_session", args).await,
+        "edr_isolate_host" => planned_action("edr_isolate_host", args).await,
+        "firewall_block_ioc" => planned_action("firewall_block_ioc", args).await,
         other => anyhow::bail!("unknown tool: {other}"),
     }
 }
@@ -150,5 +155,35 @@ async fn sandbox_detonate(args: &Value) -> Result<Value> {
         "behaviour_summary": "stub: no detonation in MVP",
         "ioc_observed": [],
         "source": "sandbox_detonate_stub"
+    }))
+}
+
+async fn propose_detection_pr(args: &Value) -> Result<Value> {
+    Ok(json!({
+        "status": "draft",
+        "title": args["title"],
+        "heliql": args["heliql"],
+        "rationale": args["rationale"],
+        "merged": false,
+        "source": "detection_pr_stub"
+    }))
+}
+
+async fn request_human_review(args: &Value) -> Result<Value> {
+    Ok(json!({
+        "queued": true,
+        "reason": args["reason"],
+        "source": "human_review_queue_stub"
+    }))
+}
+
+/// Containment tools record a planned action; they do not call a real IdP/EDR.
+async fn planned_action(tool_id: &str, args: &Value) -> Result<Value> {
+    Ok(json!({
+        "tool_id": tool_id,
+        "planned": true,
+        "executed": false,
+        "args": args,
+        "source": "responder_action_stub"
     }))
 }

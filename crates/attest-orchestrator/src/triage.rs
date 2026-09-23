@@ -189,6 +189,22 @@ impl TriageEngine {
         &self.attestation_log
     }
 
+    pub fn signer(&self) -> &Signer {
+        &self.signer
+    }
+
+    pub fn mcp(&self) -> &McpClient {
+        &self.mcp_client
+    }
+
+    pub fn llm(&self) -> Option<&dyn ChatClient> {
+        self.llm_client.as_ref().map(|c| c.as_ref().as_ref())
+    }
+
+    pub fn shadow(&self) -> &ShadowChecker {
+        &self.shadow_checker
+    }
+
     /// Run the Hybrid triage loop and return a signed verdict.
     pub async fn run_triage(&self, req: TriageRequest) -> Result<TriageVerdict> {
         let t0 = Instant::now();

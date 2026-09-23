@@ -824,6 +824,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tower-http",
@@ -870,19 +871,23 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow",
+ "async-trait",
  "attest-common",
+ "bytes",
  "chrono",
  "clap",
+ "futures",
  "iceberg",
- "iceberg-catalog-rest",
  "object_store",
  "parquet 58.1.0",
  "rdkafka",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "typetag",
  "uuid",
 ]
 
@@ -2429,27 +2434,6 @@ dependencies = [
  "url",
  "uuid",
  "zstd",
-]
-
-[[package]]
-name = "iceberg-catalog-rest"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "892fe71df3f5d1707c7ede042545051aca659a8a4a8ca828c5a13064338f56fc"
-dependencies = [
- "async-trait",
- "chrono",
- "http",
- "iceberg",
- "itertools 0.13.0",
- "reqwest",
- "serde",
- "serde_derive",
- "serde_json",
- "tokio",
- "tracing",
- "typed-builder",
- "uuid",
 ]
 
 [[package]]

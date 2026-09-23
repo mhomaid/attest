@@ -1,19 +1,21 @@
+mod catalog;
 mod consumer;
 mod schema;
+mod storage;
 mod writer;
 
 use anyhow::Result;
+use catalog::{open_or_create_table, S3Settings, Warehouse};
 use clap::Parser;
 use consumer::IcebergConsumer;
-use object_store::aws::AmazonS3Builder;
 use std::sync::Arc;
 use tracing::info;
-use writer::ParquetBatchWriter;
+use writer::IcebergBatchWriter;
 
 #[derive(Parser, Debug)]
 #[command(
     name = "attest-storage-iceberg",
-    about = "Redpanda → Parquet/Iceberg writer"
+    about = "Redpanda → Parquet + Iceberg snapshot writer"
 )]
 struct Cli {
     #[arg(long, env = "KAFKA_BROKERS", default_value = "localhost:9092")]
@@ -25,7 +27,7 @@ struct Cli {
     #[arg(long, env = "KAFKA_GROUP_ID", default_value = "attest-iceberg-writer")]
     kafka_group_id: String,
 
-    /// S3 / MinIO endpoint URL
+    /// S3 / MinIO endpoint URL. Empty + file warehouse → local Iceberg only.
     #[arg(long, env = "S3_ENDPOINT", default_value = "http://minio:9000")]
     s3_endpoint: String,
 
@@ -41,11 +43,15 @@ struct Cli {
     #[arg(long, env = "S3_REGION", default_value = "us-east-1")]
     s3_region: String,
 
-    /// Prefix under the bucket for the Parquet files
+    /// Iceberg warehouse. `s3://bucket/prefix` (default) or a local directory.
+    #[arg(long, env = "ICEBERG_WAREHOUSE", default_value = "s3://attest-warm")]
+    iceberg_warehouse: String,
+
+    /// Table name under the `attest` namespace.
     #[arg(long, env = "TABLE_PREFIX", default_value = "cloudtrail")]
     table_prefix: String,
 
-    /// Number of events per Parquet batch
+    /// Number of events per Parquet / snapshot batch
     #[arg(long, env = "BATCH_SIZE", default_value_t = 1000)]
     batch_size: usize,
 
@@ -65,26 +71,39 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    let warehouse = if cli.iceberg_warehouse.starts_with("s3://")
+        || cli.iceberg_warehouse.starts_with("s3a://")
+    {
+        let prefix = cli
+            .iceberg_warehouse
+            .splitn(4, '/')
+            .nth(3)
+            .unwrap_or("")
+            .to_string();
+        Warehouse::s3(
+            S3Settings {
+                endpoint: cli.s3_endpoint.clone(),
+                bucket: cli.s3_bucket.clone(),
+                access_key: cli.s3_access_key.clone(),
+                secret_key: cli.s3_secret_key.clone(),
+                region: cli.s3_region.clone(),
+            },
+            &prefix,
+        )
+    } else {
+        Warehouse::local_fs(&cli.iceberg_warehouse)?
+    };
+
     info!(
         brokers = %cli.kafka_brokers,
         topic = %cli.kafka_topic,
-        bucket = %cli.s3_bucket,
-        endpoint = %cli.s3_endpoint,
+        warehouse = %warehouse.location,
+        table = %cli.table_prefix,
         "attest-storage-iceberg starting"
     );
 
-    let store = Arc::new(
-        AmazonS3Builder::new()
-            .with_endpoint(&cli.s3_endpoint)
-            .with_bucket_name(&cli.s3_bucket)
-            .with_access_key_id(&cli.s3_access_key)
-            .with_secret_access_key(&cli.s3_secret_key)
-            .with_region(&cli.s3_region)
-            .with_allow_http(true)
-            .build()?,
-    );
-
-    let writer = Arc::new(ParquetBatchWriter::new(store, &cli.table_prefix));
+    let open = open_or_create_table(warehouse, &cli.table_prefix).await?;
+    let writer = Arc::new(IcebergBatchWriter::from_open(open));
 
     let consumer = IcebergConsumer::new(
         &cli.kafka_brokers,

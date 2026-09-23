@@ -1,0 +1,51 @@
+# Reference values for a self-hosted / air-gapped Attest install.
+# Same container artifacts as docker-compose / Railway.
+
+image:
+  registry: ghcr.io/mhomaid
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+ingress:
+  enabled: false
+  className: nginx
+  host: attest.example.com
+
+# Object store for Iceberg warm tier (MinIO in-cluster or customer S3).
+objectStore:
+  endpoint: http://minio:9000
+  bucket: attest-warm
+  region: us-east-1
+  existingSecret: "" # keys: access-key, secret-key
+
+# Set in the environment / a sealed secret. Empty → ephemeral signing key (dev only).
+signingKey: ""
+
+services:
+  collector:
+    enabled: true
+    port: 4000
+  controlPlane:
+    enabled: true
+    port: 8080
+  orchestrator:
+    enabled: true
+    port: 4300
+  mcpGateway:
+    enabled: true
+    port: 4242
+  storageIceberg:
+    enabled: true
+  workbench:
+    enabled: true
+    port: 3000
+
+env:
+  TENANT_ID: default
+  KAFKA_BROKERS: redpanda:9092
+  CLICKHOUSE_URL: http://clickhouse:8123
+  RISINGWAVE_HOST: risingwave
+  RISINGWAVE_PORT: "4566"
+  ICEBERG_WAREHOUSE: s3://attest-warm

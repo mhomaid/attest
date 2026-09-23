@@ -1,0 +1,88 @@
+{{- $full := include "attest.fullname" . -}}
+{{- $labels := include "attest.labels" . -}}
+{{- $secret := default (printf "%s-object-store" $full) .Values.objectStore.existingSecret -}}
+{{- range $name, $svc := dict
+  "collector" .Values.services.collector
+  "control-plane" .Values.services.controlPlane
+  "orchestrator" .Values.services.orchestrator
+  "mcp-gateway" .Values.services.mcpGateway
+  "storage-iceberg" .Values.services.storageIceberg
+  "workbench" .Values.services.workbench
+}}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $.Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ $.Values.image.registry }}/attest-{{ $name }}:{{ $.Values.image.tag }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- if $svc.port }}
+          ports:
+            - containerPort: {{ $svc.port }}
+              name: http
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ $full }}-env
+          env:
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: secret-key
+            - name: ATTEST_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: signing-key
+                  optional: true
+          {{- if $svc.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- end }}
+{{- if $svc.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - port: {{ $svc.port }}
+      targetPort: http
+      name: http
+{{- end }}
+{{- end }}
+{{- end }}

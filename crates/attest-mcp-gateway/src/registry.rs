@@ -155,5 +155,64 @@ pub fn default_registry() -> ToolRegistry {
         class: ToolClass::Internal,
     });
 
+    r.register(ToolDescriptor {
+        id: "propose_detection_pr".into(),
+        description: "Open a draft HELIQL detection PR (does not merge).".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string" },
+                "heliql": { "type": "string" },
+                "rationale": { "type": "string" }
+            },
+            "required": ["title", "heliql"]
+        }),
+        class: ToolClass::Internal,
+    });
+
+    r.register(ToolDescriptor {
+        id: "request_human_review".into(),
+        description: "Escalate a finding to a human analyst.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": { "reason": { "type": "string" } },
+            "required": ["reason"]
+        }),
+        class: ToolClass::Internal,
+    });
+
+    r.register(ToolDescriptor {
+        id: "idp_revoke_session".into(),
+        description: "Revoke an IdP session. Restricted; policy-gated.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": { "principal": { "type": "string" } },
+            "required": ["principal"]
+        }),
+        class: ToolClass::RestrictedAction,
+    });
+
+    r.register(ToolDescriptor {
+        id: "edr_isolate_host".into(),
+        description: "Isolate a host via EDR. Restricted; policy-gated.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": { "host": { "type": "string" } },
+            "required": ["host"]
+        }),
+        class: ToolClass::RestrictedAction,
+    });
+
+    r.register(ToolDescriptor {
+        id: "firewall_block_ioc".into(),
+        description: "Block an IOC at the firewall. Restricted; policy-gated.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": { "indicator": { "type": "string" } },
+            "required": ["indicator"]
+        }),
+        class: ToolClass::RestrictedAction,
+    });
+
     r
 }
