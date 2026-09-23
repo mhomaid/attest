@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Pause, resume, or take down the Attest Railway production demo.
-# Postgres is left running so auth/seed data survive a pause or down.
+# Workbench (marketing site) and Postgres stay up so the homepage and
+# auth/seed data survive a pause or down.
 #
 # Railway `scale REGION=0` unassigns the region instead of parking a replica,
 # so pause/down use `railway down` (remove the active deployment).
@@ -12,8 +13,8 @@ ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 export RAILWAY_CALLER="${RAILWAY_CALLER:-skill:use-railway@1.2.0}"
 export RAILWAY_AGENT_SESSION="${RAILWAY_AGENT_SESSION:-railway-skill-attest-prod}"
 
+# Workbench is the public marketing site; never taken down by pause/down.
 APPS=(
-  workbench
   collector
   control-plane
   storage-iceberg
@@ -21,13 +22,15 @@ APPS=(
   orchestrator
   mcp-gateway
   calibration-sidecar
+  workbench-api
+  arroyo-deployer
 )
-INFRA=(minio redpanda clickhouse risingwave)
+INFRA=(minio redpanda clickhouse risingwave arroyo)
 CMD="${1:-}"
 
 usage() {
   echo "Usage: $0 pause|resume|down"
-  echo "  pause   Stop demo compute (railway down). Postgres stays up."
+  echo "  pause   Stop demo compute (railway down). Workbench + Postgres stay up."
   echo "  resume  Redeploy each service from its last source/image."
   echo "  down    Same stop as pause — explicit take-offline name."
   exit 2
@@ -60,9 +63,10 @@ resume_services() {
 
 case "$CMD" in
   pause)
-    echo "▶ Pausing Railway demo. Postgres stays up."
+    echo "▶ Pausing Railway demo. Workbench + Postgres stay up."
     down_services "${APPS[@]}" "${INFRA[@]}"
-    echo "✔ Paused. Resume with: make prod resume"
+    echo "✔ Paused. Marketing site: https://attest.homaid.dev"
+    echo "  Resume the full stack with: make prod resume"
     ;;
   resume)
     echo "▶ Resuming Railway demo (infra first, then apps)."
@@ -71,9 +75,10 @@ case "$CMD" in
     echo "✔ Resume triggered. Workbench: https://attest-wb.up.railway.app"
     ;;
   down)
-    echo "▶ Taking Railway demo down. Postgres stays up."
+    echo "▶ Taking Railway demo down. Workbench + Postgres stay up."
     down_services "${APPS[@]}" "${INFRA[@]}"
-    echo "✔ Down. Bring it back with: make prod resume"
+    echo "✔ Down. Marketing site: https://attest.homaid.dev"
+    echo "  Bring the full stack back with: make prod resume"
     ;;
   *)
     usage
