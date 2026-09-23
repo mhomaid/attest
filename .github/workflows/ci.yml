@@ -197,6 +197,13 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Build workbench (standalone)
+        working-directory: apps/workbench
+        env:
+          DATABASE_URL: postgres://attest:attest@localhost:5432/attest
+          BETTER_AUTH_SECRET: lhci-better-auth-secret-min-32-chars!!
+        run: bun run build
+
       - name: Install Chrome
         id: chrome
         uses: browser-actions/setup-chrome@v2
@@ -206,9 +213,7 @@ jobs:
       - name: Run Lighthouse CI
         env:
           DATABASE_URL: postgres://attest:attest@localhost:5432/attest
-          ALLOW_AUTH_SEED: "1"
-          AUTH_SEED_SECRET: ci-auth-seed-secret
-          BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
+          BETTER_AUTH_SECRET: lhci-better-auth-secret-min-32-chars!!
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
           PUPPETEER_EXECUTABLE_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
@@ -220,9 +225,10 @@ jobs:
           test -n "$CHROME_PATH" && test -x "$CHROME_PATH"
           npx --yes @lhci/cli@0.14.0 autorun --config=apps/workbench/lighthouserc.cjs
 
-      - name: Lighthouse debug
+      - name: Upload Lighthouse report
         if: failure()
-        run: |
-          ls -la .lighthouseci || true
-          ls -la /home/runner/.lighthouseci || true
-          find . -name 'lhr-*.json' -o -name 'assertion-results*' 2>/dev/null | head
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-queue
+          path: .lighthouseci/
+          if-no-files-found: ignore
