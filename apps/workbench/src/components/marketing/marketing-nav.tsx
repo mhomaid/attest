@@ -8,11 +8,11 @@ import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "#verify", label: "Verify" },
-  { href: "#pipeline", label: "Pipeline" },
-  { href: "#guards", label: "Guards" },
-  { href: "#detections", label: "Detections" },
-  { href: "#workbench", label: "Workbench" },
+  { href: "/#verify", label: "Verify" },
+  { href: "/#pipeline", label: "Pipeline" },
+  { href: "/#guards", label: "Guards" },
+  { href: "/#detections", label: "Detections" },
+  { href: "/stack", label: "Stack" },
   { href: "https://github.com/mhomaid/attest", label: "GitHub" },
 ] as const;
 
@@ -36,13 +36,13 @@ export function MarketingNav() {
 
         <nav className="hidden items-center gap-1 md:flex">
           {links.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               {item.label}
-            </a>
+            </Link>
           ))}
         </nav>
 
@@ -53,13 +53,13 @@ export function MarketingNav() {
           >
             Sign in
           </Link>
-          <a
-            href="#quickstart"
+          <Link
+            href="/#quickstart"
             onClick={() => analytics.marketing_cta_clicked("nav_run_locally")}
             className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           >
             Run it locally
-          </a>
+          </Link>
           <button
             type="button"
             className="rounded-md p-2 md:hidden"
@@ -79,14 +79,14 @@ export function MarketingNav() {
       >
         <div className="flex flex-col gap-1">
           {links.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               className="rounded-md px-2 py-2 text-sm"
               onClick={() => setOpen(false)}
             >
               {item.label}
-            </a>
+            </Link>
           ))}
           <Link
             href="/login"

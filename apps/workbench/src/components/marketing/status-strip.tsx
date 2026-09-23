@@ -3,8 +3,8 @@
 import { motion } from "framer-motion";
 
 const facts = [
-  { value: "3", label: "sources", detail: "AWS · Okta · M365" },
-  { value: "10", label: "detections", detail: "HELIQL → RisingWave" },
+  { value: "1", label: "live source", detail: "AWS CloudTrail" },
+  { value: "10", label: "detections", detail: "AWS · Okta · M365 rules" },
   { value: "2", label: "triage paths", detail: "classifier · LLM" },
   { value: "5", label: "agent guards", detail: "policy + verifier" },
   { value: "v0", label: "status", detail: "Apache-2.0 · self-host" },
