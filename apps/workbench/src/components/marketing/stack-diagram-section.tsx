@@ -4,12 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, ShieldX } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import {
-  isPlanned,
-  planes,
-  repoLink,
-  type PlaneComponent,
-} from "@/components/marketing/stack-data";
+import { planes } from "@/components/marketing/stack-data";
 import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
@@ -18,11 +13,9 @@ const DENY_AFTER_MS = 1400;
 
 export function StackDiagramSection() {
   const reduceMotion = useReducedMotion();
-  const [hover, setHover] = useState<{ plane: string; role: string } | null>(null);
   const [cycle, setCycle] = useState(0);
   const [paused, setPaused] = useState(false);
   const blocked = Boolean(reduceMotion) || cycle % 2 === 1;
-  const total = planes.reduce((n, p) => n + p.components.length, 0);
 
   useEffect(() => {
     if (reduceMotion || paused) return;
@@ -37,25 +30,15 @@ export function StackDiagramSection() {
         <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary">
           Logical architecture
         </p>
-        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-          <h2 className="max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl">
-            Six planes. The agents never reach storage on their own.
-          </h2>
-          <Link
-            href="/stack"
-            onClick={() => analytics.marketing_cta_clicked("stack_full_page")}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-          >
-            Every component in detail
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
+        <h2 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl">
+          Six planes. The agents never reach storage on their own.
+        </h2>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-          {total} components, one repo. Same six-plane model as the architecture docs.
+          One job per plane. The chip inventory lives on the stack page — this is the map.
         </p>
 
         <ol
-          className="mt-10 space-y-2"
+          className="mt-10 divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70"
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
         >
@@ -65,52 +48,44 @@ export function StackDiagramSection() {
             return (
               <motion.li
                 key={plane.id}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-40px" }}
-                transition={{ delay: 0.04 * i, duration: 0.35 }}
+                transition={{ delay: 0.04 * i, duration: 0.3 }}
                 className={cn(
-                  "rounded-2xl border bg-card/30 px-4 py-3 sm:px-5",
-                  isAgentic && blocked && "border-red-500/35",
-                  isStorage && blocked && "border-red-500/25",
-                  !((isAgentic || isStorage) && blocked) && "border-border/70",
+                  "grid gap-1 bg-card/30 px-5 py-4 sm:grid-cols-[2.5rem_minmax(0,14rem)_1fr_auto] sm:items-baseline sm:gap-4",
+                  isAgentic && blocked && "bg-red-500/[0.04]",
+                  isStorage && blocked && "bg-red-500/[0.03]",
                 )}
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="text-sm font-semibold">
-                    <span className="mr-2 font-mono text-[10px] text-muted-foreground">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    {plane.name}
-                  </p>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {plane.group === "data" ? "data plane" : "control plane"}
-                  </p>
-                </div>
-                <ul className="mt-2.5 flex flex-wrap gap-1.5">
-                  {plane.components.map((c) => (
-                    <li key={c.name}>
-                      <PlaneChip
-                        component={c}
-                        onHover={(role) => setHover({ plane: plane.id, role })}
-                        onLeave={() => setHover(null)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-                <p
-                  className={cn(
-                    "mt-2 text-xs",
-                    hover?.plane === plane.id ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {hover?.plane === plane.id ? hover.role : plane.summary}
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <p className="text-sm font-semibold">{plane.name}</p>
+                <p className="text-sm text-muted-foreground">{plane.summary}</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {plane.group === "data" ? "data" : "control"}
                 </p>
-                {isAgentic ? <GateCallout blocked={blocked} /> : null}
+                {isAgentic ? (
+                  <div className="sm:col-span-4">
+                    <GateCallout blocked={blocked} />
+                  </div>
+                ) : null}
               </motion.li>
             );
           })}
         </ol>
+
+        <p className="mt-6">
+          <Link
+            href="/stack"
+            onClick={() => analytics.marketing_cta_clicked("stack_full_page")}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            Every component, with repo paths
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -118,7 +93,7 @@ export function StackDiagramSection() {
 
 function GateCallout({ blocked }: { blocked: boolean }) {
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2 font-mono text-[11px]">
+    <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px]">
       <AnimatePresence mode="wait">
         {blocked ? (
           <motion.p
@@ -130,7 +105,7 @@ function GateCallout({ blocked }: { blocked: boolean }) {
             aria-live="polite"
           >
             <ShieldX className="h-3.5 w-3.5" />
-            DENIED  agentic → storage (direct)
+            DENIED agentic → storage (direct)
           </motion.p>
         ) : (
           <motion.p
@@ -146,64 +121,8 @@ function GateCallout({ blocked }: { blocked: boolean }) {
       </AnimatePresence>
       <span className="text-muted-foreground">·</span>
       <span className={cn(blocked ? "text-signal-good" : "text-muted-foreground")}>
-        ALLOW  via MCP + policy → detection / governed query
+        ALLOW via MCP + policy
       </span>
     </div>
-  );
-}
-
-export function PlaneChip({
-  component,
-  onHover,
-  onLeave,
-}: {
-  component: PlaneComponent;
-  onHover?: (role: string) => void;
-  onLeave?: () => void;
-}) {
-  const planned = isPlanned(component);
-  const className = cn(
-    "inline-flex items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors",
-    planned
-      ? "border-dashed border-border/80 bg-transparent text-muted-foreground"
-      : "border-border/70 bg-background/60 hover:border-primary/60 hover:bg-primary/10",
-  );
-  const body = (
-    <>
-      <span className="font-semibold">{component.name}</span>
-      <span className="font-mono text-[10px] text-muted-foreground">{component.tech}</span>
-      {planned ? (
-        <span className="rounded-sm border border-border/60 px-1 py-px font-mono text-[8px] uppercase tracking-wider">
-          planned
-        </span>
-      ) : null}
-    </>
-  );
-  const handlers = {
-    onMouseEnter: () => onHover?.(component.role),
-    onMouseLeave: onLeave,
-    onFocus: () => onHover?.(component.role),
-    onBlur: onLeave,
-    title: component.role,
-  };
-
-  if (!component.path) {
-    return (
-      <span className={className} {...handlers}>
-        {body}
-      </span>
-    );
-  }
-
-  return (
-    <a
-      href={repoLink(component.path)}
-      target="_blank"
-      rel="noreferrer"
-      className={className}
-      {...handlers}
-    >
-      {body}
-    </a>
   );
 }

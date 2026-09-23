@@ -6,7 +6,7 @@ import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const steps = [
-  { label: "Sign", out: "$ attest verify attestations.ndjson --key 4c1e…", tone: "idle" },
+  { label: "Sign", out: "$ attest verify attestations.ndjson --key-file verifying-key.txt", tone: "idle" },
   { label: "Verify", out: "PASS ×3  ·  verified 3/3", tone: "pass" },
   { label: "Tamper", out: "$ sed -i 's/benign/true_positive/' attestations.ndjson", tone: "idle" },
   { label: "Caught", out: "FAIL  5a3e…0001  signature mismatch", tone: "fail" },
@@ -41,7 +41,7 @@ export function VerifyDemo() {
       <ChainCard deleted={deleted} failed={phase === 5} />
 
       <div className="lg:col-span-2">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap justify-center gap-1.5">
           {steps.map((s, i) => (
             <button
               key={`${s.label}-${i}`}

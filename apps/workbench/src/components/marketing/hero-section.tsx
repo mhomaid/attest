@@ -25,28 +25,30 @@ export function HeroSection() {
   return (
     <section className="relative overflow-hidden border-b border-border/60 pt-28 pb-20">
       <GridBackground />
-      <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
-        <motion.p
+      <div className="relative z-10 mx-auto max-w-6xl px-4 text-center sm:px-6">
+        <motion.div
           custom={0}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/40 px-3.5 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground backdrop-blur-sm"
+          className="mb-6 flex justify-center"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-signal-good shadow-[0_0_8px] shadow-signal-good/60" />
-          Open-source verifiable SOC
-        </motion.p>
+          <p className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/40 px-3.5 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-good shadow-[0_0_8px] shadow-signal-good/60" />
+            The problem we built Attest for
+          </p>
+        </motion.div>
 
         <motion.h1
           custom={1}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="max-w-4xl font-sans text-[clamp(2.25rem,5.5vw,4rem)] font-bold leading-[1.06] tracking-tight"
+          className="mx-auto max-w-4xl font-sans text-[clamp(2.25rem,5.5vw,4rem)] font-bold leading-[1.06] tracking-tight"
         >
-          Every AI verdict is a{" "}
+          AI SOCs ask you to trust the verdict.{" "}
           <span className="bg-gradient-to-br from-primary via-lime-300/90 to-emerald-400/70 bg-clip-text text-transparent">
-            signed object you can check.
+            We made it something you can check.
           </span>
         </motion.h1>
 
@@ -55,17 +57,54 @@ export function HeroSection() {
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-5 max-w-2xl text-[1.0625rem] leading-[1.7] text-muted-foreground"
+          className="mx-auto mt-5 max-w-2xl text-[1.0625rem] leading-[1.7] text-muted-foreground"
         >
-          Change one field or delete one row, and <code className="font-mono text-foreground">attest verify</code> fails.
+          When an agent closes an alert or isolates a host, most tools leave a chat transcript.
+          An auditor cannot replay it. A swapped model or a deleted row leaves no mark. We built
+          Attest so every decision is an Ed25519-signed envelope on a hash chain —{" "}
+          <code className="font-mono text-foreground">attest verify</code> fails if anyone
+          tampers.
         </motion.p>
 
-        <motion.div
+        <motion.dl
           custom={3}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-8 flex flex-wrap items-center gap-3"
+          className="mx-auto mt-8 grid max-w-3xl gap-4 text-left sm:grid-cols-3"
+        >
+          {[
+            {
+              k: "Problem",
+              v: "You cannot prove the verdict is the one the agent produced, or that the model was the one you approved.",
+            },
+            {
+              k: "Why we built it",
+              v: "A CISO still has to defend the action. Trusting the vendor's UI is not an audit trail.",
+            },
+            {
+              k: "How",
+              v: "Sign the envelope, chain it to the row before it, verify offline. Same CLI we run in CI.",
+            },
+          ].map((item) => (
+            <div
+              key={item.k}
+              className="rounded-xl border border-border/70 bg-card/40 px-4 py-3 backdrop-blur-sm"
+            >
+              <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+                {item.k}
+              </dt>
+              <dd className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.v}</dd>
+            </div>
+          ))}
+        </motion.dl>
+
+        <motion.div
+          custom={4}
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="mt-8 flex flex-wrap items-center justify-center gap-3"
         >
           <a
             href="#try"
@@ -95,11 +134,11 @@ export function HeroSection() {
         </motion.div>
 
         <motion.ul
-          custom={4}
+          custom={5}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-6 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[11px] text-muted-foreground"
+          className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-1 font-mono text-[11px] text-muted-foreground"
         >
           {proof.map((p) => (
             <li key={p} className="flex items-center gap-2">
@@ -111,11 +150,11 @@ export function HeroSection() {
 
         <motion.div
           id="verify"
-          custom={5}
+          custom={6}
           initial="hidden"
           animate="visible"
           variants={fadeUp}
-          className="mt-12 scroll-mt-20"
+          className="mx-auto mt-12 max-w-4xl scroll-mt-20 text-left"
         >
           <VerifyDemo />
         </motion.div>

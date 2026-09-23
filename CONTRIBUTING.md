@@ -48,12 +48,17 @@ Everything CI runs, you can run locally. From the repo root:
 | Verify / replay CLI | `cargo test -p attest-cli` | no |
 | Platform E2E, per phase | `make dev-up-all`, then `make e2e-phase1` … `make e2e-phase6` | yes |
 
-Offline attestation (after the orchestrator has written `attestations.ndjson`):
+Offline attestation (after the orchestrator has written `attestations.ndjson`).
+See [crates/attest-cli/README.md](crates/attest-cli/README.md). Prefer `--key-file`.
 
 ```sh
-cargo run -q -p attest-cli -- verify ./attestations.ndjson --key "$ATTEST_VERIFYING_KEY"
-cargo run -q -p attest-cli -- replay "$ACTION_ID" --log ./attestations.ndjson \
-  --key "$ATTEST_VERIFYING_KEY" --model ml/triager/artifacts/model.onnx
+cargo install --path crates/attest-cli --locked   # once
+attest verify ./attestations.ndjson --key-file ./verifying-key.txt
+attest replay "$ACTION_ID" --log ./attestations.ndjson \
+  --key-file ./verifying-key.txt --model ml/triager/artifacts/model.onnx
+
+# checkout without installing — the `--` is required
+cargo run -q -p attest-cli -- verify ./attestations.ndjson --key-file ./verifying-key.txt
 ```
 
 The Rust suites under `tests/e2e-tests` skip themselves unless `ATTEST_E2E=1` is set, so

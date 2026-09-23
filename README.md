@@ -97,29 +97,44 @@ triage. To retrain: `make train-classifier`.
 
 ## Verify and replay a decision
 
-No stack needed: `examples/verify/` holds three chained envelopes signed with a public demo key
-(regenerate with `cargo run -q -p attest-cli --example make_sample`).
+The binary is `attest` (crate `attest-cli`). Full flags and exit codes:
+[crates/attest-cli/README.md](crates/attest-cli/README.md).
+
+Install once, then call `attest` (the `--` after `cargo run` is required if you skip install):
 
 ```sh
-cargo run -q -p attest-cli -- verify examples/verify/attestations.ndjson \
-  --key $(cat examples/verify/verifying-key.txt)          # verified 3/3
-sed -i.bak '2d' examples/verify/attestations.ndjson       # delete a row → chain break
-git checkout examples/verify/attestations.ndjson
-cargo run -q -p attest-cli -- verify examples/verify/attestations.ndjson \
-  --key $(cat examples/verify/verifying-key.txt) --pin-model 0000   # model swap
+cargo install --path crates/attest-cli --locked
+# or: cargo run -q -p attest-cli -- <subcommand> …
+```
+
+No stack needed: `examples/verify/` holds three chained envelopes signed with a public demo key
+(regenerate with `cargo run -q -p attest-cli --example make_sample`). Prefer `--key-file` so the
+hex is not in `ps` or shell history.
+
+```sh
+attest verify examples/verify/attestations.ndjson \
+  --key-file examples/verify/verifying-key.txt          # verified 3/3
+
+# Copy, then delete a row — do not sed -i the file in git
+sed '2d' examples/verify/attestations.ndjson > /tmp/broken.ndjson
+attest verify /tmp/broken.ndjson --key-file examples/verify/verifying-key.txt
+
+attest verify examples/verify/attestations.ndjson \
+  --key-file examples/verify/verifying-key.txt --pin-model 0000   # model swap
 ```
 
 ```sh
 # After the orchestrator has written envelopes (ATTEST_LOG_PATH, default ./attestations.ndjson)
-cargo run -q -p attest-cli -- verify ./attestations.ndjson --key "$ATTEST_VERIFYING_KEY"
+attest verify ./attestations.ndjson --key-file ./verifying-key.txt
+# or: export ATTEST_VERIFYING_KEY=… and omit --key / --key-file
 
-cargo run -q -p attest-cli -- replay "$ACTION_ID" \
+attest replay "$ACTION_ID" \
   --log ./attestations.ndjson \
-  --key "$ATTEST_VERIFYING_KEY" \
+  --key-file ./verifying-key.txt \
   --model ml/triager/artifacts/model.onnx
 ```
 
-`verify` recomputes the canonical hash and checks the Ed25519 signature (non-zero exit on any
+`verify` recomputes the canonical hash and checks the Ed25519 signature (exit 1 on any
 failure). `replay` on a classifier envelope re-runs the ONNX model on the recorded features
 and asserts `raw_prediction` within 1e-6 plus the stored verdict. On an LLM envelope it checks
 the signature, that `system_prompt_hash` is present, and that tool-call timestamps are in
@@ -161,6 +176,7 @@ the present tense — the table above is the source of truth for today.
 | [12 Workbench](docs/12_Workbench.md) | Analyst UX |
 | [15 Streaming ADR](docs/15_Streaming_Engine_Decision.md) | Arroyo vs Flink vs RisingWave |
 | [phases.md](docs/phases.md) | What actually shipped, phase by phase |
+| [attest CLI](crates/attest-cli/README.md) | `verify` / `replay` flags and exit codes |
 
 ## Roadmap
 

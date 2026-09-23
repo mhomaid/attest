@@ -175,13 +175,8 @@ export function WaitlistForm() {
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Already invited?{" "}
-          <Link href="/login" className="underline underline-offset-4 hover:text-foreground">
-            Sign in
-          </Link>
-          {" · "}
           <Link href="/" className="underline underline-offset-4 hover:text-foreground">
-            Homepage
+            Back to the homepage
           </Link>
         </p>
       </div>

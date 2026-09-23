@@ -311,3 +311,48 @@ pub fn exit_code(ok: bool) -> i32 {
 pub fn parse_action_id(s: &str) -> Result<Uuid> {
     s.parse().with_context(|| format!("`{s}` is not a UUID"))
 }
+
+/// Resolve the verifying key from `--key`, `--key-file`, or `ATTEST_VERIFYING_KEY`.
+/// Prefer `--key-file` so the hex never lands in the process list or shell history.
+pub fn resolve_verifying_key(key: Option<String>, key_file: Option<&Path>) -> Result<String> {
+    if let Some(path) = key_file {
+        let raw = fs::read_to_string(path)
+            .with_context(|| format!("failed to read key file {}", path.display()))?;
+        let hex = raw.trim();
+        if hex.is_empty() {
+            anyhow::bail!("{} is empty", path.display());
+        }
+        return Ok(hex.to_string());
+    }
+    let hex = key
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("pass --key-file PATH, --key HEX, or set ATTEST_VERIFYING_KEY")
+        })?;
+    Ok(hex)
+}
+
+#[cfg(test)]
+mod resolve_key_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn key_file_wins_and_trims() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("key.txt");
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(f, "  abcdef  ").unwrap();
+        assert_eq!(
+            resolve_verifying_key(Some("ignored".into()), Some(&path)).unwrap(),
+            "abcdef"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_key() {
+        assert!(resolve_verifying_key(None, None).is_err());
+        assert!(resolve_verifying_key(Some("   ".into()), None).is_err());
+    }
+}

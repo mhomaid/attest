@@ -13,19 +13,19 @@ type Step = {
 };
 
 const LOG = "examples/verify/attestations.ndjson";
-const KEY = "--key $(cat examples/verify/verifying-key.txt)";
+const KEY = "--key-file examples/verify/verifying-key.txt";
 
 const steps: Step[] = [
   {
     id: "clone",
     label: "Clone",
-    cmd: "git clone https://github.com/mhomaid/attest && cd attest",
+    cmd: "git clone https://github.com/mhomaid/attest && cd attest && cargo install --path crates/attest-cli --locked",
     out: [],
   },
   {
     id: "verify",
     label: "Verify the sample log",
-    cmd: `cargo run -q -p attest-cli -- verify ${LOG} ${KEY}`,
+    cmd: `attest verify ${LOG} ${KEY}`,
     out: [
       { text: "PASS  5a3e…0001  pass (classifier)", tone: "pass" },
       { text: "PASS  5a3e…0002  pass (classifier)", tone: "pass" },
@@ -36,7 +36,7 @@ const steps: Step[] = [
   {
     id: "tamper",
     label: "Delete one row, verify again",
-    cmd: `sed -i.bak '2d' ${LOG} && cargo run -q -p attest-cli -- verify ${LOG} ${KEY}`,
+    cmd: `sed '2d' ${LOG} > /tmp/broken.ndjson && attest verify /tmp/broken.ndjson ${KEY}`,
     out: [
       { text: "PASS  5a3e…0001  pass (classifier)", tone: "pass" },
       { text: "FAIL  5a3e…0003  chain break: prev_hash=1beb… expected=59f1…", tone: "fail" },
@@ -46,7 +46,7 @@ const steps: Step[] = [
   {
     id: "pin",
     label: "Pin the wrong model",
-    cmd: `git checkout ${LOG} && cargo run -q -p attest-cli -- verify ${LOG} ${KEY} --pin-model 0000`,
+    cmd: `attest verify ${LOG} ${KEY} --pin-model 0000`,
     out: [
       { text: "FAIL  5a3e…0001  model_artifact_hash swap: recorded=8dee… pinned=0000", tone: "fail" },
       { text: "verified 0/3", tone: "muted" },

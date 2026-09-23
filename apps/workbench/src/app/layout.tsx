@@ -18,9 +18,9 @@ const geistMono = Geist_Mono({
   adjustFontFallback: true,
 });
 
-const title = "Attest: every AI verdict is a signed object you can check";
+const title = "Attest: AI SOC verdicts you can check";
 const description =
-  "Open-source SOC where every triage verdict is Ed25519-signed and hash-chained, and agent tool calls pass five policy guards. Change one field and attest verify fails.";
+  "Most AI SOCs ask you to trust the verdict. Attest signs every decision as an Ed25519 envelope on a hash chain — attest verify fails if anyone tampers.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://attest.homaid.dev"),

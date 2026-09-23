@@ -67,10 +67,11 @@ const quickstart = `## Try it (needs only Rust)
 
 \`\`\`sh
 git clone ${REPO_URL} && cd attest
-cargo run -q -p attest-cli -- verify examples/verify/attestations.ndjson --key $(cat examples/verify/verifying-key.txt)
+cargo install --path crates/attest-cli --locked
+attest verify examples/verify/attestations.ndjson --key-file examples/verify/verifying-key.txt
 # verified 3/3
-sed -i.bak '2d' examples/verify/attestations.ndjson
-cargo run -q -p attest-cli -- verify examples/verify/attestations.ndjson --key $(cat examples/verify/verifying-key.txt)
+sed '2d' examples/verify/attestations.ndjson > /tmp/broken.ndjson
+attest verify /tmp/broken.ndjson --key-file examples/verify/verifying-key.txt
 # FAIL ... chain break
 \`\`\`
 `;
