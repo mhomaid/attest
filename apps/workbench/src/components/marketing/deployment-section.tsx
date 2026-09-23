@@ -20,11 +20,10 @@ export function DeploymentSection() {
           Control plane · data plane
         </p>
         <h2 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl">
-          Same six planes. Four ways to place them.
+          Same six planes. You choose where they run.
         </h2>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-          Railway is live. SaaS, your cloud, and air-gapped are the same containers, just a
-          different boundary.
+          We can host them, or the data plane can live in your VPC. Same containers either way.
         </p>
 
         <div className="mt-8 flex flex-wrap gap-1.5">
@@ -104,7 +103,9 @@ function CloudBox({
       <div className="mt-4 min-h-[12rem]">
         {empty ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Nothing runs here in this model.
+            {where === "customer"
+              ? "Not used — we host all six planes."
+              : "Not used — everything runs on your hardware."}
           </p>
         ) : (
           <div className="space-y-3">
@@ -136,7 +137,7 @@ function PlaneGroup({
             animate={{ opacity: 1, scale: 1 }}
             className="rounded-md border border-border/70 bg-background/60 px-2.5 py-1 text-xs font-semibold"
           >
-            {p.name.replace(" plane", "")}
+            {p.name}
           </motion.li>
         ))}
       </ul>

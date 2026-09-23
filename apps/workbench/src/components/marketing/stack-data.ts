@@ -263,31 +263,23 @@ export type Deployment = {
   note: string;
 };
 
-/** docs/02_Architecture.md §10. */
+/** docs/02_Architecture.md §10 — product names, not the host vendor. */
 export const deployments: Deployment[] = [
   {
-    id: "railway",
-    name: "Railway",
+    id: "hosted",
+    name: "We host it",
     status: "live",
     controlIn: "attest",
     dataIn: "attest",
-    note: "Running today: one Railway project hosts both the control plane and the data plane.",
-  },
-  {
-    id: "saas",
-    name: "SaaS",
-    status: "planned",
-    controlIn: "attest",
-    dataIn: "attest",
-    note: "Multi-tenant control plane; each customer gets a single-tenant data plane with its own compute and storage.",
+    note: "Today we run all six planes for you. Your events still land in open formats you can take with you.",
   },
   {
     id: "byoc",
-    name: "Your cloud (BYOC)",
+    name: "Your cloud",
     status: "planned",
     controlIn: "attest",
     dataIn: "customer",
-    note: "The data plane runs in your VPC. Your events, your Iceberg warm tier and the agents never leave your cloud.",
+    note: "We keep identity and the console. The data plane — ingest, detections, storage, agents — runs in your VPC. Your events never leave your cloud.",
   },
   {
     id: "airgap",
@@ -295,6 +287,6 @@ export const deployments: Deployment[] = [
     status: "planned",
     controlIn: "customer",
     dataIn: "customer",
-    note: "Everything on your hardware via Helm, with open-weights models served locally. No outbound calls.",
+    note: "All six planes on your hardware. Open-weights models, no outbound calls.",
   },
 ];
