@@ -11,8 +11,8 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-license = "UNLICENSED"
-repository = "https://github.com/mohamedhomaid/attest"
+license = "Apache-2.0"
+repository = "https://github.com/mhomaid/attest"
 
 [workspace.dependencies]
 anyhow = "1"
