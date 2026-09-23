@@ -491,15 +491,15 @@ railway-app-start: ## Deploy all application services — handles first-deploy a
 	done
 	@echo "✔ App services deploy triggered."
 
-# `make prod pause` / `make prod resume` / `make prod down`
+# `make prod up` / `make prod down` / `make prod status`
 # Make treats the second word as another goal; these are no-ops so it does not fail.
 PROD_ACTION := $(word 2,$(MAKECMDGOALS))
-pause resume down:
+up down status pause resume:
 	@:
 
-prod: ## Railway demo: make prod pause | make prod resume | make prod down
+prod: ## Railway: make prod up | make prod down | make prod status
 	@if [ -z "$(PROD_ACTION)" ]; then \
-	  echo "Usage: make prod pause | make prod resume | make prod down"; \
+	  echo "Usage: make prod up | make prod down | make prod status"; \
 	  exit 2; \
 	fi
 	@./scripts/prod-railway.sh $(PROD_ACTION)

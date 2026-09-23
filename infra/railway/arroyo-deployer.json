@@ -1,4 +1,7 @@
 {
+  "build": {
+    "watchPatterns": [".railway-manual-only"]
+  },
   "environmentVariables": {
     "ARROYO_API": "http://${{Arroyo.RAILWAY_PRIVATE_DOMAIN}}:5115",
     "PIPELINES_DIR": "/pipelines",

@@ -256,11 +256,16 @@ make railway-login      # Log in to Railway CLI
 make railway-setup      # Create all services with railway add (run once)
 make railway-deploy     # railway up --service for all services (first deploy)
 make railway-redeploy   # railway service redeploy for all services (after first deploy)
-make prod pause         # Stop demo compute (Postgres stays)
-make prod resume        # Redeploy infra then apps from source
-make prod down          # Remove active deployments (keep services + volumes)
+make prod down          # Stop everything except workbench (marketing + waitlist)
+make prod up            # Redeploy infra, then apps. Workbench stays as-is.
+make prod status        # Deployment state per service
 ```
 
-`make prod pause` / `resume` / `down` never touch the managed **Postgres**
-service, so seeded login (`analyst@attest.local`) survives. They skip Arroyo
-and workbench-api (not in the demo cut).
+`make prod down` / `up` keep **workbench** live (`https://attest.homaid.dev`).
+Postgres, Kafka, RisingWave, ClickHouse, MinIO, and the Rust apps go down.
+`down` also pins those GitHub services to `watchPatterns=[".railway-manual-only"]`
+so a push to `main` does not wake them. `up` is an explicit redeploy.
+
+Same script: `./scripts/prod-railway.sh up|down|status` (`pause`/`resume` are aliases).
+
+Volumes still bill while allocated, even when services are down.

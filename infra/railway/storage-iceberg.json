@@ -2,7 +2,8 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "infra/docker/storage-iceberg.Dockerfile"
+    "dockerfilePath": "infra/docker/storage-iceberg.Dockerfile",
+    "watchPatterns": [".railway-manual-only"]
   },
   "deploy": {
     "restartPolicyType": "ON_FAILURE"

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Pause, resume, or take down the Attest Railway production demo.
-# Workbench (marketing site) and Postgres stay up so the homepage and
-# auth/seed data survive a pause or down.
+# Bring the Railway production stack up or down.
+# Workbench (https://attest.homaid.dev) stays up — marketing + waitlist.
 #
-# Railway `scale REGION=0` unassigns the region instead of parking a replica,
-# so pause/down use `railway down` (remove the active deployment).
-# Resume redeploys from the last uploaded source / configured image.
+#   ./scripts/prod-railway.sh down    # stop everything except workbench
+#   ./scripts/prod-railway.sh up      # infra first, then apps
+#   ./scripts/prod-railway.sh status
+#
+# Make:  make prod down | make prod up | make prod status
+# Aliases: pause → down, resume → up
 set -euo pipefail
 
 PROJECT="${RAILWAY_PROJECT:-f124e2c1-3afb-49fb-9f8a-5ded89f7fbb6}"
@@ -13,7 +15,10 @@ ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 export RAILWAY_CALLER="${RAILWAY_CALLER:-skill:use-railway@1.2.0}"
 export RAILWAY_AGENT_SESSION="${RAILWAY_AGENT_SESSION:-railway-skill-attest-prod}"
 
-# Workbench is the public marketing site; never taken down by pause/down.
+KEEP=(workbench)
+
+# GitHub-connected app services. A push to main redeploys these unless
+# watchPatterns is pinned (see guard_auto_deploy).
 APPS=(
   collector
   control-plane
@@ -24,15 +29,30 @@ APPS=(
   calibration-sidecar
   workbench-api
   arroyo-deployer
+  db-migrate
 )
-INFRA=(minio redpanda clickhouse risingwave arroyo)
+
+# Image / managed services. Start these before apps.
+INFRA=(
+  Postgres
+  minio
+  redpanda
+  clickhouse
+  risingwave
+  arroyo
+  minio-init
+)
+
 CMD="${1:-}"
 
 usage() {
-  echo "Usage: $0 pause|resume|down"
-  echo "  pause   Stop demo compute (railway down). Workbench + Postgres stay up."
-  echo "  resume  Redeploy each service from its last source/image."
-  echo "  down    Same stop as pause — explicit take-offline name."
+  echo "Usage: $0 up|down|status"
+  echo "  down    Stop every service except workbench (marketing + waitlist)."
+  echo "  up      Redeploy infra, then apps. Workbench is left as-is."
+  echo "  status  Print Railway deployment state for each service."
+  echo
+  echo "Make: make prod down | make prod up | make prod status"
+  echo "Kept live: ${KEEP[*]}"
   exit 2
 }
 
@@ -51,7 +71,7 @@ down_services() {
 resume_services() {
   local svc
   for svc in "$@"; do
-    echo "  → resume $svc"
+    echo "  → up $svc"
     if rw redeploy --service "$svc" --from-source --yes; then
       continue
     fi
@@ -61,24 +81,55 @@ resume_services() {
   done
 }
 
+# Stop a git push from waking parked services. Workbench keeps default watch.
+guard_auto_deploy() {
+  echo "▶ Pinning non-workbench GitHub services to manual deploy only"
+  local args=() svc
+  for svc in "${APPS[@]}"; do
+    args+=(--service-config "$svc" build.watchPatterns '[".railway-manual-only"]')
+  done
+  rw environment edit "${args[@]}" -m "park: only workbench auto-deploys from git" || \
+    echo "    ↳ watchPatterns edit failed — next git push may still wake app services"
+}
+
+status_services() {
+  local svc
+  echo "project=$PROJECT  environment=$ENVIRONMENT"
+  echo "keep live: ${KEEP[*]}"
+  echo
+  for svc in "${KEEP[@]}" "${INFRA[@]}" "${APPS[@]}"; do
+    printf '%-22s ' "$svc"
+    rw service status --service "$svc" --json 2>/dev/null \
+      | python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+  dep=(d.get("deployment") or d.get("latestDeployment") or {})
+  print(dep.get("status") or d.get("status") or "?")
+except Exception:
+  print("unknown")' \
+      || echo "unknown"
+  done
+}
+
 case "$CMD" in
-  pause)
-    echo "▶ Pausing Railway demo. Workbench + Postgres stay up."
+  down|pause)
+    echo "▶ Taking Railway demo down. Workbench stays up."
     down_services "${APPS[@]}" "${INFRA[@]}"
-    echo "✔ Paused. Marketing site: https://attest.homaid.dev"
-    echo "  Resume the full stack with: make prod resume"
+    guard_auto_deploy
+    echo "✔ Down. Site: https://attest.homaid.dev"
+    echo "  Bring the stack back:  make prod up"
+    echo "  Volumes still bill until deleted (postgres/clickhouse/risingwave/orchestrator/redpanda/minio)."
     ;;
-  resume)
-    echo "▶ Resuming Railway demo (infra first, then apps)."
+  up|resume)
+    echo "▶ Bringing Railway demo up (infra first, then apps)."
     resume_services "${INFRA[@]}"
+    echo "  ↳ infra triggered. Kafka / RisingWave need ~45s before apps are useful."
     resume_services "${APPS[@]}"
-    echo "✔ Resume triggered. Workbench: https://attest-wb.up.railway.app"
+    echo "✔ Up triggered. Workbench: https://attest.homaid.dev"
+    echo "  Check: make prod status"
     ;;
-  down)
-    echo "▶ Taking Railway demo down. Workbench + Postgres stay up."
-    down_services "${APPS[@]}" "${INFRA[@]}"
-    echo "✔ Down. Marketing site: https://attest.homaid.dev"
-    echo "  Bring the full stack back with: make prod resume"
+  status)
+    status_services
     ;;
   *)
     usage
