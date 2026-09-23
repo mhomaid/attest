@@ -208,4 +208,5 @@ jobs:
           AUTH_SEED_SECRET: ci-auth-seed-secret
           BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          PUPPETEER_EXECUTABLE_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: npx --yes @lhci/cli@0.14.0 autorun --config=apps/workbench/lighthouserc.cjs

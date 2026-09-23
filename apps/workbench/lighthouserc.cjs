@@ -10,6 +10,10 @@ module.exports = {
         preset: "desktop",
         formFactor: "desktop",
         screenEmulation: { disabled: true },
+        chromePath: process.env.CHROME_PATH,
+        chromeFlags: process.env.CI
+          ? "--no-sandbox --disable-dev-shm-usage --headless=new"
+          : undefined,
       },
     },
     assert: {
