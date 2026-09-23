@@ -334,7 +334,10 @@ fn pin_rejects_model_and_prompt_swap() {
         model_artifact_hash: Some("deadbeef".into()),
         system_prompt_hash: None,
     };
-    assert!(check_pin(&env, &pin).unwrap_err().to_string().contains("swap"));
+    assert!(check_pin(&env, &pin)
+        .unwrap_err()
+        .to_string()
+        .contains("swap"));
 
     let pin_ok = AgentPin {
         agent_id: env.agent_id.clone(),
@@ -345,4 +348,40 @@ fn pin_rejects_model_and_prompt_swap() {
         system_prompt_hash: None,
     };
     check_pin(&env, &pin_ok).unwrap();
+}
+
+#[test]
+fn verify_with_pin_model_fails_on_swapped_model() {
+    use attest_cli::{apply_pins, Pins};
+
+    let signer = Signer::generate();
+    let vk = signer.verifying_key_hex();
+    let (first, second) = chain_two(&signer);
+    let log = vec![first, second];
+    let real = attest_cli::file_sha256_hex(&model_path()).unwrap();
+
+    let mut ok = verify_log(&log, &vk);
+    apply_pins(
+        &mut ok,
+        &log,
+        &Pins {
+            model_artifact_hash: Some(real),
+            system_prompt_hash: None,
+        },
+    );
+    assert!(ok.all_ok(), "{:?}", ok.results);
+
+    let mut swapped = verify_log(&log, &vk);
+    apply_pins(
+        &mut swapped,
+        &log,
+        &Pins {
+            model_artifact_hash: Some("deadbeef".into()),
+            system_prompt_hash: None,
+        },
+    );
+    assert!(!swapped.all_ok());
+    assert!(swapped.results[0]
+        .detail
+        .contains("model_artifact_hash swap"));
 }

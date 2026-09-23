@@ -25,4 +25,8 @@ export const analytics = {
   batch_simulation_run: (props: { scenario_id: string; n: number; p95_ms: number; p99_ms: number; errors: number }) =>
     capture("batch_simulation_run", props),
   hunt_query_run: () => capture("hunt_query_run"),
+  marketing_cta_clicked: (cta: string) => capture("marketing_cta_clicked", { cta }),
+  marketing_quickstart_copied: (step: string) => capture("marketing_quickstart_copied", { step }),
+  marketing_demo_step: (demo: "verify" | "guards" | "deploy", step: string) =>
+    capture("marketing_demo_step", { demo, step }),
 };

@@ -118,6 +118,40 @@ pub fn verify_log(log: &[AttestationEnvelope], verifying_key_hex: &str) -> Verif
     VerifyReport { results }
 }
 
+/// Published artifact hashes every envelope must match (`--pin-model`, `--pin-prompt`).
+#[derive(Debug, Clone, Default)]
+pub struct Pins {
+    pub model_artifact_hash: Option<String>,
+    pub system_prompt_hash: Option<String>,
+}
+
+impl Pins {
+    pub fn is_empty(&self) -> bool {
+        self.model_artifact_hash.is_none() && self.system_prompt_hash.is_none()
+    }
+}
+
+/// Fail rows that verified but were produced by a model or prompt other than the pinned one.
+pub fn apply_pins(report: &mut VerifyReport, log: &[AttestationEnvelope], pins: &Pins) {
+    if pins.is_empty() {
+        return;
+    }
+    for (row, env) in report.results.iter_mut().zip(log) {
+        if !row.ok {
+            continue;
+        }
+        let pin = attest_attestation::AgentPin {
+            agent_id: env.agent_id.clone(),
+            model_artifact_hash: pins.model_artifact_hash.clone(),
+            system_prompt_hash: pins.system_prompt_hash.clone(),
+        };
+        if let Err(e) = attest_attestation::check_pin(env, &pin) {
+            row.ok = false;
+            row.detail = e.to_string();
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayReport {
     pub action_id: Uuid,

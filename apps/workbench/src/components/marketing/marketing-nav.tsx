@@ -4,15 +4,16 @@ import { motion } from "framer-motion";
 import { Menu, Shield } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "#status", label: "Demo" },
-  { href: "#architecture", label: "Architecture" },
-  { href: "#design", label: "Design" },
-  { href: "#agents", label: "Agents" },
-  { href: "#substrate", label: "Stack" },
-  { href: "#workbench", label: "Workbench" },
+  { href: "/#verify", label: "Verify" },
+  { href: "/#pipeline", label: "Pipeline" },
+  { href: "/#guards", label: "Guards" },
+  { href: "/#detections", label: "Detections" },
+  { href: "/stack", label: "Stack" },
+  { href: "https://github.com/mhomaid/attest", label: "GitHub" },
 ] as const;
 
 export function MarketingNav() {
@@ -35,28 +36,29 @@ export function MarketingNav() {
 
         <nav className="hidden items-center gap-1 md:flex">
           {links.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               {item.label}
-            </a>
+            </Link>
           ))}
         </nav>
 
         <div className="flex items-center gap-2">
           <Link
-            href="/workbench/queue"
-            className="hidden rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-medium text-foreground sm:inline-flex"
-          >
-            Open workbench
-          </Link>
-          <Link
             href="/login"
-            className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+            className="hidden rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
           >
             Sign in
+          </Link>
+          <Link
+            href="/#quickstart"
+            onClick={() => analytics.marketing_cta_clicked("nav_run_locally")}
+            className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+          >
+            Run it locally
           </Link>
           <button
             type="button"
@@ -77,18 +79,18 @@ export function MarketingNav() {
       >
         <div className="flex flex-col gap-1">
           {links.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               className="rounded-md px-2 py-2 text-sm"
               onClick={() => setOpen(false)}
             >
               {item.label}
-            </a>
+            </Link>
           ))}
           <Link
             href="/login"
-            className="mt-1 rounded-md bg-primary py-2 text-center text-sm font-medium text-primary-foreground"
+            className="rounded-md px-2 py-2 text-sm text-muted-foreground"
             onClick={() => setOpen(false)}
           >
             Sign in

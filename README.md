@@ -94,6 +94,18 @@ triage. To retrain: `make train-classifier`.
 
 ## Verify and replay a decision
 
+No stack needed: `examples/verify/` holds three chained envelopes signed with a public demo key
+(regenerate with `cargo run -q -p attest-cli --example make_sample`).
+
+```sh
+cargo run -q -p attest-cli -- verify examples/verify/attestations.ndjson \
+  --key $(cat examples/verify/verifying-key.txt)          # verified 3/3
+sed -i.bak '2d' examples/verify/attestations.ndjson       # delete a row → chain break
+git checkout examples/verify/attestations.ndjson
+cargo run -q -p attest-cli -- verify examples/verify/attestations.ndjson \
+  --key $(cat examples/verify/verifying-key.txt) --pin-model 0000   # model swap
+```
+
 ```sh
 # After the orchestrator has written envelopes (ATTEST_LOG_PATH, default ./attestations.ndjson)
 cargo run -q -p attest-cli -- verify ./attestations.ndjson --key "$ATTEST_VERIFYING_KEY"
