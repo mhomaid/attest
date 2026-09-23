@@ -27,6 +27,7 @@ AI agents are now both a new class of attacker and a new class of defender, and 
 | 11 | [Repo Structure](./11_Repo_Structure.md) | Top-level repository layout |
 | 12 | [Workbench](./12_Workbench.md) | Analyst workbench: stack, UI/UX principles, flows, observability |
 | 15 | [Streaming Engine ADR](./15_Streaming_Engine_Decision.md) | Arroyo vs. Flink vs. RisingWave, with revisit triggers |
+| — | [Phase chronicle](./phases.md) | What actually shipped in Phases 1–8 (moved from the root README) |
 
 Gaps in the numbering are intentional; numbers are stable identifiers, not a sequence.
 

@@ -7,7 +7,7 @@ are welcome. For anything larger than a bug fix, open an issue first so we can a
 
 | Tool | Version | Used for |
 | ---- | ------- | -------- |
-| Rust | stable (CI uses latest stable; images use 1.95) | all services under `crates/`, `apps/*` Rust binaries |
+| Rust | 1.98.1 (`rust-toolchain.toml`; images use `rust:1.98-slim`) | all services under `crates/`, `apps/*` Rust binaries |
 | cmake, libcurl, OpenSSL headers | any recent | building `librdkafka` (`rdkafka` `cmake-build` feature) |
 | Bun | 1.4.x | workbench (`apps/workbench`) |
 | uv + Python | 3.12 | ML pipeline (`ml/`) and DB migrations (`infra/db`) |
@@ -28,7 +28,16 @@ Everything CI runs, you can run locally. From the repo root:
 | Workbench types | `bun run typecheck` | no |
 | Classifier latency budget | `cargo test --release -p attest-onnx-runtime --test classifier_integration` | no |
 | Workbench browser E2E | `cd apps/workbench && bun run e2e` (needs Postgres with migrations applied) | Postgres only |
+| Verify / replay CLI | `cargo test -p attest-cli` | no |
 | Platform E2E, per phase | `make dev-up-all`, then `make e2e-phase1` … `make e2e-phase6` | yes |
+
+Offline attestation (after the orchestrator has written `attestations.ndjson`):
+
+```sh
+cargo run -q -p attest-cli -- verify ./attestations.ndjson --key "$ATTEST_VERIFYING_KEY"
+cargo run -q -p attest-cli -- replay "$ACTION_ID" --log ./attestations.ndjson \
+  --key "$ATTEST_VERIFYING_KEY" --model ml/triager/artifacts/model.onnx
+```
 
 The Rust suites under `tests/e2e-tests` skip themselves unless `ATTEST_E2E=1` is set, so
 `cargo test --workspace` stays green without a running stack. The `make e2e-*` targets set it

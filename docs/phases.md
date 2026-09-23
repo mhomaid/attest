@@ -1,3 +1,14 @@
+# Attest — phase chronicle
+
+This is the detailed, phase-by-phase build log (what shipped in Phases 1–8, page-by-page
+workbench notes, Railway lessons). It is **not** the project README.
+
+For what is implemented today, start with the Status table in the [root README](../README.md).
+A few details below are historical (for example the warm-tier SQL gate is now a real
+tokenizer, not a `starts_with("select")` check; warm storage is Parquet, not an Iceberg catalog).
+
+---
+
 # Attest
 
 Attest is a streaming-first, agent-aware security operations platform built for cloud-native security teams. Events flow from cloud sources (CloudTrail, Okta, Entra ID) through an OCSF normalizer into Redpanda, are continuously aggregated by RisingWave materialized views, persisted as Parquet files in MinIO via Apache Iceberg, and queried at scale by ClickHouse — all exposed through a REST control-plane and a live Next.js SOC workbench.
