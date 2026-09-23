@@ -389,11 +389,8 @@ mod tests {
         env
     }
 
-    static LOG_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[tokio::test]
     async fn object_store_survives_deleted_file() {
-        let _guard = LOG_TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("attest-log-{}", Uuid::new_v4()));
         let path = dir.join("attestations.ndjson");
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
@@ -415,7 +412,6 @@ mod tests {
 
     #[tokio::test]
     async fn append_after_restart_chains_onto_object_history() {
-        let _guard = LOG_TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("attest-log-{}", Uuid::new_v4()));
         let path = dir.join("attestations.ndjson");
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
