@@ -78,6 +78,8 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: false,
     minPasswordLength: 8,
+    // Public signup is closed. Seed route still works when ALLOW_AUTH_SEED=1.
+    disableSignUp: process.env.ALLOW_AUTH_SEED !== "1",
   },
   trustedOrigins: [
     baseURL,

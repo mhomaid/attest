@@ -49,10 +49,10 @@ export function MarketingNav() {
 
         <div className="flex items-center gap-2">
           <Link
-            href="/login"
+            href="/waitlist"
             className="hidden rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
           >
-            Sign in
+            Request access
           </Link>
           <Link
             href="/#quickstart"
@@ -90,11 +90,11 @@ export function MarketingNav() {
             </Link>
           ))}
           <Link
-            href="/login"
+            href="/waitlist"
             className="rounded-md px-2 py-2 text-sm text-muted-foreground"
             onClick={() => setOpen(false)}
           >
-            Sign in
+            Request access
           </Link>
         </div>
       </div>

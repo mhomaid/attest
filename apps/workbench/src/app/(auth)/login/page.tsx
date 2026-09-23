@@ -14,5 +14,10 @@ export default async function LoginPage({
   }
 
   const { callbackUrl } = await searchParams;
-  return <LoginForm callbackUrl={callbackUrl ?? "/workbench/queue"} />;
+  return (
+    <LoginForm
+      callbackUrl={callbackUrl ?? "/workbench/queue"}
+      showLocalHints={process.env.ALLOW_AUTH_SEED === "1"}
+    />
+  );
 }

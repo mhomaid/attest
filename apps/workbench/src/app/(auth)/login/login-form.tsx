@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
-type Mode = "signin" | "signup";
-
-export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
+export function LoginForm({
+  callbackUrl,
+  showLocalHints,
+}: {
+  callbackUrl: string;
+  showLocalHints: boolean;
+}) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("signin");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,27 +26,15 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
     setError(null);
     setBusy(true);
     try {
-      if (mode === "signup") {
-        const res = await authClient.signUp.email({
-          name: name.trim() || email.split("@")[0] || "Analyst",
-          email,
-          password,
-        });
-        if (res.error) {
-          setError(res.error.message ?? "Could not create the account");
-          return;
-        }
-      } else {
-        const res = await authClient.signIn.email({ email, password });
-        if (res.error) {
-          setError(res.error.message ?? "Sign-in failed");
-          return;
-        }
+      const res = await authClient.signIn.email({ email, password });
+      if (res.error) {
+        setError(res.error.message ?? "Sign-in failed");
+        return;
       }
       router.push(next);
       router.refresh();
     } catch {
-      setError(mode === "signup" ? "Could not create the account" : "Sign-in failed");
+      setError("Sign-in failed");
     } finally {
       setBusy(false);
     }
@@ -64,32 +54,12 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
         </Link>
 
         <div className="rounded-xl border border-border/70 bg-card/50 p-6 backdrop-blur-sm">
-          <h1 className="text-lg font-semibold tracking-tight">
-            {mode === "signin" ? "Sign in" : "Create an account"}
-          </h1>
+          <h1 className="text-lg font-semibold tracking-tight">Sign in</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {mode === "signin"
-              ? "Email and password. The workbench stays behind this gate."
-              : "Create an account to open the analyst console."}
+            Invite-only. Request access if you do not have an account yet.
           </p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
-            {mode === "signup" ? (
-              <div className="space-y-1.5">
-                <label htmlFor="name" className="text-xs text-muted-foreground">
-                  Name
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="h-9 w-full rounded-md border border-border bg-background/80 px-3 text-sm outline-none focus:border-primary/50"
-                />
-              </div>
-            ) : null}
-
             <div className="space-y-1.5">
               <label htmlFor="email" className="text-xs text-muted-foreground">
                 Email
@@ -112,7 +82,7 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
               <input
                 id="password"
                 type="password"
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -133,57 +103,35 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
               className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {mode === "signin" ? "Sign in" : "Create account"}
+              Sign in
             </button>
           </form>
-
-          <p className="mt-5 text-center text-xs text-muted-foreground">
-            {mode === "signin" ? (
-              <button
-                type="button"
-                className="underline underline-offset-4 hover:text-foreground"
-                onClick={() => {
-                  setMode("signup");
-                  setError(null);
-                }}
-              >
-                Create an account
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="underline underline-offset-4 hover:text-foreground"
-                onClick={() => {
-                  setMode("signin");
-                  setError(null);
-                }}
-              >
-                Already have an account? Sign in
-              </button>
-            )}
-          </p>
         </div>
 
         <div className="mt-6 space-y-2 text-center text-xs text-muted-foreground">
           <p>
-            Public demo:{" "}
-            <code className="text-foreground">demo@attest.local</code> /{" "}
-            <code className="text-foreground">try-attest</code>
-          </p>
-          <p>
-            Local analyst:{" "}
-            <code className="text-foreground">analyst@attest.local</code> /{" "}
-            <code className="text-foreground">analyst-dev</code>
-          </p>
-          <p>
+            <Link href="/waitlist" className="underline underline-offset-4 hover:text-foreground">
+              Request access
+            </Link>
+            {" · "}
             <Link href="/#try" className="underline underline-offset-4 hover:text-foreground">
               Run a verdict without signing in
             </Link>
-            {" · "}
-            <Link href="/" className="underline underline-offset-4 hover:text-foreground">
-              Homepage
-            </Link>
           </p>
+          {showLocalHints ? (
+            <>
+              <p>
+                Public demo:{" "}
+                <code className="text-foreground">demo@attest.local</code> /{" "}
+                <code className="text-foreground">try-attest</code>
+              </p>
+              <p>
+                Local analyst:{" "}
+                <code className="text-foreground">analyst@attest.local</code> /{" "}
+                <code className="text-foreground">analyst-dev</code>
+              </p>
+            </>
+          ) : null}
         </div>
       </div>
     </div>

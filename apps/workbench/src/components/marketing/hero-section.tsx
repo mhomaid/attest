@@ -76,11 +76,11 @@ export function HeroSection() {
             <ArrowRight className="h-4 w-4" />
           </a>
           <a
-            href="#pipeline"
-            onClick={() => analytics.marketing_cta_clicked("hero_how_it_works")}
+            href="/waitlist"
+            onClick={() => analytics.marketing_cta_clicked("hero_waitlist")}
             className="inline-flex items-center gap-2 rounded-md border border-border/80 bg-card/50 px-5 py-2.5 text-sm font-medium text-foreground backdrop-blur-sm transition-colors hover:bg-card"
           >
-            See how it works
+            Request access
           </a>
           <a
             href="https://github.com/mhomaid/attest"

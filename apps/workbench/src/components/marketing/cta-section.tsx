@@ -26,12 +26,19 @@ export function CtaSection() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a
-                href="#try"
-                onClick={() => analytics.marketing_cta_clicked("cta_try_demo")}
+                href="/waitlist"
+                onClick={() => analytics.marketing_cta_clicked("cta_waitlist")}
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
               >
-                Try a live verdict
+                Request access
                 <ArrowRight className="h-4 w-4" />
+              </a>
+              <a
+                href="#try"
+                onClick={() => analytics.marketing_cta_clicked("cta_try_demo")}
+                className="inline-flex items-center gap-2 rounded-md border border-border bg-background/60 px-4 py-2.5 text-sm font-medium"
+              >
+                Try a live verdict
               </a>
               <a
                 href="https://github.com/mhomaid/attest/issues/new"
