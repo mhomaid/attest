@@ -115,6 +115,28 @@ mod tests {
     }
 
     #[test]
+    fn signature_survives_json_roundtrip_with_populated_maps() {
+        let signer = Signer::generate();
+        let vk = signer.verifying_key_hex();
+        let mut env = dummy_envelope();
+        if let EvidenceBlock::Classifier(ev) = &mut env.evidence {
+            for i in 0..16 {
+                ev.input_features
+                    .insert(format!("feature_{i}"), i as f64 * 0.5);
+                ev.shap_values
+                    .insert(format!("feature_{i}"), -(i as f64) * 0.01);
+            }
+        }
+        signer.sign(&mut env);
+
+        for _ in 0..32 {
+            let line = serde_json::to_string(&env).unwrap();
+            let read_back: AttestationEnvelope = serde_json::from_str(&line).unwrap();
+            assert!(Signer::verify(&read_back, &vk).unwrap());
+        }
+    }
+
+    #[test]
     fn tampered_envelope_fails_verification() {
         let signer = Signer::generate();
         let vk = signer.verifying_key_hex();

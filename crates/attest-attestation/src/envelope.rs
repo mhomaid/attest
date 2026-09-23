@@ -253,6 +253,28 @@ impl AttestationEnvelope {
             timing: &self.timing,
             signed_at: &self.signed_at,
         };
-        serde_json::to_vec(&body).expect("envelope serialisation is infallible")
+        let value = serde_json::to_value(&body).expect("envelope serialisation is infallible");
+        serde_json::to_vec(&sort_keys(value)).expect("envelope serialisation is infallible")
+    }
+}
+
+/// Recursively rebuild every object with keys in sorted order. `HashMap` fields
+/// (`input_features`, `shap_values`) iterate in a per-process random order, so without this
+/// an envelope signed in one process would not verify after being read back in another.
+fn sort_keys(value: serde_json::Value) -> serde_json::Value {
+    use serde_json::{Map, Value};
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, sort_keys(v)))
+                    .collect::<Map<_, _>>(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sort_keys).collect()),
+        other => other,
     }
 }
