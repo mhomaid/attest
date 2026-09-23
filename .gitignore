@@ -17,6 +17,10 @@ apps/workbench/tests/e2e/.auth/
 
 docs/social/*
 !docs/social/.gitkeep
+# Private, local-only material
+docs/private/
+docs/leave-behind/
+docs/Attest_Product_Walkthrough.*
 # Rust
 /target/
 # Cargo.lock is intentionally committed — this workspace contains binary crates.
