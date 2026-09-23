@@ -6,7 +6,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "echo \"workbench tests pending\"",
+    "test": "bun test src",
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium firefox webkit",
     "typecheck": "tsc --noEmit"
@@ -65,6 +65,7 @@
   "devDependencies": {
     "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.59.1",
+    "@types/bun": "^1.4.2",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",

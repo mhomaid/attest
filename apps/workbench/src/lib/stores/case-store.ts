@@ -9,9 +9,10 @@
  *  • One store entry per case (keyed by event_id / UUID).
  *  • Maximum 50 cases retained; oldest entries are evicted automatically.
  *  • Use `skipHydration: true` so SSR and client produce identical HTML.
- *    Call `useCaseStore.persist.rehydrate()` inside a useEffect to hydrate.
+ *    Components gate on `useCaseStoreHydrated()`, which rehydrates on mount.
  */
 
+import { useEffect, useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { OcsfEvent } from "@/lib/ocsf-to-alert";
@@ -62,6 +63,13 @@ export type CaseEntry = {
 };
 
 const MAX_CASES = 50;
+
+/** No-op storage used during SSR. Must be declared before the store is created. */
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
 
 type CaseStore = {
   cases: Record<string, CaseEntry>;
@@ -252,6 +260,22 @@ export const useCaseStore = create<CaseStore>()(
   ),
 );
 
+// ── Hydration ─────────────────────────────────────────────────────────────────
+
+const subscribeHydration = (onChange: () => void) =>
+  useCaseStore.persist.onFinishHydration(onChange);
+const getHydrated = () => useCaseStore.persist.hasHydrated();
+const getServerHydrated = () => false;
+
+/** Rehydrates from sessionStorage on first client mount; true once persisted cases are loaded. */
+export function useCaseStoreHydrated(): boolean {
+  const hydrated = useSyncExternalStore(subscribeHydration, getHydrated, getServerHydrated);
+  useEffect(() => {
+    if (!useCaseStore.persist.hasHydrated()) void useCaseStore.persist.rehydrate();
+  }, []);
+  return hydrated;
+}
+
 // ── Selectors ─────────────────────────────────────────────────────────────────
 
 // Stable fallbacks — NEVER return a new literal from a selector, it causes
@@ -272,7 +296,7 @@ function evictIfNeeded(
   cases: Record<string, CaseEntry>,
   incomingId: string,
 ): Record<string, CaseEntry> {
-  if (Object.keys(cases).length < MAX_CASES) return cases;
+  if (incomingId in cases || Object.keys(cases).length < MAX_CASES) return cases;
   // Remove the oldest entry that isn't the incoming case.
   const sorted = Object.entries(cases)
     .filter(([id]) => id !== incomingId)
@@ -283,10 +307,3 @@ function evictIfNeeded(
   delete next[toEvict[0]];
   return next;
 }
-
-/** No-op storage used during SSR. */
-const noopStorage = {
-  getItem: () => null,
-  setItem: () => undefined,
-  removeItem: () => undefined,
-};
