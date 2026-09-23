@@ -63,6 +63,7 @@ async fn post_triage(client: &Client, url: &str, alert: Value) -> Value {
 /// LLM path — it should stay on the fast classifier path.
 #[tokio::test]
 async fn phase4b_classifier_path_does_not_escalate() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
@@ -109,6 +110,7 @@ async fn phase4b_classifier_path_does_not_escalate() {
 /// P50 latency budget: 15 seconds (Qwen3.6-35B-A3B is fast).
 #[tokio::test]
 async fn phase4b_ood_alert_produces_hybrid_envelope() {
+    e2e_tests::require_e2e!();
     if !is_local_llm_available() {
         println!("SKIP: ATTEST_LLM_PROVIDER!=local — skipping live Unsloth test");
         return;
@@ -184,6 +186,7 @@ async fn phase4b_ood_alert_produces_hybrid_envelope() {
 /// is configured (the LLM must not be called on high-confidence paths).
 #[tokio::test]
 async fn phase4b_classifier_p99_unaffected_by_llm_config() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
@@ -239,6 +242,7 @@ async fn phase4b_classifier_p99_unaffected_by_llm_config() {
 #[tokio::test]
 #[ignore = "requires ANTHROPIC_API_KEY and a running orchestrator with ATTEST_LLM_PROVIDER=anthropic"]
 async fn phase4b_anthropic_escalation_produces_hybrid_envelope() {
+    e2e_tests::require_e2e!();
     if !anthropic_key_available() {
         println!("SKIP: ANTHROPIC_API_KEY not set");
         return;

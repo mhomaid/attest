@@ -378,24 +378,19 @@ impl TriageEngine {
         // 7. Append to log (non-blocking)
         let log = self.attestation_log.clone();
         let env_clone = envelope.clone();
-        let tp = self.trace_publisher.clone();
-        let agent_id_for_trace = self.agent.id.clone();
-        let ep_trace = execution_path.clone();
+        let trace = self.trace_publisher.scoped(
+            case_id,
+            &tenant_id,
+            action_id,
+            &self.agent.id,
+            execution_path.clone(),
+        );
         let verdict_for_trace = verdict.clone();
-        let tid_trace = tenant_id.clone();
         tokio::spawn(async move {
             if let Err(e) = log.append(&env_clone).await {
                 tracing::error!(error = %e, "failed to write attestation log");
             }
-            tp.emit(
-                case_id,
-                &tid_trace,
-                action_id,
-                agent_id_for_trace,
-                &ep_trace,
-                "envelope",
-                format!("{verdict_for_trace:?}"),
-            );
+            trace.step("envelope", format!("{verdict_for_trace:?}"));
         });
 
         // 8. Phase 6: attempt auto-close
@@ -431,24 +426,18 @@ impl TriageEngine {
             if let Some(ref ac_env) = result.envelope {
                 let log2 = self.attestation_log.clone();
                 let ac_clone = ac_env.clone();
-                let tp_ac = self.trace_publisher.clone();
-                let ag = self.agent.id.clone();
-                let ac_aid = ac_env.agent_action_id;
-                let cid = case_id;
-                let tid_ac = tenant_id.clone();
+                let trace = self.trace_publisher.scoped(
+                    case_id,
+                    &tenant_id,
+                    ac_env.agent_action_id,
+                    &self.agent.id,
+                    ExecutionPathKind::Classifier,
+                );
                 tokio::spawn(async move {
                     if let Err(e) = log2.append(&ac_clone).await {
                         tracing::error!(error = %e, "failed to write auto-close attestation log");
                     }
-                    tp_ac.emit(
-                        cid,
-                        &tid_ac,
-                        ac_aid,
-                        ag,
-                        &ExecutionPathKind::Classifier,
-                        "auto_close",
-                        "case_auto_closed",
-                    );
+                    trace.step("auto_close", "case_auto_closed");
                 });
             }
             result
@@ -474,14 +463,13 @@ impl TriageEngine {
                     "Triager outcome: verdict={verdict:?}, path={execution_path:?}, calibrated_confidence={calibrated:.3}, escalation_reason={escalation_reason:?}"
                 );
                 let t0_inv = Instant::now();
-                let inv_trace = TraceEmit {
-                    publisher: self.trace_publisher.clone(),
+                let inv_trace = self.trace_publisher.scoped(
                     case_id,
-                    tenant_id: tenant_id.clone(),
-                    agent_action_id: inv_action_id,
-                    agent_id: self.investigator_agent_id.clone(),
-                    execution_path: ExecutionPathKind::Llm,
-                };
+                    &tenant_id,
+                    inv_action_id,
+                    &self.investigator_agent_id,
+                    ExecutionPathKind::Llm,
+                );
                 match run_investigator_llm_loop(
                     client.as_ref().as_ref(),
                     &self.mcp_client,
@@ -527,25 +515,19 @@ impl TriageEngine {
                         self.signer.sign(&mut inv_env);
                         let log3 = self.attestation_log.clone();
                         let ic = inv_env.clone();
-                        let tp_inv = self.trace_publisher.clone();
-                        let inv_aid = inv_action_id;
-                        let inv_ag = self.investigator_agent_id.clone();
-                        let cid = case_id;
+                        let trace = self.trace_publisher.scoped(
+                            case_id,
+                            &tenant_id,
+                            inv_action_id,
+                            &self.investigator_agent_id,
+                            ExecutionPathKind::Llm,
+                        );
                         let vinv = inv.verdict.clone();
-                        let tid_inv = tenant_id.clone();
                         tokio::spawn(async move {
                             if let Err(e) = log3.append(&ic).await {
                                 tracing::error!(error = %e, "failed to write investigator attestation log");
                             }
-                            tp_inv.emit(
-                                cid,
-                                &tid_inv,
-                                inv_aid,
-                                inv_ag,
-                                &ExecutionPathKind::Llm,
-                                "envelope",
-                                format!("{vinv:?}"),
-                            );
+                            trace.step("envelope", format!("{vinv:?}"));
                         });
                         investigation = Some(InvestigationSummary {
                             action_id: inv_action_id,
@@ -760,15 +742,15 @@ impl TriageEngine {
         envelope.signed_at = finished_at;
         self.signer.sign(&mut envelope);
         self.attestation_log.append(&envelope).await?;
-        self.trace_publisher.emit(
-            case_id,
-            &tenant_id,
-            action_id,
-            &agent_row_id,
-            &ExecutionPathKind::HumanOverride,
-            "override",
-            format!("{:?}", envelope.verdict),
-        );
+        self.trace_publisher
+            .scoped(
+                case_id,
+                &tenant_id,
+                action_id,
+                &agent_row_id,
+                ExecutionPathKind::HumanOverride,
+            )
+            .step("override", format!("{:?}", envelope.verdict));
         Ok((action_id, envelope.timing.total_ms, finished_at))
     }
 }

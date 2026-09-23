@@ -119,13 +119,18 @@ impl FeatureExtractor {
     pub fn extract_from_json(alert: &serde_json::Value) -> AlertFeatures {
         // ── severity_score ────────────────────────────────────────────────────
         let severity_score = alert["severity_score"].as_f64().unwrap_or_else(|| {
-            match alert["severity"].as_str().unwrap_or("").to_lowercase().as_str() {
+            match alert["severity"]
+                .as_str()
+                .unwrap_or("")
+                .to_lowercase()
+                .as_str()
+            {
                 "informational" => 0.1,
-                "low"           => 0.3,
-                "medium"        => 0.5,
-                "high"          => 0.8,
+                "low" => 0.3,
+                "medium" => 0.5,
+                "high" => 0.8,
                 "critical" | "fatal" => 1.0,
-                _               => 0.5,
+                _ => 0.5,
             }
         });
 

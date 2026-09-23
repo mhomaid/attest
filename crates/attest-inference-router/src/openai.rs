@@ -435,7 +435,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_results_default_to_user_role_for_strict_openai_compat() {
+    async fn default_config_encodes_tool_results_as_user_for_strict_openai_compat() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
@@ -449,7 +449,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = OpenAiCompatClient::new(server.uri(), "test-model", None);
+        let client = OpenAiCompatClient::with_config(
+            server.uri(),
+            "test-model",
+            None,
+            OpenAiCompatConfig::default(),
+        );
         let req = ChatRequest::new(
             vec![
                 ChatMessage::user("run tool"),

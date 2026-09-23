@@ -138,8 +138,8 @@ async fn run_trace_writer(brokers: &str, topic: &str, database_url: &str) -> any
     ensure_trace_tables(&pg).await?;
     let group_id = std::env::var("ATTEST_TRACE_WRITER_GROUP_ID")
         .unwrap_or_else(|_| "attest-trace-writer".into());
-    let offset_reset = std::env::var("ATTEST_TRACE_WRITER_OFFSET_RESET")
-        .unwrap_or_else(|_| "latest".into());
+    let offset_reset =
+        std::env::var("ATTEST_TRACE_WRITER_OFFSET_RESET").unwrap_or_else(|_| "latest".into());
 
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", brokers)

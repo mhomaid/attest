@@ -53,6 +53,7 @@ async fn post_triage(client: &Client, url: &str, alert: Value) -> Value {
 /// pure classifier is <50ms but over HTTP we allow 500ms for CI).
 #[tokio::test]
 async fn triager_classifier_path_produces_attested_verdict() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
@@ -120,6 +121,7 @@ async fn triager_classifier_path_produces_attested_verdict() {
 /// must be escalated to the LLM stub path (EscalatedStub / Hybrid).
 #[tokio::test]
 async fn triager_classifier_escalates_when_out_of_distribution() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
@@ -173,6 +175,7 @@ async fn triager_classifier_escalates_when_out_of_distribution() {
 /// Latency test: 10 sequential known-pattern requests, P99 must be < 200ms over HTTP.
 #[tokio::test]
 async fn triager_classifier_p99_latency_under_200ms() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;

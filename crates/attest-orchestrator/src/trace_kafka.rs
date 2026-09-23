@@ -22,7 +22,7 @@ pub struct TraceEmit {
 
 impl TraceEmit {
     pub fn step(&self, step_kind: &str, summary: impl Into<String>) {
-        self.publisher.emit(
+        self.publisher.publish(TraceStep::new(
             self.case_id,
             &self.tenant_id,
             self.agent_action_id,
@@ -30,7 +30,7 @@ impl TraceEmit {
             &self.execution_path,
             step_kind,
             summary,
-        );
+        ));
     }
 }
 
@@ -95,26 +95,23 @@ impl TracePublisher {
         });
     }
 
-    /// Convenience for common envelope / loop emits.
-    pub fn emit(
+    /// Bind this publisher to one agent action; emit steps with [`TraceEmit::step`].
+    pub fn scoped(
         &self,
-        case_id: uuid::Uuid,
-        tenant_id: &str,
-        agent_action_id: uuid::Uuid,
+        case_id: Uuid,
+        tenant_id: impl Into<String>,
+        agent_action_id: Uuid,
         agent_id: impl Into<String>,
-        execution_path: &ExecutionPathKind,
-        step_kind: &str,
-        summary: impl Into<String>,
-    ) {
-        self.publish(TraceStep::new(
+        execution_path: ExecutionPathKind,
+    ) -> TraceEmit {
+        TraceEmit {
+            publisher: self.clone(),
             case_id,
-            tenant_id,
+            tenant_id: tenant_id.into(),
             agent_action_id,
-            agent_id,
+            agent_id: agent_id.into(),
             execution_path,
-            step_kind,
-            summary,
-        ));
+        }
     }
 }
 

@@ -54,6 +54,7 @@ async fn post_triage(client: &Client, url: &str, alert: Value) -> Value {
 /// (Phase 6 fields are always present regardless of path or verdict).
 #[tokio::test]
 async fn phase6_response_always_includes_case_state_and_shadow_check() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
@@ -114,6 +115,7 @@ async fn phase6_response_always_includes_case_state_and_shadow_check() {
 /// the verdict is actually benign.
 #[tokio::test]
 async fn phase6_benign_alert_auto_closes() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
@@ -159,6 +161,7 @@ async fn phase6_benign_alert_auto_closes() {
 /// `case_state: auto_closed`, regardless of confidence or verdict.
 #[tokio::test]
 async fn phase6_protected_principal_never_auto_closes() {
+    e2e_tests::require_e2e!();
     let client = Client::new();
     let url = orchestrator_url();
     wait_for_orchestrator(&client, &url).await;
