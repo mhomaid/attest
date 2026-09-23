@@ -20,10 +20,6 @@ use rdkafka::{
 };
 use std::time::{Duration, Instant};
 
-fn skip_if_no_e2e() -> bool {
-    std::env::var("ATTEST_E2E").as_deref() != Ok("1")
-}
-
 fn collector_url() -> String {
     std::env::var("COLLECTOR_URL").unwrap_or_else(|_| "http://localhost:4000".into())
 }
@@ -149,10 +145,7 @@ async fn count_arroyo_parquet(prefix: &str) -> Option<u64> {
 /// Test 1: Arroyo API is healthy.
 #[tokio::test]
 async fn arroyo_api_is_healthy() {
-    if skip_if_no_e2e() {
-        println!("ATTEST_E2E not set — skipping Arroyo E2E tests");
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = reqwest::Client::new();
     let url = format!("{}/api/v1/ping", arroyo_url());
@@ -187,9 +180,7 @@ async fn arroyo_api_is_healthy() {
 /// Test 2: Both SQL pipelines are deployed and in Running state.
 #[tokio::test]
 async fn arroyo_pipelines_are_running() {
-    if skip_if_no_e2e() {
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = reqwest::Client::new();
 
@@ -307,9 +298,7 @@ async fn arroyo_pipelines_are_running() {
 /// Test 3: ETL pipeline — Arroyo writes Parquet to the `arroyo/cloudtrail/` MinIO prefix.
 #[tokio::test]
 async fn arroyo_etl_pipeline_writes_parquet_to_minio() {
-    if skip_if_no_e2e() {
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = reqwest::Client::new();
     const EVENT_COUNT: usize = 30; // Enough to ensure data is written
@@ -345,9 +334,7 @@ async fn arroyo_etl_pipeline_writes_parquet_to_minio() {
 /// Test 4: CEP pipeline — login → S3 access within 5 min fires an alert on `alerts` topic.
 #[tokio::test]
 async fn arroyo_cep_pipeline_fires_sequence_alert() {
-    if skip_if_no_e2e() {
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = reqwest::Client::new();
     let test_user = format!(

@@ -66,9 +66,7 @@ async fn post_triage(client: &Client, url: &str, alert: Value) -> Value {
 /// gated on the escalated flag.
 #[tokio::test]
 async fn phase5_classifier_path_unaffected_by_guardrails() {
-    if std::env::var("ATTEST_E2E").is_err() {
-        return; // skip unless explicitly enabled
-    }
+    e2e_tests::require_e2e!();
 
     let client = Client::builder()
         .timeout(Duration::from_secs(60))
@@ -130,9 +128,7 @@ async fn phase5_classifier_path_unaffected_by_guardrails() {
 /// that would indicate Phase 4b/5 was not properly wired or the LLM is unavailable.
 #[tokio::test]
 async fn phase5_escalated_alerts_produce_valid_verdicts() {
-    if std::env::var("ATTEST_E2E").is_err() {
-        return;
-    }
+    e2e_tests::require_e2e!();
     if !guardrails_active() {
         eprintln!("SKIP: ATTEST_GUARDRAILS=off");
         return;
@@ -196,9 +192,7 @@ async fn phase5_escalated_alerts_produce_valid_verdicts() {
 /// Reads the latest attestation log entry from the running service.
 #[tokio::test]
 async fn phase5_attestation_log_has_guardrail_fields() {
-    if std::env::var("ATTEST_E2E").is_err() {
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = Client::builder()
         .timeout(Duration::from_secs(60))

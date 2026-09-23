@@ -16,10 +16,6 @@ use rdkafka::{
 };
 use std::time::{Duration, Instant};
 
-fn skip_if_no_e2e() -> bool {
-    std::env::var("ATTEST_E2E").as_deref() != Ok("1")
-}
-
 fn collector_url() -> String {
     std::env::var("COLLECTOR_URL").unwrap_or_else(|_| "http://localhost:4000".into())
 }
@@ -132,10 +128,7 @@ async fn poll_for_alert(
 
 #[tokio::test]
 async fn detection_fires_on_anomalous_geolocation() {
-    if skip_if_no_e2e() {
-        println!("ATTEST_E2E not set — skipping Phase 3 E2E test");
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
@@ -191,10 +184,7 @@ async fn detection_fires_on_anomalous_geolocation() {
 
 #[tokio::test]
 async fn cloudtrail_logging_disabled_fires_critical_alert() {
-    if skip_if_no_e2e() {
-        println!("ATTEST_E2E not set — skipping Phase 3 E2E test");
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))

@@ -42,7 +42,7 @@ fn workbench_url() -> String {
 }
 
 fn phase7_live_enabled() -> bool {
-    std::env::var("ATTEST_E2E").is_ok() && std::env::var("ATTEST_PHASE7_LIVE").is_ok()
+    e2e_tests::e2e_enabled() && std::env::var("ATTEST_PHASE7_LIVE").is_ok()
 }
 
 fn live_strict() -> bool {

@@ -36,10 +36,6 @@ fn control_plane_url() -> String {
     std::env::var("CONTROL_PLANE_URL").unwrap_or_else(|_| "http://localhost:8080".into())
 }
 
-fn skip_if_no_e2e() -> bool {
-    std::env::var("ATTEST_E2E").as_deref() != Ok("1")
-}
-
 /// POST a CloudTrail ConsoleLogin event to the collector.
 /// Returns the first event_id string on success.
 async fn post_cloudtrail_login(user: &str, region: &str) -> Option<String> {
@@ -116,10 +112,7 @@ async fn poll_baseline_region(user: &str, region: &str, timeout: Duration) -> bo
 
 #[tokio::test]
 async fn cloudtrail_event_appears_in_baseline_within_10s() {
-    if skip_if_no_e2e() {
-        eprintln!("Skipping E2E test: set ATTEST_E2E=1 to run");
-        return;
-    }
+    e2e_tests::require_e2e!();
 
     // 1. POST a ConsoleLogin for alice from us-west-2.
     let event_id = post_cloudtrail_login("alice@example.com", "us-west-2")
@@ -154,9 +147,7 @@ async fn cloudtrail_event_appears_in_baseline_within_10s() {
 
 #[tokio::test]
 async fn collector_healthz_is_ok() {
-    if skip_if_no_e2e() {
-        return;
-    }
+    e2e_tests::require_e2e!();
     let resp = reqwest::get(format!("{}/healthz", collector_url()))
         .await
         .expect("collector healthz failed");
@@ -165,9 +156,7 @@ async fn collector_healthz_is_ok() {
 
 #[tokio::test]
 async fn control_plane_healthz_is_ok() {
-    if skip_if_no_e2e() {
-        return;
-    }
+    e2e_tests::require_e2e!();
     let resp = reqwest::get(format!("{}/healthz", control_plane_url()))
         .await
         .expect("control-plane healthz failed");

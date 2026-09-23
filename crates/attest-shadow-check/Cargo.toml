@@ -6,4 +6,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-
+attest-attestation = { path = "../attest-attestation" }
+attest-policy-engine = { path = "../attest-policy-engine" }

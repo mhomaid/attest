@@ -13,6 +13,7 @@ attest-feature-extractor = { path = "../attest-feature-extractor" }
 attest-inference-router = { path = "../attest-inference-router" }
 attest-onnx-runtime = { path = "../attest-onnx-runtime" }
 attest-policy-engine = { path = "../attest-policy-engine" }
+attest-shadow-check = { path = "../attest-shadow-check" }
 attest-telemetry = { path = "../attest-telemetry" }
 axum = { workspace = true }
 chrono = { workspace = true }

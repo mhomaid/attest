@@ -290,8 +290,8 @@ smoke: ## Quick sanity check: cargo test + bun test + pytest
 	bun run test
 	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
 
-seed-data: ## Download Tier 1 datasets into MinIO and Postgres (see 08_Datasets_and_ML.md)
-	@echo "TODO: implement seed-data (08_Datasets_and_ML.md §2.1)"
+seed-data: ## Seed ~30k synthetic CloudTrail events (benign + attack scenarios) into the running stack
+	cargo run --release -p attest-load-gen -- --brokers localhost:19092 --rate 1000 --duration 30 --scenario mixed --tenants 3 --seed-baselines
 
 fmt: ## Format all Rust code
 	cargo fmt --all

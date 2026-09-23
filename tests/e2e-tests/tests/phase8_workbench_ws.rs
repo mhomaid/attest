@@ -22,7 +22,7 @@ struct WsClaims {
 }
 
 fn phase8_live_enabled() -> bool {
-    std::env::var("ATTEST_E2E").is_ok() && std::env::var("ATTEST_PHASE8_LIVE").is_ok()
+    e2e_tests::e2e_enabled() && std::env::var("ATTEST_PHASE8_LIVE").is_ok()
 }
 
 fn orchestrator_url() -> String {
