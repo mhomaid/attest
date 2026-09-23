@@ -200,6 +200,8 @@ jobs:
       - name: Install Chrome
         id: chrome
         uses: browser-actions/setup-chrome@v2
+        with:
+          install-dependencies: true
 
       - name: Run Lighthouse CI
         env:
@@ -209,4 +211,18 @@ jobs:
           BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
           PUPPETEER_EXECUTABLE_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: npx --yes @lhci/cli@0.14.0 autorun --config=apps/workbench/lighthouserc.cjs
+        run: |
+          if [ -z "$CHROME_PATH" ] || [ ! -x "$CHROME_PATH" ]; then
+            CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium-browser || true)"
+            export CHROME_PATH PUPPETEER_EXECUTABLE_PATH="$CHROME_PATH"
+          fi
+          echo "CHROME_PATH=$CHROME_PATH"
+          test -n "$CHROME_PATH" && test -x "$CHROME_PATH"
+          npx --yes @lhci/cli@0.14.0 autorun --config=apps/workbench/lighthouserc.cjs
+
+      - name: Lighthouse debug
+        if: failure()
+        run: |
+          ls -la .lighthouseci || true
+          ls -la /home/runner/.lighthouseci || true
+          find . -name 'lhr-*.json' -o -name 'assertion-results*' 2>/dev/null | head
