@@ -8,6 +8,11 @@ inference, asserted in CI); structurally novel ones escalate to an LLM through a
 MCP gateway. You can verify any envelope offline, and replay classifier decisions against the
 recorded features and model hash.
 
+**Status: early open-source prototype.** Single tenant, not a production service, no
+customers. The table below says what works today. The hosted demo at
+[attest.homaid.dev](https://attest.homaid.dev) is paused most of the time to save cost;
+the [verify example](#verify-and-replay-a-decision) needs only Rust.
+
 ```mermaid
 flowchart LR
   CT[CloudTrail / Okta / M365] --> Col[attest-collector]
@@ -47,7 +52,7 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
 | Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3/MinIO first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
 | Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers |
-| Hunter / responder / coordinator agents | Working | Coordinator is deterministic routing (`POST /v1/coordinate`). Hunter (`POST /v1/hunt`) and Responder (`POST /v1/respond`) are LLM paths with a signed-envelope fallback when no model is configured. Responder actions are shadow-checked and only *planned* against a real IdP/EDR. |
+| Hunter / responder / coordinator agents | Partial | Coordinator is deterministic routing (`POST /v1/coordinate`), not an LLM planner. Hunter (`POST /v1/hunt`) and Responder (`POST /v1/respond`) are LLM paths with a signed-envelope fallback when no model is configured; not yet exercised against a live model in CI. Responder actions are shadow-checked and only *recorded as planned*: nothing is executed against a real IdP/EDR. |
 | AADF / SIDM / eval harness | Planned | Design docs in `docs/` |
 | Helm / Terraform | Working | Reference chart in `infra/helm/attest`. AWS BYOC module in `infra/terraform/aws` (warm S3 bucket + optional Helm release onto an existing EKS cluster). |
 
@@ -72,9 +77,10 @@ cd apps/workbench && bun install && bun run dev
 ```
 
 Sign in at http://localhost:3000/login as `analyst@attest.local` / `analyst-dev`
-(or the public demo user `demo@attest.local` / `try-attest`). The homepage **Try a live
-verdict** button runs ingest → triage → verify for tenant `demo` against your local collector
-and orchestrator.
+(or the public demo user `demo@attest.local` / `try-attest`). The homepage **Run the demo**
+button runs ingest → triage → verify for tenant `demo` against your local collector and
+orchestrator. If either is down, the section says the demo is paused and points to the
+verify example instead.
 
 ```sh
 # Health

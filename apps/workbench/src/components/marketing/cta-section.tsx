@@ -38,7 +38,7 @@ export function CtaSection() {
                 onClick={() => analytics.marketing_cta_clicked("cta_try_demo")}
                 className="inline-flex items-center gap-2 rounded-md border border-border bg-background/60 px-4 py-2.5 text-sm font-medium"
               >
-                Try a live verdict
+                Try it yourself
               </a>
               <a
                 href="https://github.com/mhomaid/attest/issues/new"

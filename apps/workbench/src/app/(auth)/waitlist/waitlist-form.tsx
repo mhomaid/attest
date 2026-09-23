@@ -67,7 +67,7 @@ export function WaitlistForm() {
                 href="/#try"
                 className="mt-6 inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
               >
-                Try a live verdict
+                Try it yourself
               </Link>
             </div>
           ) : (

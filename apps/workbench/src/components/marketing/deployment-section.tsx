@@ -23,7 +23,8 @@ export function DeploymentSection() {
           Same six planes. You choose where they run.
         </h2>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-          We can host them, or the data plane can live in your VPC. Same containers either way.
+          Today you run them yourself. Hosted and in-your-VPC options are the plan. Same
+          containers either way.
         </p>
 
         <div className="mt-8 flex flex-wrap gap-1.5">

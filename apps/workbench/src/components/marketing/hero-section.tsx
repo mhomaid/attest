@@ -111,7 +111,7 @@ export function HeroSection() {
             onClick={() => analytics.marketing_cta_clicked("hero_try_demo")}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_-4px] shadow-primary/50 transition-opacity hover:opacity-90"
           >
-            Try a live verdict
+            Try it yourself
             <ArrowRight className="h-4 w-4" />
           </a>
           <a

@@ -1,8 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Loader2, Play } from "lucide-react";
-import { useState } from "react";
+import { ArrowDown, Loader2, Play } from "lucide-react";
+import { useEffect, useState } from "react";
 import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +36,22 @@ type DemoResult = {
 export function TryDemoSection() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DemoResult | null>(null);
+  const [live, setLive] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/demo/status", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ live: boolean }>)
+      .then((s) => {
+        if (!cancelled) setLive(s.live);
+      })
+      .catch(() => {
+        if (!cancelled) setLive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function run() {
     setBusy(true);
@@ -83,22 +99,50 @@ export function TryDemoSection() {
             down, this page says so instead of faking a pass.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={run}
-              disabled={busy}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {busy ? "Signing…" : "Run the demo"}
-            </button>
-            <p className="font-mono text-[11px] text-muted-foreground">
-              tenant=demo · scenario=geo_anomaly
-            </p>
-          </div>
+          {live === false ? (
+            <div className="mt-8 max-w-2xl rounded-xl border border-border/70 bg-card/40 p-5">
+              <p className="text-sm font-medium">
+                The hosted demo is paused to keep hosting costs down.
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Attest is an early open-source prototype, not a production service. The same
+                check runs on your machine in about two minutes with only Rust installed: verify
+                a signed log, delete one row, and watch{" "}
+                <code className="font-mono text-foreground">attest verify</code> fail.
+              </p>
+              <a
+                href="#quickstart"
+                onClick={() => analytics.marketing_cta_clicked("try_demo_paused_quickstart")}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
+              >
+                Check it yourself
+                <ArrowDown className="h-4 w-4" />
+              </a>
+            </div>
+          ) : (
+            <>
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={run}
+                  disabled={busy || live === null}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
+                >
+                  {busy || live === null ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  {busy ? "Signing…" : live === null ? "Checking demo…" : "Run the demo"}
+                </button>
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  tenant=demo · scenario=geo_anomaly
+                </p>
+              </div>
 
-          {result ? <DemoResultCard result={result} /> : null}
+              {result ? <DemoResultCard result={result} /> : null}
+            </>
+          )}
         </motion.div>
       </div>
     </section>

@@ -266,12 +266,20 @@ export type Deployment = {
 /** docs/02_Architecture.md §10 — product names, not the host vendor. */
 export const deployments: Deployment[] = [
   {
+    id: "self",
+    name: "Run it yourself",
+    status: "live",
+    controlIn: "customer",
+    dataIn: "customer",
+    note: "Today: clone the repo and run all six planes on Docker with make dev-up-all. Single tenant, for evaluation, not production.",
+  },
+  {
     id: "hosted",
     name: "We host it",
-    status: "live",
+    status: "planned",
     controlIn: "attest",
     dataIn: "attest",
-    note: "Today we run all six planes for you. Your events still land in open formats you can take with you.",
+    note: "Not offered yet. There is one single-tenant demo stack, usually paused to save cost. Your events would land in open formats you can take with you.",
   },
   {
     id: "byoc",
