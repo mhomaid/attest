@@ -246,8 +246,8 @@ The seven flows below define the product. Every other interaction is supporting 
    evidence (OCSF events, tool call results, model versions)
 4. Bundle signed with tenant-specific key and made available as encrypted
    ZIP delivered via Resend email or downloaded directly
-5. Auditor verifies offline using the standalone attestation-verifier CLI
-   (defined in 11_Repo_Structure.md tools/attestation-verifier/)
+5. Auditor verifies offline with `attest verify`
+   (crates/attest-cli; checks signatures, the hash chain, and optional model/prompt pins)
 6. Bundle is itself logged in the audit log with the auditor's identity
 ```
 

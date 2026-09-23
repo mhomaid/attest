@@ -8,34 +8,14 @@ use attest_attestation::{
     AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, LlmEvidence, Signer,
     Verdict,
 };
+
+pub use attest_attestation::{verify_log, LineResult, VerifyReport};
 use attest_feature_extractor::AlertFeatures;
 use attest_onnx_runtime::OnnxClassifier;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 const PREDICT_TOLERANCE: f32 = 1e-6;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LineResult {
-    pub action_id: Uuid,
-    pub ok: bool,
-    pub detail: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerifyReport {
-    pub results: Vec<LineResult>,
-}
-
-impl VerifyReport {
-    pub fn all_ok(&self) -> bool {
-        self.results.iter().all(|r| r.ok)
-    }
-
-    pub fn passed(&self) -> usize {
-        self.results.iter().filter(|r| r.ok).count()
-    }
-}
 
 /// Read an NDJSON attestation log. Blank lines are skipped.
 pub fn read_log(path: &Path) -> Result<Vec<AttestationEnvelope>> {
@@ -51,71 +31,6 @@ pub fn read_log(path: &Path) -> Result<Vec<AttestationEnvelope>> {
         out.push(env);
     }
     Ok(out)
-}
-
-/// Verify every envelope in `log` against `verifying_key_hex`.
-///
-/// Also fails when `agent_action_id` repeats, or — when any row has a
-/// `prev_hash` — when the hash chain is broken by a delete or reorder.
-pub fn verify_log(log: &[AttestationEnvelope], verifying_key_hex: &str) -> VerifyReport {
-    use std::collections::HashSet;
-
-    let chained = log.iter().any(|e| !e.prev_hash.is_empty());
-    let mut seen: HashSet<Uuid> = HashSet::new();
-    let mut expected_prev = attest_attestation::GENESIS_HASH.to_string();
-    let mut results = Vec::with_capacity(log.len());
-
-    for env in log {
-        if !seen.insert(env.agent_action_id) {
-            results.push(LineResult {
-                action_id: env.agent_action_id,
-                ok: false,
-                detail: "duplicate agent_action_id (replay / confused deputy)".into(),
-            });
-            continue;
-        }
-
-        let sig = match Signer::verify(env, verifying_key_hex) {
-            Ok(true) => None,
-            Ok(false) => Some("signature mismatch".into()),
-            Err(e) => Some(format!("invalid signature material: {e}")),
-        };
-        if let Some(detail) = sig {
-            results.push(LineResult {
-                action_id: env.agent_action_id,
-                ok: false,
-                detail,
-            });
-            if chained {
-                expected_prev = env.chain_hash();
-            }
-            continue;
-        }
-
-        if chained && env.prev_hash != expected_prev {
-            results.push(LineResult {
-                action_id: env.agent_action_id,
-                ok: false,
-                detail: format!(
-                    "chain break: prev_hash={} expected={}",
-                    env.prev_hash, expected_prev
-                ),
-            });
-            expected_prev = env.chain_hash();
-            continue;
-        }
-
-        results.push(LineResult {
-            action_id: env.agent_action_id,
-            ok: true,
-            detail: format!("pass ({})", path_label(&env.execution_path)),
-        });
-        if chained {
-            expected_prev = env.chain_hash();
-        }
-    }
-
-    VerifyReport { results }
 }
 
 /// Published artifact hashes every envelope must match (`--pin-model`, `--pin-prompt`).

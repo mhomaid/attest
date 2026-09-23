@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   try {
     const r = await fetch(`${COLLECTOR_URL}/ingest`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Tenant-Id": "default" },
       body: JSON.stringify(scenario.buildCloudTrail(params)),
       signal: AbortSignal.timeout(8_000),
     });

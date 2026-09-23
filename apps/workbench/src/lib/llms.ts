@@ -26,7 +26,8 @@ Attest was designed and built by Mohamed Homaid (https://github.com/mhomaid). So
 
 ## Pages
 
-- [Homepage](${SITE}/): verify demo, pipeline, guards, six-plane architecture, deployments
+- [Homepage](${SITE}/): live CloudTrail demo, verify animation, pipeline, guards, six-plane architecture, deployments
+- Public demo: POST ${SITE}/api/demo/run — ingest tenant=demo, triage, return the signed envelope and verify report
 - [Stack](${SITE}/stack): every component in the six planes and where it lives in the repo
 - [Source code](${REPO_URL})
 - [README and quick start](${REPO_URL}#quick-start)

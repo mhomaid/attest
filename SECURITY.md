@@ -61,6 +61,15 @@ must never be used in a deployment. Guards:
 
 Envelopes are Ed25519-signed over the SHA-256 of a sorted-key canonical JSON body. A valid
 signature proves the envelope was produced by a holder of the signing key and has not been
-modified since. It does **not** prove the log is complete: the append-only log is a local
-NDJSON file today, with no hash chaining or external anchoring, so deleting whole envelopes is
-not detectable yet. That is on the roadmap.
+modified since.
+
+Each envelope also carries `prev_hash`, the hash of the envelope before it. `attest verify`
+walks that chain, so deleting, reordering, or duplicating an envelope in the middle of a log
+fails verification. What the chain does **not** prove:
+
+- **Truncation at the tail.** Dropping the most recent envelopes leaves a valid, shorter chain.
+- **Rewrites by a key holder.** Anyone with `ATTEST_SIGNING_KEY` can re-sign a whole new chain.
+
+Both need the chain tip anchored somewhere the operator cannot rewrite (a transparency log or
+object-lock storage). That is on the roadmap. The optional S3 replica
+(`ATTEST_LOG_S3_BUCKET`) is for durability, not tamper evidence.

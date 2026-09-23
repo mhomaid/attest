@@ -8,6 +8,7 @@ mod error;
 mod http;
 mod normalizer;
 mod producer;
+mod s3;
 
 use std::sync::Arc;
 
@@ -22,14 +23,14 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable as _};
 
 use crate::{
-    http::{healthz, ingest, AppState, ErrorResponse, HealthResponse, IngestResponse},
+    http::{healthz, ingest, ingest_s3, AppState, ErrorResponse, HealthResponse, IngestResponse},
     normalizer::normalize_cloudtrail,
     producer::EventProducer,
 };
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(http::healthz, http::ingest),
+    paths(http::healthz, http::ingest, http::ingest_s3),
     components(schemas(IngestResponse, ErrorResponse, HealthResponse)),
     info(
         title = "Attest Collector",
@@ -101,6 +102,7 @@ async fn serve(producer: Arc<EventProducer>, tenant_id: &str, port: u16) -> anyh
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/ingest", post(ingest))
+        .route("/ingest/s3", post(ingest_s3))
         .with_state(state);
 
     let app = Router::new()

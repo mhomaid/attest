@@ -1,7 +1,24 @@
 # Contributing to Attest
 
-Thanks for taking a look. Attest is a solo-maintained, pre-1.0 project; issues and focused PRs
-are welcome. For anything larger than a bug fix, open an issue first so we can agree on scope.
+Thanks for taking a look. Attest is a solo-maintained, pre-1.0 project; testers, issues, and
+focused PRs are welcome. For anything larger than a bug fix, open an issue first so we can
+agree on scope.
+
+## Try it without cloning
+
+The hosted site (`https://attest.homaid.dev`) has a public demo on the homepage: **Try a live
+verdict**. That posts a CloudTrail `ConsoleLogin` for tenant `demo`, runs triage, and walks
+the hash chain. If collector or orchestrator is down, the page reports the failure instead of
+faking a pass.
+
+Workbench login on a seeded database:
+
+| Email | Password | Role |
+| ----- | -------- | ---- |
+| `demo@attest.local` | `try-attest` | public demo |
+| `analyst@attest.local` | `analyst-dev` | local analyst |
+
+Do not use these passwords outside local / hosted demo.
 
 ## Prerequisites
 

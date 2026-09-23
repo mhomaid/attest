@@ -9,7 +9,9 @@ repository.workspace = true
 anyhow = { workspace = true }
 chrono = { workspace = true }
 ed25519-dalek = { workspace = true }
+futures = "0.3"
 hex = { workspace = true }
+object_store = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

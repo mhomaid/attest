@@ -2,6 +2,7 @@ import { Shield } from "lucide-react";
 import Link from "next/link";
 
 const product = [
+  { href: "/#try", label: "Try" },
   { href: "/#verify", label: "Verify" },
   { href: "/#pipeline", label: "Pipeline" },
   { href: "/#guards", label: "Guards" },

@@ -27,7 +27,7 @@ The phases sum to a 90-day MVP. After MVP, the same discipline continues for GA 
 | Local dev | `docker-compose.yml` brings up Redpanda, RisingWave, Arroyo, ClickHouse, MinIO, Postgres, llama.cpp+Qwen, Python ML sidecar |
 | Seed data | `make seed-data` target downloads Tier 1 datasets (per `08_Datasets_and_ML.md` Section 2.1) into MinIO buckets |
 | Documentation site | Docusaurus or similar; this docs/ tree as the source |
-| Decision log | `docs/decisions/` with ADRs for every meaningful architectural choice |
+| Decision log | ADRs in `docs/` (e.g. `15_Streaming_Engine_Decision.md`) for every meaningful architectural choice |
 
 **Acceptance:** `make dev-up && make smoke` runs to green on a fresh laptop in under 10 minutes.
 

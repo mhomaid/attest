@@ -196,8 +196,7 @@ pub enum EvidenceBlock {
 }
 
 /// First envelope in a log, or the predecessor of a genesis row.
-pub const GENESIS_HASH: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
+pub const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Common signed wrapper shared by all three envelope variants.
 ///

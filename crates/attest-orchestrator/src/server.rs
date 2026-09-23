@@ -5,10 +5,14 @@
 //!   POST /triage            — run the Hybrid triage loop
 //!   GET  /agent             — return the loaded agent definition
 //!   GET  /metrics           — triage latency p50/p95/p99 over last 200 calls
+//!   GET  /v1/attestations           — envelope summaries
+//!   GET  /v1/attestations/export    — NDJSON
+//!   GET  /v1/attestations/verify    — walk the hash chain
+//!   GET  /v1/attestations/{id}      — one envelope
 //!   GET  /docs              — Scalar interactive API docs
 
 use crate::triage::{TriageEngine, TriageRequest};
-use attest_attestation::Verdict;
+use attest_attestation::{verify_log, Verdict};
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -81,6 +85,10 @@ pub struct CaseOverrideResponse {
         handle_agent_info,
         handle_metrics,
         handle_case_override,
+        handle_list_attestations,
+        handle_export_attestations,
+        handle_verify_attestations,
+        handle_get_attestation,
     ),
     components(schemas(
         HealthOk,
@@ -114,6 +122,10 @@ pub fn build_router(engine: TriageEngine) -> Router {
         .route("/agent", get(handle_agent_info))
         .route("/metrics", get(handle_metrics))
         .route("/v1/cases/{case_id}/override", post(handle_case_override))
+        .route("/v1/attestations", get(handle_list_attestations))
+        .route("/v1/attestations/export", get(handle_export_attestations))
+        .route("/v1/attestations/verify", get(handle_verify_attestations))
+        .route("/v1/attestations/{action_id}", get(handle_get_attestation))
         .with_state(state);
 
     Router::new()
@@ -303,6 +315,129 @@ async fn handle_metrics(State(state): State<OrchestratorState>) -> Json<serde_js
         "p95_ms": p95,
         "p99_ms": p99,
     }))
+}
+
+/// Summaries of every signed envelope currently on the log.
+#[utoipa::path(
+    get,
+    path = "/v1/attestations",
+    responses((status = 200, description = "Envelope summaries")),
+    tag = "attestations"
+)]
+async fn handle_list_attestations(State(state): State<OrchestratorState>) -> impl IntoResponse {
+    match state.engine.attestation_log().read_all().await {
+        Ok(envs) => {
+            let rows: Vec<serde_json::Value> = envs
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "agent_action_id": e.agent_action_id,
+                        "case_id": e.case_id,
+                        "tenant_id": e.tenant_id,
+                        "verdict": e.verdict,
+                        "execution_path": e.execution_path,
+                        "prev_hash": e.prev_hash,
+                        "signed_at": e.signed_at,
+                    })
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "envelopes": rows })),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+/// Download the log as NDJSON (same bytes `attest verify` consumes).
+#[utoipa::path(
+    get,
+    path = "/v1/attestations/export",
+    responses((status = 200, description = "NDJSON attestation log")),
+    tag = "attestations"
+)]
+async fn handle_export_attestations(State(state): State<OrchestratorState>) -> impl IntoResponse {
+    match state.engine.attestation_log().export_ndjson().await {
+        Ok(body) => (
+            StatusCode::OK,
+            [("content-type", "application/x-ndjson")],
+            body,
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// Walk the hash chain with the process verifying key.
+#[utoipa::path(
+    get,
+    path = "/v1/attestations/verify",
+    responses((status = 200, description = "Verify report")),
+    tag = "attestations"
+)]
+async fn handle_verify_attestations(State(state): State<OrchestratorState>) -> impl IntoResponse {
+    match state.engine.attestation_log().read_all().await {
+        Ok(envs) => {
+            let report = verify_log(&envs, &state.engine.verifying_key);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "ok": report.all_ok(),
+                    "passed": report.passed(),
+                    "total": report.results.len(),
+                    "verifying_key": state.engine.verifying_key,
+                    "durable": state.engine.attestation_log().has_object_store(),
+                    "results": report.results,
+                })),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+/// One signed envelope by `agent_action_id`.
+#[utoipa::path(
+    get,
+    path = "/v1/attestations/{action_id}",
+    params(("action_id" = Uuid, Path, description = "agent_action_id")),
+    responses(
+        (status = 200, description = "Signed envelope"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "attestations"
+)]
+async fn handle_get_attestation(
+    State(state): State<OrchestratorState>,
+    Path(action_id): Path<Uuid>,
+) -> impl IntoResponse {
+    match state.engine.attestation_log().read_all().await {
+        Ok(envs) => match envs.into_iter().find(|e| e.agent_action_id == action_id) {
+            Some(env) => {
+                (StatusCode::OK, Json(serde_json::to_value(&env).unwrap())).into_response()
+            }
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "envelope not found" })),
+            )
+                .into_response(),
+        },
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 fn percentiles(samples: &[u64]) -> (f64, f64, f64, usize) {

@@ -8,6 +8,7 @@ import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const links = [
+  { href: "/#try", label: "Try" },
   { href: "/#verify", label: "Verify" },
   { href: "/#pipeline", label: "Pipeline" },
   { href: "/#guards", label: "Guards" },

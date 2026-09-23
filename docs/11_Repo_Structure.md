@@ -98,7 +98,7 @@ crates/
 ├── attest-storage-clickhouse/   # ClickHouse client + Iceberg integration
 ├── attest-storage-iceberg/      # Iceberg writer / reader
 ├── attest-control-plane/        # Identity, tenancy, audit, billing
-├── attest-cli/                  # `attest` command for local dev (run-case, seed-agents, eval)
+├── attest-cli/                  # `attest verify` (signatures, hash chain, --pin-model/--pin-prompt) and `attest replay`
 └── attest-test-utils/           # Shared test fixtures, assertion helpers
 ```
 
@@ -188,8 +188,6 @@ infra/
 tools/
 ├── seed-data/                  # Downloads Tier 1 datasets to MinIO; `make seed-data`
 ├── ocsf-codegen/               # Generates Rust types from OCSF JSON schemas
-├── attestation-verifier/       # Standalone CLI to verify any envelope signature offline
-├── replay-cli/                 # Replays a past case from its attestation envelope
 ├── load-gen/                   # Generates synthetic alert volume for load tests
 └── red-team-runner/            # Triggers AgentDojo / InjecAgent scenarios against reference agents
 ```
@@ -209,9 +207,9 @@ docs/
 ├── 10_Build_Order.md
 ├── 11_Repo_Structure.md        # This document
 ├── 12_Workbench.md             # Workbench stack, UI/UX, flows, observability
-├── 15_Streaming_Engine_Decision.md  # ADR: Arroyo vs. Flink vs. RisingWave
-├── decisions/                  # ADRs (Architecture Decision Records)
-└── runbooks/                   # On-call runbooks (added during GA v1 hardening)
+├── 15_Streaming_Engine_Decision.md  # ADR: Arroyo vs. Flink vs. RisingWave (new ADRs sit alongside it)
+├── phases.md                   # What actually shipped, phase by phase
+└── runbooks/                   # On-call runbooks (planned)
 ```
 
 ## 13. `tests/` — cross-cutting integration

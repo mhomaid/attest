@@ -164,11 +164,27 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
           </p>
         </div>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          <Link href="/" className="underline underline-offset-4 hover:text-foreground">
-            Back to the homepage
-          </Link>
-        </p>
+        <div className="mt-6 space-y-2 text-center text-xs text-muted-foreground">
+          <p>
+            Public demo:{" "}
+            <code className="text-foreground">demo@attest.local</code> /{" "}
+            <code className="text-foreground">try-attest</code>
+          </p>
+          <p>
+            Local analyst:{" "}
+            <code className="text-foreground">analyst@attest.local</code> /{" "}
+            <code className="text-foreground">analyst-dev</code>
+          </p>
+          <p>
+            <Link href="/#try" className="underline underline-offset-4 hover:text-foreground">
+              Run a verdict without signing in
+            </Link>
+            {" · "}
+            <Link href="/" className="underline underline-offset-4 hover:text-foreground">
+              Homepage
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
