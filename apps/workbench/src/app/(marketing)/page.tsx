@@ -1,3 +1,4 @@
+import { AgentGuardsSection } from "@/components/marketing/agent-guards-section";
 import { CtaSection } from "@/components/marketing/cta-section";
 import { DetectionsCatalogSection } from "@/components/marketing/detections-catalog-section";
 import { HeroSection } from "@/components/marketing/hero-section";
@@ -13,6 +14,7 @@ export default function HomePage() {
       <main>
         <HeroSection />
         <PipelineSection />
+        <AgentGuardsSection />
         <DetectionsCatalogSection />
         <WorkbenchTourSection />
         <CtaSection />

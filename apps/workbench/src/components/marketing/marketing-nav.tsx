@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const links = [
   { href: "#verify", label: "Verify" },
   { href: "#pipeline", label: "Pipeline" },
+  { href: "#guards", label: "Guards" },
   { href: "#detections", label: "Detections" },
   { href: "#workbench", label: "Workbench" },
   { href: "https://github.com/mhomaid/attest", label: "GitHub" },
