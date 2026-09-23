@@ -10,6 +10,7 @@ node_modules/
 .next/
 out/
 coverage/
+!apps/workbench/src/app/workbench/coverage/
 playwright-report/
 test-results/
 apps/workbench/tests/e2e/.auth/
