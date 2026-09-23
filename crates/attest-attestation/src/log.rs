@@ -152,12 +152,18 @@ impl AttestationLog {
     }
 
     /// Read all envelopes (for testing / replay). Returns in append order.
+    ///
+    /// When an object store is configured it is the source of truth — a local
+    /// file can lag a successful durable write, or be missing after a restart.
     pub async fn read_all(&self) -> Result<Vec<AttestationEnvelope>> {
+        if let Some(sink) = &self.objects {
+            let from_obj = read_objects(sink).await?;
+            if !from_obj.is_empty() {
+                return Ok(from_obj);
+            }
+        }
         if self.path.exists() {
             return read_ndjson(&self.path).await;
-        }
-        if let Some(sink) = &self.objects {
-            return read_objects(sink).await;
         }
         Ok(vec![])
     }
@@ -207,6 +213,9 @@ impl AttestationLog {
         file.write_all(line.as_bytes())
             .await
             .context("failed to write attestation envelope")?;
+        file.sync_all()
+            .await
+            .context("failed to fsync attestation log")?;
         Ok(())
     }
 }
@@ -295,7 +304,32 @@ async fn read_objects(sink: &ObjectSink) -> Result<Vec<AttestationEnvelope>> {
             serde_json::from_slice(&bytes).context("envelope object JSON")?;
         out.push(env);
     }
-    Ok(out)
+    Ok(order_by_chain(out))
+}
+
+/// Walk `prev_hash` from genesis so a listing that is not lexical still
+/// reconstructs append order (needed after a restart).
+fn order_by_chain(envs: Vec<AttestationEnvelope>) -> Vec<AttestationEnvelope> {
+    if envs.len() <= 1 {
+        return envs;
+    }
+    use std::collections::HashMap;
+    let mut by_prev: HashMap<String, AttestationEnvelope> = HashMap::new();
+    let mut extra = Vec::new();
+    for env in envs {
+        if by_prev.insert(env.prev_hash.clone(), env.clone()).is_some() {
+            extra.push(env);
+        }
+    }
+    let mut out = Vec::with_capacity(by_prev.len());
+    let mut cursor = GENESIS_HASH.to_string();
+    while let Some(env) = by_prev.remove(&cursor) {
+        cursor = env.chain_hash();
+        out.push(env);
+    }
+    out.extend(by_prev.into_values());
+    out.extend(extra);
+    out
 }
 
 async fn read_ndjson(path: &Path) -> Result<Vec<AttestationEnvelope>> {
@@ -360,7 +394,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("attest-log-{}", Uuid::new_v4()));
         let path = dir.join("attestations.ndjson");
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let log = AttestationLog::with_object_store(&path, store.clone(), "attestations");
+        let prefix = format!("attestations-{}", Uuid::new_v4());
+        let log = AttestationLog::with_object_store(&path, store.clone(), prefix);
         let signer = Signer::generate();
 
         let mut a = dummy(&signer, GENESIS_HASH);
@@ -382,14 +417,15 @@ mod tests {
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
         let signer = Signer::generate();
 
-        let before = AttestationLog::with_object_store(&path, store.clone(), "attestations");
+        let prefix = format!("attestations-{}", Uuid::new_v4());
+        let before = AttestationLog::with_object_store(&path, store.clone(), &prefix);
         for _ in 0..3 {
             let mut env = dummy(&signer, "");
             before.sign_and_append(&signer, &mut env).await.unwrap();
         }
 
         tokio::fs::remove_file(&path).await.unwrap();
-        let after = AttestationLog::with_object_store(&path, store, "attestations");
+        let after = AttestationLog::with_object_store(&path, store, prefix);
         let mut next = dummy(&signer, "");
         after.sign_and_append(&signer, &mut next).await.unwrap();
 

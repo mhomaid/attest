@@ -6,7 +6,7 @@
 
 INSERT INTO auth_users (id, name, email, email_verified, image, created_at, updated_at)
 SELECT
-  '33333333-3333-4333-8333-333333333333',
+  '77777777-7777-4777-8777-777777777777',
   'Demo',
   'demo@attest.local',
   true,
@@ -33,7 +33,7 @@ INSERT INTO auth_accounts (
   updated_at
 )
 SELECT
-  '44444444-4444-4444-8444-444444444444',
+  '88888888-8888-4888-8888-888888888888',
   u.id,
   u.id,
   'credential',
