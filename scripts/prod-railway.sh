@@ -60,9 +60,21 @@ rw() {
   railway "$@" -p "$PROJECT" -e "$ENVIRONMENT"
 }
 
+is_kept() {
+  local name="$1" k
+  for k in "${KEEP[@]}"; do
+    [[ "$name" == "$k" ]] && return 0
+  done
+  return 1
+}
+
 down_services() {
   local svc
   for svc in "$@"; do
+    if is_kept "$svc"; then
+      echo "  ↳ skip $svc (must stay live)"
+      continue
+    fi
     echo "  → down $svc"
     rw down --service "$svc" --yes || true
   done

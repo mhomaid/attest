@@ -431,13 +431,13 @@ railway-logs: ## Tail runtime logs for all application services (runs in paralle
 	@railway logs --service arroyo-deployer &
 	@wait
 
-railway-stop: ## Stop all source-built app services (removes active deployments)
-	@echo "▶ Stopping app services…"
-	@for svc in collector control-plane storage-iceberg detection-runtime workbench arroyo-deployer orchestrator mcp-gateway calibration-sidecar; do \
+railway-stop: ## Stop app services except workbench (attest.homaid.dev must stay up)
+	@echo "▶ Stopping app services (workbench stays live)…"
+	@for svc in collector control-plane storage-iceberg detection-runtime arroyo-deployer orchestrator mcp-gateway calibration-sidecar; do \
 	  echo "  → stopping $$svc"; \
 	  railway down --service $$svc --yes 2>&1 | grep -v "^$$" || true; \
 	done
-	@echo "✔ App services stopped."
+	@echo "✔ App services stopped. Site: https://attest.homaid.dev"
 	@echo "  To stop infra (risingwave, redpanda, clickhouse, minio, arroyo) run: make railway-infra-stop"
 
 railway-infra-stop: ## Stop all infrastructure services (risingwave, redpanda, clickhouse, minio, arroyo)
