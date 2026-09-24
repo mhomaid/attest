@@ -15,7 +15,8 @@ Attest is a security product, so reports about it are taken seriously even while
 
 1. Preferred: use GitHub's private reporting —
    [Report a vulnerability](https://github.com/mhomaid/attest/security/advisories/new).
-2. Alternatively, email **mhomaid@gmail.com** with the subject `attest security`.
+2. Alternatively, email **Mohamed Homaid** at **mhomaid@gmail.com** with the subject
+   `attest security`.
 
 Include the affected component (crate or app), a description of the impact, and steps or a
 proof of concept. You should get an acknowledgement within 3 business days and a triage
