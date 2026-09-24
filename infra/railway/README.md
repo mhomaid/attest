@@ -92,7 +92,8 @@ Image") or with the CLI. These services do **not** need a public domain.
 
 ### MinIO
 
-- **Image**: `quay.io/minio/minio:latest`
+- **Image**: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` (MinIO no longer publishes
+  community images; `quay.io/minio/*` and `minio/*` pulls are denied)
 - **Start command**: `server /data --console-address :9001`
 - **Environment**:
   - `MINIO_ROOT_USER=<secret>`

@@ -1191,7 +1191,7 @@ Attest/
 | `redpanda` | `confluentinc/cp-kafka:7.7.8` (KRaft mode — named `redpanda` so no app env vars change) | `redpanda.railway.internal:9092` |
 | `risingwave` | `risingwavelabs/risingwave:latest` | `risingwave.railway.internal:4566` |
 | `clickhouse` | `clickhouse/clickhouse-server:latest` | `clickhouse.railway.internal:8123` |
-| `minio` | `quay.io/minio/minio:latest` | `minio.railway.internal:9000` |
+| `minio` | `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` | `minio.railway.internal:9000` |
 | `arroyo` | `ghcr.io/arroyosystems/arroyo:latest` | `arroyo.railway.internal:5115` |
 | `arroyo-deployer` | Dockerfile `infra/docker/arroyo-deployer.Dockerfile` | one-shot (exits after deploying pipelines) |
 | `collector` | Dockerfile `infra/docker/collector.Dockerfile` | — |

@@ -1,3 +1,5 @@
+name: attest
+
 services:
   redpanda:
     image: redpandadata/redpanda:latest
@@ -57,8 +59,13 @@ services:
       timeout: 5s
       retries: 10
 
+  # Official community `minio/minio` and `quay.io/minio/minio` pulls are denied.
+  # `quay.io/minio/aistor/minio` is the current official image, but it refuses
+  # every S3 call until a MinIO license is installed (`mc license update`).
+  # A public clone cannot ship that file, so local/dev uses the pgsty rebuild
+  # (same `minio`/`mc` binaries, no license gate).
   minio:
-    image: quay.io/minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -76,7 +83,7 @@ services:
 
   # Creates required MinIO buckets on first start.
   minio-init:
-    image: quay.io/minio/mc:latest
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy
@@ -324,8 +331,10 @@ services:
     ports:
       - "4300:4300"
     # Load `ATTEST_LLM_*`, guardrails, etc. from repo `.env`. Overrides below win (Compose merge order).
+    # Optional so a fresh clone starts without copying env.example first.
     env_file:
-      - .env
+      - path: .env
+        required: false
     extra_hosts:
       # Linux: map host gateway (Docker Desktop already provides host.docker.internal on Mac/Win).
       - "host.docker.internal:host-gateway"
@@ -371,7 +380,8 @@ services:
     ports:
       - "4500:4500"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       ATTEST_WS_GATEWAY_PORT: "4500"
       KAFKA_BROKERS: redpanda:9092
