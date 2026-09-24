@@ -4,19 +4,18 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 2.13"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = ">= 2.27"
+      version = ">= 5.0, < 7.0"
     }
   }
 }
 
 provider "aws" {
   region = var.region
+
+  default_tags {
+    tags = {
+      Product   = "attest"
+      Component = "warm-tier"
+    }
+  }
 }

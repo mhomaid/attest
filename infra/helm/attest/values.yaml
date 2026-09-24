@@ -1,46 +1,88 @@
-# Reference values for a self-hosted / air-gapped Attest install.
-# Same container artifacts as docker-compose / Railway.
+# Reference values. Same container artifacts as Compose / Railway.
+# This chart does not install Redpanda, RisingWave, ClickHouse, or MinIO.
 
 image:
   registry: ghcr.io/mhomaid
-  tag: latest
+  tag: "0.1.0"
   pullPolicy: IfNotPresent
+  pullSecrets: []
 
 replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # eks.amazonaws.com/role-arn: arn:aws:iam::123:role/attest-warm-irsa
+
+# Rust images still run as root (see infra/docker). Workbench is uid 1001.
+# Set runAsNonRoot: true only after those Dockerfiles gain a USER.
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
 ingress:
   enabled: false
   className: nginx
   host: attest.example.com
+  annotations: {}
+  tls: []
 
-# Object store for Iceberg warm tier (MinIO in-cluster or customer S3).
 objectStore:
-  endpoint: http://minio:9000
+  # Empty = AWS default endpoint + IRSA. Set for MinIO or GCS HMAC
+  # (https://storage.googleapis.com).
+  endpoint: ""
   bucket: attest-warm
   region: us-east-1
-  existingSecret: "" # keys: access-key, secret-key
+  # When true, do not mount static S3 keys (IRSA / instance role).
+  useIrsa: false
+  existingSecret: ""
+  # Used only when existingSecret is empty and useIrsa is false (local MinIO).
+  accessKey: ""
+  secretKey: ""
 
-# Set in the environment / a sealed secret. Empty → ephemeral signing key (dev only).
+# Hex Ed25519 seed. Empty → orchestrator mints an ephemeral key (dev only).
 signingKey: ""
 
 services:
   collector:
     enabled: true
     port: 4000
+    healthPath: /healthz
   controlPlane:
     enabled: true
     port: 8080
+    healthPath: /healthz
   orchestrator:
     enabled: true
     port: 4300
+    healthPath: /healthz
   mcpGateway:
     enabled: true
     port: 4242
+    healthPath: /healthz
   storageIceberg:
     enabled: true
+    port: null
+    healthPath: ""
   workbench:
     enabled: true
     port: 3000
+    healthPath: /api/healthz
 
 env:
   TENANT_ID: default

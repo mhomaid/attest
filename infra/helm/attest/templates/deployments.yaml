@@ -1,6 +1,9 @@
 {{- $full := include "attest.fullname" . -}}
 {{- $labels := include "attest.labels" . -}}
-{{- $secret := default (printf "%s-object-store" $full) .Values.objectStore.existingSecret -}}
+{{- $selectors := include "attest.selectorLabels" . -}}
+{{- $sa := include "attest.serviceAccountName" . -}}
+{{- $secret := include "attest.objectStoreSecret" . -}}
+{{- $signingSecret := ternary (printf "%s-signing" $full) $secret .Values.objectStore.useIrsa -}}
 {{- range $name, $svc := dict
   "collector" .Values.services.collector
   "control-plane" .Values.services.controlPlane
@@ -22,18 +25,29 @@ spec:
   replicas: {{ $.Values.replicaCount }}
   selector:
     matchLabels:
+      {{- $selectors | nindent 6 }}
       app.kubernetes.io/component: {{ $name }}
-      app.kubernetes.io/instance: {{ $.Release.Name }}
   template:
     metadata:
       labels:
         {{- $labels | nindent 8 }}
         app.kubernetes.io/component: {{ $name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
     spec:
+      serviceAccountName: {{ $sa }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      {{- with $.Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ $name }}
           image: {{ $.Values.image.registry }}/attest-{{ $name }}:{{ $.Values.image.tag }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
           {{- if $svc.port }}
           ports:
             - containerPort: {{ $svc.port }}
@@ -43,6 +57,7 @@ spec:
             - configMapRef:
                 name: {{ $full }}-env
           env:
+            {{- if not $.Values.objectStore.useIrsa }}
             - name: S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -53,20 +68,39 @@ spec:
                 secretKeyRef:
                   name: {{ $secret }}
                   key: secret-key
+            {{- end }}
             - name: ATTEST_SIGNING_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ $secret }}
+                  name: {{ $signingSecret }}
                   key: signing-key
                   optional: true
-          {{- if $svc.port }}
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+          {{- if and $svc.port $svc.healthPath }}
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: {{ $svc.healthPath }}
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: {{ $svc.healthPath }}
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
           {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
 {{- if $svc.port }}
 ---
 apiVersion: v1
@@ -75,10 +109,11 @@ metadata:
   name: {{ $full }}-{{ $name }}
   labels:
     {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
 spec:
   selector:
+    {{- $selectors | nindent 4 }}
     app.kubernetes.io/component: {{ $name }}
-    app.kubernetes.io/instance: {{ $.Release.Name }}
   ports:
     - port: {{ $svc.port }}
       targetPort: http

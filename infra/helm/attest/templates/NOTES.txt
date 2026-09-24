@@ -1,0 +1,12 @@
+Attest {{ .Chart.AppVersion }} — reference install.
+
+This chart starts the Attest binaries only. You still need Kafka/Redpanda,
+RisingWave, ClickHouse, and an S3-compatible bucket reachable at:
+
+  {{ .Values.objectStore.endpoint }}  bucket={{ .Values.objectStore.bucket }}
+
+Workbench (if enabled):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "attest.fullname" . }}-workbench {{ .Values.services.workbench.port }}:{{ .Values.services.workbench.port }}
+
+Signing key: {{ if .Values.signingKey }}set{{ else }}empty — orchestrator will mint an ephemeral key (envelopes will not verify after a restart){{ end }}
+IRSA: {{ .Values.objectStore.useIrsa }}

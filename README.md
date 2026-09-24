@@ -165,7 +165,7 @@ path. No JVM in the data plane. Open table formats so you can leave with the dat
 | Sign / verify | Ed25519 · SHA-256 · `attest` CLI | Offline check; classifier replay |
 | UI | Next.js 16 · Bun · Zustand · Better Auth | Marketing site + SOC workbench |
 | Local | Docker Compose (`attest`) | `make dev-up-all` |
-| Ship | GitHub Actions · Helm · Terraform AWS | Reference, not a managed fleet |
+| Ship | GitHub Actions · Helm · Terraform (AWS / GCP / Azure) | Store modules + chart. Does not create the cluster. |
 
 Decision record: [docs/07_Stack_Revised.md](docs/07_Stack_Revised.md) and
 [docs/15_Streaming_Engine_Decision.md](docs/15_Streaming_Engine_Decision.md) (Arroyo vs Flink
@@ -359,9 +359,9 @@ Make a clone something you would leave running, not just demo.
 |---|---|---|
 | Authenticated ingest | Per-tenant tokens on the collector | Private-network only; no ingest auth |
 | Iceberg REST catalog | Restart-safe catalog that is not `MemoryCatalog` + `version-hint.text` | Snapshot reload works; catalog is local |
-| Pinned service images | Compose / Helm tags that do not float | Some infra images are still `:latest` |
+| Pinned service images | Compose / Helm tags that do not float | Compose infra images are pinned. App images are still built from source. |
 | S3-native object store path | Documented Garage / S3 / R2 swap; RisingWave `hummock+s3://` | Local default is a pinned MinIO rebuild |
-| Helm + Terraform beyond the reference | Same chart onto an existing EKS cluster with fewer manual steps | Chart and AWS module exist; they do not create the cluster |
+| Helm + Terraform beyond the reference | Same chart onto an existing EKS cluster with fewer manual steps | Store modules for AWS, GCP, and Azure. Helm is `k8s-release` / `eks-release`. None of them create the cluster. |
 
 ### 3 — Broader SOC surface
 

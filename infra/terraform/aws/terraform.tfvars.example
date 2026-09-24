@@ -1,0 +1,8 @@
+region = "us-east-1"
+name   = "attest"
+
+# Leave empty: terraform plan/apply only creates the bucket + IAM policy.
+# Fill both to also create an IRSA role for the Helm ServiceAccount.
+# oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EX"
+# oidc_provider_url = "oidc.eks.us-east-1.amazonaws.com/id/EX"
+# irsa_namespace    = "attest"

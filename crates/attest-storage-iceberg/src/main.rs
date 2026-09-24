@@ -27,17 +27,18 @@ struct Cli {
     #[arg(long, env = "KAFKA_GROUP_ID", default_value = "attest-iceberg-writer")]
     kafka_group_id: String,
 
-    /// S3 / MinIO endpoint URL. Empty + file warehouse → local Iceberg only.
-    #[arg(long, env = "S3_ENDPOINT", default_value = "http://minio:9000")]
+    /// S3-compatible endpoint. Empty = AWS default (IRSA / instance role).
+    #[arg(long, env = "S3_ENDPOINT", default_value = "")]
     s3_endpoint: String,
 
     #[arg(long, env = "S3_BUCKET", default_value = "attest-warm")]
     s3_bucket: String,
 
-    #[arg(long, env = "S3_ACCESS_KEY", default_value = "minioadmin")]
+    /// Static keys. Empty = default AWS credential chain (IRSA).
+    #[arg(long, env = "S3_ACCESS_KEY", default_value = "")]
     s3_access_key: String,
 
-    #[arg(long, env = "S3_SECRET_KEY", default_value = "minioadmin")]
+    #[arg(long, env = "S3_SECRET_KEY", default_value = "")]
     s3_secret_key: String,
 
     #[arg(long, env = "S3_REGION", default_value = "us-east-1")]

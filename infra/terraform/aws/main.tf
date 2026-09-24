@@ -1,11 +1,16 @@
 data "aws_caller_identity" "current" {}
 
+locals {
+  bucket_name = "${var.name}-warm-${data.aws_caller_identity.current.account_id}"
+  irsa        = var.oidc_provider_arn != "" && var.oidc_provider_url != ""
+}
+
 resource "aws_s3_bucket" "warm" {
-  bucket = "${var.name}-warm-${data.aws_caller_identity.current.account_id}"
+  bucket        = local.bucket_name
+  force_destroy = var.force_destroy
 
   tags = {
-    Product = "attest"
-    Tier    = "iceberg-warm"
+    Tier = "iceberg-warm"
   }
 }
 
@@ -22,6 +27,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "warm" {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -33,76 +39,105 @@ resource "aws_s3_bucket_public_access_block" "warm" {
   restrict_public_buckets = true
 }
 
-data "aws_iam_policy_document" "warm" {
+resource "aws_s3_bucket_ownership_controls" "warm" {
+  bucket = aws_s3_bucket.warm.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "warm" {
+  bucket = aws_s3_bucket.warm.id
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+data "aws_iam_policy_document" "tls_only" {
   statement {
-    sid     = "AttestIcebergReadWrite"
-    effect  = "Allow"
-    actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
     resources = [
       aws_s3_bucket.warm.arn,
       "${aws_s3_bucket.warm.arn}/*",
     ]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "warm" {
+  bucket = aws_s3_bucket.warm.id
+  policy = data.aws_iam_policy_document.tls_only.json
+}
+
+data "aws_iam_policy_document" "warm" {
+  statement {
+    sid       = "ListBucket"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = [aws_s3_bucket.warm.arn]
+  }
+
+  statement {
+    sid       = "ObjectReadWrite"
+    effect    = "Allow"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
+    resources = ["${aws_s3_bucket.warm.arn}/*"]
   }
 }
 
 resource "aws_iam_policy" "warm" {
-  name   = "${var.name}-iceberg-warm"
-  policy = data.aws_iam_policy_document.warm.json
+  name        = "${var.name}-iceberg-warm"
+  description = "Iceberg / collector read-write on the Attest warm bucket."
+  policy      = data.aws_iam_policy_document.warm.json
 }
 
-# Optional: install the reference Helm chart onto an existing EKS cluster.
-data "aws_eks_cluster" "this" {
-  count = var.cluster_name == "" ? 0 : 1
-  name  = var.cluster_name
-}
+data "aws_iam_policy_document" "irsa_assume" {
+  count = local.irsa ? 1 : 0
 
-data "aws_eks_cluster_auth" "this" {
-  count = var.cluster_name == "" ? 0 : 1
-  name  = var.cluster_name
-}
-
-provider "kubernetes" {
-  alias                  = "eks"
-  host                   = try(data.aws_eks_cluster.this[0].endpoint, null)
-  cluster_ca_certificate = try(base64decode(data.aws_eks_cluster.this[0].certificate_authority[0].data), null)
-  token                  = try(data.aws_eks_cluster_auth.this[0].token, null)
-}
-
-provider "helm" {
-  alias = "eks"
-  kubernetes {
-    host                   = try(data.aws_eks_cluster.this[0].endpoint, null)
-    cluster_ca_certificate = try(base64decode(data.aws_eks_cluster.this[0].certificate_authority[0].data), null)
-    token                  = try(data.aws_eks_cluster_auth.this[0].token, null)
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [var.oidc_provider_arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${var.oidc_provider_url}:sub"
+      values   = ["system:serviceaccount:${var.irsa_namespace}:${var.irsa_service_account}"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${var.oidc_provider_url}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
   }
 }
 
-resource "helm_release" "attest" {
-  count      = var.cluster_name == "" ? 0 : 1
-  provider   = helm.eks
-  name       = "attest"
-  namespace  = var.namespace
-  chart      = "${path.module}/../../helm/attest"
-  create_namespace = true
+resource "aws_iam_role" "irsa" {
+  count              = local.irsa ? 1 : 0
+  name               = "${var.name}-warm-irsa"
+  assume_role_policy = data.aws_iam_policy_document.irsa_assume[0].json
+}
 
-  set {
-    name  = "image.tag"
-    value = var.image_tag
-  }
-  set {
-    name  = "objectStore.bucket"
-    value = aws_s3_bucket.warm.id
-  }
-  set {
-    name  = "objectStore.region"
-    value = var.region
-  }
-  set {
-    name  = "env.ICEBERG_WAREHOUSE"
-    value = "s3://${aws_s3_bucket.warm.id}"
-  }
-  set_sensitive {
-    name  = "signingKey"
-    value = var.signing_key
-  }
+resource "aws_iam_role_policy_attachment" "irsa" {
+  count      = local.irsa ? 1 : 0
+  role       = aws_iam_role.irsa[0].name
+  policy_arn = aws_iam_policy.warm.arn
 }

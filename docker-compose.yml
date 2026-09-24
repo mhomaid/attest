@@ -2,7 +2,7 @@ name: attest
 
 services:
   redpanda:
-    image: redpandadata/redpanda:latest
+    image: redpandadata/redpanda:v26.2.3
     command:
       - redpanda
       - start
@@ -33,7 +33,7 @@ services:
       retries: 20
 
   redpanda-console:
-    image: redpandadata/console:latest
+    image: redpandadata/console:v2.8.16
     environment:
       KAFKA_BROKERS: redpanda:9092
     ports:
@@ -100,7 +100,7 @@ services:
     restart: on-failure
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:25.8
     environment:
       # Required: without these the entrypoint disables all network access.
       CLICKHOUSE_USER: default
@@ -131,8 +131,8 @@ services:
       - tempo-data:/var/tempo
 
   risingwave:
-    image: risingwavelabs/risingwave:latest
-    command: single-node
+    image: risingwavelabs/risingwave:v3.0.4
+    command: single_node
     environment:
       # Durable state: Hummock SST files stored in MinIO; catalog/meta stored on local volume.
       RW_STATE_STORE: hummock+minio://minioadmin:minioadmin@minio:9000/risingwave
@@ -153,7 +153,7 @@ services:
       start_period: 10s
 
   arroyo:
-    image: ghcr.io/arroyosystems/arroyo:latest
+    image: ghcr.io/arroyosystems/arroyo:0.14.1
     ports:
       - "5115:5115"
     environment:
@@ -187,7 +187,7 @@ services:
   # One-shot service: waits for Arroyo to be healthy then deploys all SQL pipelines.
   # Uses the same Arroyo image — has bash, python3, and curl already available.
   arroyo-pipeline-deployer:
-    image: ghcr.io/arroyosystems/arroyo:latest
+    image: ghcr.io/arroyosystems/arroyo:0.14.1
     entrypoint: ["/bin/bash", "/usr/local/bin/deploy-pipelines.sh"]
     environment:
       ARROYO_API: http://arroyo:5115

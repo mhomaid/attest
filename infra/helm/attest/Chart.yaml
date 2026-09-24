@@ -1,6 +1,16 @@
 apiVersion: v2
 name: attest
-description: Attest control + data plane (self-hosted / air-gapped reference)
+description: Reference chart for a self-hosted Attest control + data plane. Does not install Kafka, RisingWave, ClickHouse, or object storage.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+home: https://github.com/mhomaid/attest
+sources:
+  - https://github.com/mhomaid/attest
+keywords:
+  - security
+  - streaming
+  - attestation
+maintainers:
+  - name: Mohamed Homaid
+    url: https://github.com/mhomaid

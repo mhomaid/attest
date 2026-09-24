@@ -1,0 +1,9 @@
+location = "eastus"
+name     = "attest"
+
+# Leave empty to create resource group {name}-warm.
+# resource_group_name = "rg-attest"
+
+# Optional: AKS OIDC issuer for workload identity.
+# k8s_oidc_issuer_url = "https://eastus.oic.prod-aks.azure.com/..../"
+# k8s_namespace       = "attest"

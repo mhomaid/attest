@@ -1,0 +1,7 @@
+project  = "my-gcp-project"
+location = "us-central1"
+name     = "attest"
+
+# Optional: bind Workload Identity to the Helm ServiceAccount.
+# k8s_namespace       = "attest"
+# k8s_service_account = "attest"

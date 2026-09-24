@@ -11,7 +11,9 @@ data:
   RISINGWAVE_HOST: {{ .Values.env.RISINGWAVE_HOST | quote }}
   RISINGWAVE_PORT: {{ .Values.env.RISINGWAVE_PORT | quote }}
   ICEBERG_WAREHOUSE: {{ .Values.env.ICEBERG_WAREHOUSE | quote }}
+  {{- if .Values.objectStore.endpoint }}
   S3_ENDPOINT: {{ .Values.objectStore.endpoint | quote }}
+  {{- end }}
   S3_BUCKET: {{ .Values.objectStore.bucket | quote }}
   S3_REGION: {{ .Values.objectStore.region | quote }}
   TABLE_PREFIX: cloudtrail

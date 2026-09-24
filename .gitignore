@@ -22,6 +22,18 @@ docs/social/*
 docs/private/
 docs/leave-behind/
 docs/Attest_Product_Walkthrough.*
+# Terraform plugin cache (lock files stay committed)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # Rust
 /target/
 # Cargo.lock is intentionally committed — this workspace contains binary crates.

@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -345,13 +345,13 @@ railway-infra: ## Add infrastructure services (Kafka/KRaft, RisingWave, ClickHou
 	@echo "▶ Adding Kafka (Confluent KRaft — named 'redpanda' so app env vars stay unchanged)…"
 	railway add --service redpanda --image confluentinc/cp-kafka:7.7.8 || true
 	@echo "▶ Adding RisingWave…"
-	railway add --service risingwave --image risingwavelabs/risingwave:latest || true
+	railway add --service risingwave --image risingwavelabs/risingwave:v3.0.4 || true
 	@echo "▶ Adding ClickHouse…"
-	railway add --service clickhouse --image clickhouse/clickhouse-server:latest || true
+	railway add --service clickhouse --image clickhouse/clickhouse-server:25.8 || true
 	@echo "▶ Adding MinIO…"
 	railway add --service minio --image pgsty/minio:RELEASE.2026-08-04T00-00-00Z || true
 	@echo "▶ Adding Arroyo…"
-	railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:latest || true
+	railway add --service arroyo --image ghcr.io/arroyosystems/arroyo:0.14.1 || true
 	@echo ""
 	@echo "✔ Infrastructure services created."
 	@echo "  Run 'make railway-infra-config' to configure ports, start commands, env vars."
@@ -454,9 +454,9 @@ railway-infra-deploy: ## ⭐ Deploy infra services — handles first-deploy and 
 	@echo "  Tries redeploy first; falls back to recreate only for stateless services."
 	@for pair in \
 	    "redpanda confluentinc/cp-kafka:7.7.8" \
-	    "risingwave risingwavelabs/risingwave:latest" \
-	    "clickhouse clickhouse/clickhouse-server:latest" \
-	    "arroyo ghcr.io/arroyosystems/arroyo:latest"; do \
+	    "risingwave risingwavelabs/risingwave:v3.0.4" \
+	    "clickhouse clickhouse/clickhouse-server:25.8" \
+	    "arroyo ghcr.io/arroyosystems/arroyo:0.14.1"; do \
 	  svc=$$(echo $$pair | cut -d' ' -f1); \
 	  img=$$(echo $$pair | cut -d' ' -f2); \
 	  echo "  → $$svc"; \
@@ -503,6 +503,26 @@ prod: ## Railway: make prod up | make prod down | make prod status
 	  exit 2; \
 	fi
 	@./scripts/prod-railway.sh $(PROD_ACTION)
+
+helm-template: ## Render and lint the reference Helm chart
+	helm lint infra/helm/attest -f infra/helm/attest/ci-values.yaml
+	helm template attest infra/helm/attest -n attest -f infra/helm/attest/ci-values.yaml >/dev/null
+	helm template attest infra/helm/attest -n attest \
+	  --set objectStore.useIrsa=true \
+	  --set signingKey=00 \
+	  --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::123:role/attest >/dev/null
+	@echo "✔ helm lint + template (static keys and IRSA)"
+
+tf-validate: ## terraform fmt + validate aws/gcp/azure store modules (no cloud credentials)
+	terraform fmt -check -recursive infra/terraform
+	@for root in aws gcp azure; do \
+	  echo "── terraform/$$root ──"; \
+	  (cd infra/terraform/$$root && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; \
+	done
+	@for root in eks-release k8s-release; do \
+	  echo "── terraform/$$root ──"; \
+	  (cd infra/terraform/$$root && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; \
+	done
 
 railway-full-deploy: ## ⭐ Full ordered deploy: infra first, wait 90s, then app services
 	@echo "════════════════════════════════════════════════════════"

@@ -28,13 +28,21 @@ pub struct ObjectStoreStorageFactory {
 
 impl ObjectStoreStorageFactory {
     pub fn build_store(&self) -> Result<Arc<dyn ObjectStore>> {
-        let store = object_store::aws::AmazonS3Builder::new()
-            .with_endpoint(&self.endpoint)
+        let mut builder = object_store::aws::AmazonS3Builder::from_env()
             .with_bucket_name(&self.bucket)
-            .with_access_key_id(&self.access_key)
-            .with_secret_access_key(&self.secret_key)
-            .with_region(&self.region)
-            .with_allow_http(true)
+            .with_region(&self.region);
+        if !self.endpoint.is_empty() {
+            builder = builder.with_endpoint(&self.endpoint);
+            if self.endpoint.starts_with("http://") {
+                builder = builder.with_allow_http(true);
+            }
+        }
+        if !self.access_key.is_empty() {
+            builder = builder
+                .with_access_key_id(&self.access_key)
+                .with_secret_access_key(&self.secret_key);
+        }
+        let store = builder
             .build()
             .map_err(|e| Error::new(ErrorKind::Unexpected, format!("s3 store: {e}")))?;
         Ok(Arc::new(store))
