@@ -1,0 +1,13 @@
+---
+description: Core rules for every change in the Attest repo
+alwaysApply: true
+---
+
+- Work from `TASKS.md`. Before writing code, name the task ID you are working on. If there is no task, use the `attest-plan-intake` skill to create one first.
+- Use the `attest-work-loop` skill for any task. Do not report a task as done until `.cursor/skills/attest-verify/scripts/verify.sh` exits 0 and the evidence is written under the task in `TASKS.md`.
+- Write the failing test first, then the code.
+- Never weaken `attest-attestation`, `attest-policy-engine` or gateway authorization to get a test green. Add a negative test with every change to them.
+- New data access for agents goes through an MCP tool with a policy entry and limits, never a direct client.
+- Telemetry and any outbound call to a third party are opt-in and off by default.
+- Rust: `cargo fmt`, `clippy -D warnings`, no `unwrap()` in non-test code paths that handle external input.
+- Keep the README Status table honest: update it when a component's status changes.

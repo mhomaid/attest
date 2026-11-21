@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -304,6 +304,11 @@ test: ## Run all tests: Rust workspace + JS + Python
 lint: ## Lint all code: clippy + bun lint
 	cargo clippy --workspace --all-targets -- -D warnings
 	bun run lint
+
+check-hygiene: ## Org-leak check, its fixture tests, and the DCO fixture test
+	scripts/tests/leak_check_test.sh
+	scripts/tests/dco_check_test.sh
+	.cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh
 
 # ── Railway deployment ────────────────────────────────────────────────────────
 

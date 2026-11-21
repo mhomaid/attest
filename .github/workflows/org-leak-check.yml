@@ -1,0 +1,27 @@
+name: Org leak check
+
+# Fails a PR if any term from the private deny-list appears in the repo or the head commit
+# message. The deny-list is a repository secret (ATTEST_ORG_DENYLIST, newline-separated),
+# so the terms themselves are never committed. Output shows file:line only.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  leak-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Self-test the leak check
+        run: scripts/tests/leak_check_test.sh
+      - name: Check for organization-specific content
+        env:
+          ATTEST_ORG_DENYLIST: ${{ secrets.ATTEST_ORG_DENYLIST }}
+          # Secrets are not exposed to PRs from forks; run generic checks only there.
+          ATTEST_LEAK_CHECK_OPTIONAL: ${{ github.event.pull_request.head.repo.fork && '1' || '0' }}
+        run: .cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh
