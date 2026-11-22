@@ -1,6 +1,6 @@
 # Used by `make helm-template` / CI. Not a production profile.
 objectStore:
-  endpoint: http://minio:9000
+  endpoint: http://garage:3900
   accessKey: ci
   secretKey: ci
 signingKey: "00"

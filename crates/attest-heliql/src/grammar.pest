@@ -32,8 +32,9 @@ baseline_expr = { "baseline" ~ "(" ~ field_ref ~ "," ~ duration ~ ")" }
 not_in_expr    = { field_ref ~ "NOT" ~ "IN" ~ (baseline_expr | value_list) }
 in_expr        = { field_ref ~ "IN" ~ (baseline_expr | value_list) }
 unique_expr    = { "unique" ~ "(" ~ field_ref ~ "," ~ "window" ~ ":" ~ duration ~ ")" ~ cmp_op ~ integer }
+count_expr     = { "count" ~ "(" ~ "window" ~ ":" ~ duration ~ ")" ~ cmp_op ~ integer }
 cmp_expr       = { field_ref ~ cmp_op ~ value }
-bool_atom      = { not_in_expr | in_expr | unique_expr | cmp_expr }
+bool_atom      = { not_in_expr | in_expr | count_expr | unique_expr | cmp_expr }
 
 // ── Boolean condition ────────────────────────────────
 and_cond       = { bool_atom ~ ("AND" ~ bool_atom)+ }

@@ -1,10 +1,12 @@
 detection: okta_brute_force_authentication
-description: "Detects repeated failed authentication attempts against Okta from the same user within 10 minutes — indicative of a brute-force or credential stuffing attack."
+description: "Detects 5 or more failed Okta authentications for one user within 10 minutes."
 applies_to: ocsf.authentication
+where:
+  - event.api_service = "okta"
 entity: identity.user
 condition:
-  - unique(event.cloud_region, window: 10m) > 0
   - event.auth_status = "Failure"
+  - count(window: 10m) >= 5
 severity: high
 mitre: [T1110]
 runtime: stream

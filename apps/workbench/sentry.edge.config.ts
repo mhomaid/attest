@@ -1,7 +1,8 @@
 import * as Sentry from "@sentry/nextjs";
+import { shouldInitSentry } from "@/lib/telemetry";
 
-Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  enabled: Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN),
+if (shouldInitSentry()) Sentry.init({
+  dsn: process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,
+  enabled: true,
   tracesSampleRate: 0.05,
 });

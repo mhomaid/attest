@@ -9,9 +9,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
 	  /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-dev-up-infra: ## Start core infrastructure (Redpanda, RisingWave, ClickHouse, MinIO, Postgres, Redpanda Console)
-	docker compose up -d redpanda redpanda-console postgres minio clickhouse risingwave
-	docker compose run --rm minio-init
+dev-up-infra: ## Start core infrastructure (Redpanda, RisingWave, ClickHouse, Garage, Postgres, Redpanda Console)
+	docker compose up -d redpanda redpanda-console postgres garage clickhouse risingwave
 
 dev-down-infra: ## Stop core infrastructure containers only
 	docker compose down
@@ -24,14 +23,13 @@ dev-up-services: ## Start app services only — assumes infra is already running
 	docker compose --profile platform up -d --build
 
 dev-up-all: ## ⭐ Start everything in order: infra → init → all services (clean fresh start)
-	docker compose up -d redpanda redpanda-console postgres minio clickhouse risingwave
-	docker compose run --rm minio-init
+	docker compose up -d redpanda redpanda-console postgres garage clickhouse risingwave
 	docker compose --profile platform up -d --build
 
 e2e-phase1: ## Run Phase 1 E2E test — event appears in RisingWave within 5s (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase1_streaming -- --nocapture
 
-e2e-phase2: ## Run Phase 2 E2E test — 10K events land in MinIO Parquet + ClickHouse query (requires ATTEST_E2E=1 + platform)
+e2e-phase2: ## Run Phase 2 E2E test — 10K events land in Garage Parquet + ClickHouse query (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase2_iceberg -- --nocapture
 
 e2e-phase3: ## Run Phase 3 E2E test — HELIQL detections fire alerts on stream (requires ATTEST_E2E=1 + platform)

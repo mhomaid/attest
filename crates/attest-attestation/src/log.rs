@@ -241,7 +241,10 @@ fn object_sink_from_env() -> Result<Option<ObjectSink>> {
         .with_bucket_name(bucket)
         .with_region(std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".into()));
     if let Ok(endpoint) = std::env::var("AWS_ENDPOINT_URL") {
-        builder = builder.with_endpoint(endpoint).with_allow_http(true);
+        builder = builder
+            .with_endpoint(endpoint)
+            .with_allow_http(true)
+            .with_virtual_hosted_style_request(false);
     }
     let store = builder.build().context("attestation S3 client")?;
     Ok(Some(ObjectSink {

@@ -11,7 +11,8 @@
 import * as Sentry from "@sentry/nextjs";
 
 export function initSentry() {
-  if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
+  if (process.env.ATTEST_TELEMETRY !== "on" && process.env.NEXT_PUBLIC_ATTEST_TELEMETRY !== "on") return;
+  if (!process.env.NEXT_PUBLIC_SENTRY_DSN && !process.env.SENTRY_DSN) return;
 
   Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,

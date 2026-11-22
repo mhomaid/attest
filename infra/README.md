@@ -44,7 +44,7 @@ make dev-up-all
 ```
 
 Images are pinned in Compose. After you pull a new pin, a RisingWave volume
-from `:latest` can fail with `cluster_id` — delete the `risingwave` MinIO
+from `:latest` can fail with `cluster_id` — delete the `risingwave` Garage
 bucket / volume and start again.
 
 ### Hosted lab (Railway)
@@ -96,8 +96,8 @@ terraform init && terraform plan && terraform apply
 terraform output warehouse_abfss
 ```
 
-Stand up MinIO (or another S3 endpoint) in AKS until the Iceberg writer
-gains Azure. Keep the storage account — that is the customer-owned store.
+Stand up an S3-compatible endpoint in AKS until the Iceberg writer
+gains Azure. Local dev uses Garage. Keep the storage account — that is the customer-owned store.
 
 **4. Install the app on an existing cluster**
 
@@ -122,8 +122,8 @@ Helm values that matter:
 
 | Value | AWS | GCP | Azure today |
 |---|---|---|---|
-| `objectStore.bucket` | S3 bucket | GCS name | MinIO bucket |
-| `objectStore.endpoint` | leave empty | `https://storage.googleapis.com` | in-cluster MinIO |
+| `objectStore.bucket` | S3 bucket | GCS name | S3 bucket |
+| `objectStore.endpoint` | leave empty | `https://storage.googleapis.com` | in-cluster S3 endpoint |
 | `objectStore.useIrsa` | `true` with IRSA | `false` (HMAC) or WI later | `false` |
 | `signingKey` | required for audit | same | same |
 
@@ -168,8 +168,8 @@ It does not apply anything.
 ### Limits this walkthrough still has
 
 - The Iceberg writer is S3-API only. GCP HMAC is a real path. Azure ADLS is
-  provisioned; pods still need MinIO (or another S3 endpoint) until a native
+  provisioned; pods still need an S3 endpoint until a native
   writer exists. GKE Workload Identity does **not** replace HMAC today.
 - Rust service images run as root. Helm does not set `runAsNonRoot`.
-- Helm does not install Kafka, RisingWave, ClickHouse, or MinIO.
-- `llama.cpp:server` on the Compose `llm` profile is still a moving tag.
+- Helm does not install Kafka, RisingWave, ClickHouse, or Garage.
+- `llama.cpp` on the Compose `llm` profile is pinned to `ghcr.io/ggml-org/llama.cpp:server-b12602`.

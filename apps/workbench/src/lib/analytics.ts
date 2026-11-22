@@ -1,8 +1,9 @@
 import { posthog } from "@/lib/posthog";
+import { shouldInitPosthog } from "@/lib/telemetry";
 
 function capture(event: string, props?: Record<string, string | number | boolean>) {
   if (typeof window === "undefined") return;
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+  if (!shouldInitPosthog()) return;
   posthog.capture(event, props);
 }
 
@@ -15,7 +16,7 @@ export const analytics = {
   command_palette_used: () => capture("command_palette_used"),
   user_signed_in: (userId: string) => {
     if (typeof window === "undefined") return;
-    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+    if (!shouldInitPosthog()) return;
     posthog.identify(userId, { role: "analyst" });
     capture("user_signed_in");
   },

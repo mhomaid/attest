@@ -55,7 +55,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - `verify.sh full` was not run. This change does not touch Rust, TypeScript, Python, or infra code.
 
 ### T-002 — Replace MinIO in local dev and CI with a maintained S3-compatible store
-- status: todo
+- status: done
 - milestone: M0
 - area: infra
 - model tier: C
@@ -65,17 +65,24 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** MinIO community edition is archived and no longer receives fixes. Attest only needs the S3 API.
 
 **Acceptance criteria**
-- [ ] `docker-compose.yml` uses SeaweedFS or Garage (ADR records the choice) with buckets created on start
-- [ ] Iceberg warm-tier writes and ClickHouse `s3()` reads pass `make e2e-phase2`
-- [ ] CI integration job starts the new service and the smoke step passes
-- [ ] README and `infra/README.md` no longer reference MinIO as the default
+- [x] `docker-compose.yml` uses SeaweedFS or Garage (ADR records the choice) with buckets created on start
+- [x] Iceberg warm-tier writes and ClickHouse `s3()` reads pass `make e2e-phase2`
+- [x] CI integration job starts the new service and the smoke step passes
+- [x] README and `infra/README.md` no longer reference MinIO as the default
 
 **Plan:**
+- Garage v2.5.0 (`docs/18_Object_Store.md`). The image has no shell, so `garage-init` (`curlimages/curl:8.17.0`) creates buckets through the admin API.
+- Path-style S3 on the Iceberg writer, collector, and attestation log.
+- Local signing region is `custom` so RisingWave's path-style backend and ClickHouse agree with `garage.toml`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `garage-init` created `attest-warm`, `attest-attestations`, `attest-cloudtrail`, and `risingwave`.
+- CI smoke: Redpanda produce/consume, ClickHouse `SELECT 1`, Postgres `SELECT 1`, RisingWave `SELECT 1`.
+- `make e2e-phase2`: 10k events flushed to Garage and the ClickHouse aggregate returned in 28 ms.
+- Fresh-volume run (throwaway compose project, as in CI) caught `infra/clickhouse/init-db/01_cloudtrail_events.sql` still pointing at MinIO, so ClickHouse exited 235. Fixed to the Garage path; the CI start command then returned 0, the smoke passed, and `cloudtrail_events` reads the Iceberg writer's `attest/cloudtrail/data/` files.
 
 ### T-003 — Make workbench telemetry opt-in and off by default
-- status: todo
+- status: done
 - milestone: M0
 - area: workbench
 - model tier: C
@@ -85,16 +92,19 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** A SOC console shows log content. Nothing may leave the host unless the operator turns it on.
 
 **Acceptance criteria**
-- [ ] PostHog and Sentry initialize only when `ATTEST_TELEMETRY=on` and their keys are set — test: unit test on the init helpers
-- [ ] With telemetry off, a Playwright run records zero requests to third-party hosts — test: network assertion in an e2e spec
-- [ ] `env.example` documents the flag; default is off
+- [x] PostHog and Sentry initialize only when `ATTEST_TELEMETRY=on` and their keys are set — test: unit test on the init helpers
+- [x] With telemetry off, a Playwright run records zero requests to third-party hosts — test: network assertion in an e2e spec
+- [x] `env.example` documents the flag; default is off
 
 **Plan:**
-
-**Evidence:**
+- `shouldInitPosthog` / `shouldInitSentry` in `apps/workbench/src/lib/telemetry.ts`. Client and server Sentry configs, PostHog init, pageviews, and analytics all call them.
+- Network assertion is `telemetry off sends nothing to a third-party host` in `tests/e2e/observability.spec.ts`.
+**Evidence:** 2026-11-22
+- `bun test src/lib/telemetry.test.ts`: 3 pass.
+- Playwright `observability hygiene › telemetry off sends nothing to a third-party host`: pass. The homepage made no request off `localhost:3000`.
 
 ### T-004 — Detection test harness, and fix the brute-force rule
-- status: todo
+- status: done
 - milestone: M0
 - area: heliql
 - model tier: B
@@ -104,17 +114,24 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** Rules need proof that they fire on the attack and stay quiet on the look-alike. `okta_brute_force.heliql` currently fires on any single failure.
 
 **Acceptance criteria**
-- [ ] A harness evaluates a rule against fixture event sequences without the full stack (in-memory evaluator or RisingWave in a test container) — test: `attest_heliql::harness::*`
-- [ ] Every rule in `detections/` has one positive and one negative fixture, and both pass
-- [ ] The brute-force rule counts failures per user per window with a threshold; the negative fixture (threshold − 1) does not fire
-- [ ] CI runs the harness
+- [x] A harness evaluates a rule against fixture event sequences without the full stack (in-memory evaluator or RisingWave in a test container) — test: `attest_heliql::harness::*`
+- [x] Every rule in `detections/` has one positive and one negative fixture, and both pass
+- [x] The brute-force rule counts failures per user per window with a threshold; the negative fixture (threshold − 1) does not fire
+- [x] CI runs the harness
 
 **Plan:**
+- `count(window: 10m) >= 5` in the grammar, compiler, and in-memory harness.
+- `okta_brute_force.heliql` counts failed Okta logins per user. Threshold is 5.
+- Fixtures live in `detections/fixtures/<rule-id>.positive.json` and `.negative.json`.
+- The existing Rust CI job runs `cargo test --workspace`, which includes `attest_heliql::harness`.
 
-**Evidence:**
+**Evidence:** 2026-11-21
+- `attest_heliql::harness::brute_force_fires_at_threshold_and_not_one_below` PASS (5 fires, 4 does not).
+- `attest_heliql::harness::every_shipped_rule_has_a_passing_positive_and_negative_fixture` PASS (10 rules).
+- `cargo clippy -p attest-heliql --all-targets -- -D warnings` clean.
 
 ### T-005 — Agent context files and DCO
-- status: todo
+- status: done
 - milestone: M0
 - area: docs
 - model tier: C
@@ -122,15 +139,15 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §2
 
 **Acceptance criteria**
-- [ ] `AGENTS.md`, `.cursor/rules`, `.cursor/skills`, `.cursor/hooks.json`, `TASKS.md` and `docs/16_Production_Readiness_Plan.md` committed
+- [x] `AGENTS.md`, `.cursor/rules`, `.cursor/skills`, `.cursor/hooks.json`, `TASKS.md` and `docs/16_Production_Readiness_Plan.md` committed
 - [x] `CONTRIBUTING.md` requires `Signed-off-by` (DCO); a DCO check runs on PRs
-- [ ] `verify.sh quick` and `verify.sh full` run from a clean checkout
+- [x] `verify.sh quick` and `verify.sh full` run from a clean checkout
 
 **Plan:**
 - DCO text, `scripts/check-dco.sh`, `.github/workflows/dco.yml`, and `scripts/tests/dco_check_test.sh` landed with T-001.
-- Still open: record `verify.sh quick` and `verify.sh full` from a clean checkout after this branch is committed. `quick` already passed once on the dirty tree (`VERIFY PASS mode=quick checks=1/1 skipped=0 commit=647f6e8 at=2026-11-21T10:06Z`).
-
-**Evidence:**
+**Evidence:** 2026-11-22
+- `VERIFY PASS mode=quick checks=11/11 skipped=0 commit=3cd52cf at=2026-11-22T01:43Z`
+- `VERIFY PASS mode=full checks=14/14 skipped=0 commit=3cd52cf at=2026-11-22T01:42Z`
 
 ---
 

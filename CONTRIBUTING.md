@@ -28,7 +28,7 @@ Do not use these passwords outside local / hosted demo.
 | cmake, libcurl, OpenSSL headers | any recent | building `librdkafka` (`rdkafka` `cmake-build` feature) |
 | Bun | 1.4.x | workbench (`apps/workbench`) |
 | uv + Python | 3.12 | ML pipeline (`ml/`) and DB migrations (`infra/db`) |
-| Docker + Compose v2 | recent | local stack (Redpanda, RisingWave, ClickHouse, MinIO, Postgres) |
+| Docker + Compose v2 | recent | local stack (Redpanda, RisingWave, ClickHouse, Garage, Postgres) |
 
 On macOS: `brew install cmake openssl pkg-config`. On Debian/Ubuntu:
 `apt-get install cmake libcurl4-openssl-dev libssl-dev pkg-config`.

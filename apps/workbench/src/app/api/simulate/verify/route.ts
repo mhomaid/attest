@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       return { match, total: all.length };
     }),
 
-    // Iceberg / MinIO: warm tier query for this event_id.
+    // Iceberg / object store: warm tier query for this event_id.
     timed(async () => {
       const r = await fetch(`${CONTROL_PLANE_URL}/v1/warm/query`, {
         method: "POST",
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
     ? {
         ok: true,
         latency_ms: iceResult.latency_ms,
-        artifact: `Event found in warm parquet (s3://attest-warm/cloudtrail/) — Iceberg table queryable`,
+        artifact: `Event found in warm parquet (s3://attest-warm/attest/cloudtrail/) — Iceberg table queryable`,
       }
     : {
         ok: false,

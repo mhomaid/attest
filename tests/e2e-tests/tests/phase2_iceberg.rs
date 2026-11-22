@@ -1,8 +1,8 @@
-//! Phase 2 E2E test — warm tier (Parquet on MinIO, queried through ClickHouse)
+//! Phase 2 E2E test — warm tier (Parquet on Garage, queried through ClickHouse)
 //!
 //! Acceptance gate from `10_Build_Order.md`:
 //!   1. Seed 10 000 CloudTrail events via the collector HTTP endpoint.
-//!   2. Wait ≤ 90 s for attest-storage-iceberg to flush Parquet files to MinIO.
+//!   2. Wait ≤ 90 s for attest-storage-iceberg to flush Parquet files to Garage.
 //!   3. Assert that `POST /v1/warm/query` with `SELECT count(*)` returns 10 000.
 //!   4. Assert that a GROUP-BY aggregate query completes within 30 s.
 //!
@@ -13,7 +13,7 @@
 use std::time::{Duration, Instant};
 
 const WARM_GLOB: &str =
-    "s3('http://minio:9000/attest-warm/cloudtrail/**/*.parquet', 'minioadmin', 'minioadmin', 'Parquet')";
+    "s3('http://garage:3900/attest-warm/attest/cloudtrail/data/*.parquet', 'GK0123456789abcdef0123456789abcdef', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'Parquet')";
 
 async fn poll_until<F, Fut, T>(mut f: F, timeout: Duration) -> Option<T>
 where
@@ -121,7 +121,7 @@ async fn events_persisted_to_warm_tier_are_queryable_via_clickhouse() {
     println!("Seeding {TARGET} events …");
     seed_events(TARGET, 1000).await;
 
-    println!("Waiting for Parquet flush to MinIO (≤ 90 s) …");
+    println!("Waiting for Parquet flush to Garage (≤ 90 s) …");
     let count_sql = format!("SELECT count(*) FROM {WARM_GLOB}");
     let count = poll_until(
         || async {
@@ -135,9 +135,9 @@ async fn events_persisted_to_warm_tier_are_queryable_via_clickhouse() {
 
     assert!(
         count.is_some(),
-        "expected {TARGET} events in MinIO Parquet within 90s, got {count:?}"
+        "expected {TARGET} events in Garage Parquet within 90s, got {count:?}"
     );
-    println!("✓ {TARGET} events confirmed in MinIO Parquet");
+    println!("✓ {TARGET} events confirmed in Garage Parquet");
 
     println!("Running aggregate query (≤ 30 s) …");
     let agg_start = Instant::now();

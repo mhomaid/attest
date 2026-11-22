@@ -138,8 +138,11 @@ flowchart LR
   Orch --> WB
 ```
 
-Object storage is **S3-compatible**. Local Compose uses a pinned MinIO rebuild; a hosted
+Object storage is **S3-compatible**. Local Compose uses Garage; a hosted
 deployment should point at S3 or R2. The application talks the S3 API, not a vendor SDK.
+Garage's local signing region is `custom`, because RisingWave's path-style S3
+backend signs with that region and every other local client matches it.
+See [docs/18_Object_Store.md](docs/18_Object_Store.md).
 
 C4 diagrams, sequences, and the full six-plane write-up live in
 [docs/02_Architecture.md](docs/02_Architecture.md) and
@@ -156,7 +159,7 @@ path. No JVM in the data plane. Open table formats so you can leave with the dat
 | Bus | Redpanda (Kafka API) | Single binary, no ZooKeeper |
 | Hot stream | RisingWave | Streaming SQL, Postgres protocol, materialized baselines |
 | CEP / ETL | Arroyo | Multi-step sequences without Flink |
-| Warm store | Apache Iceberg + Parquet | Same files locally (`file://` / MinIO) and on S3 |
+| Warm store | Apache Iceberg + Parquet | Same files locally (Garage) and on S3 |
 | Hunt | ClickHouse `s3()` | Query the warm files; no second copy |
 | Detect | HELIQL (Rust · pest) + Sigma import | One rule, stream or hunt |
 | Triage | XGBoost → ONNX via `tract-onnx` | P99 &lt; 5 ms in CI; no Python on the hot path |
@@ -179,9 +182,9 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 |---|---|---|
 | CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` (tenant from `X-Tenant-Id`, else `TENANT_ID`). `POST /ingest/s3` or an S3 object-created notification fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. No ingest auth yet: keep the collector on a private network. |
 | RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1 |
-| Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet data files + snapshot commits via iceberg-rust. Catalog pointer is `metadata/version-hint.text` so a restarted writer reloads the same table. Warehouse is `s3://attest-warm` (MinIO) or a local `file://` dir. |
+| Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet under `s3://attest-warm/attest/cloudtrail/data/` on Garage. Snapshot commits via iceberg-rust. Phase 2 seeds 10k events and reads them back through ClickHouse `s3()`. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
-| HELIQL detections | Working | `attest-heliql` parses and compiles; 10 rules in `detections/` |
+| HELIQL detections | Working | 10 rules in `detections/`, each with a positive and a negative fixture. `okta_brute_force` fires at 5 failed Okta logins for one user within 10 minutes. |
 | Hybrid triager (classifier path) | Working | ONNX via `tract-onnx`; release P99 &lt; 5 ms asserted |
 | Feature attribution | Partial | **SHAP-style**, not TreeSHAP: 8 extra model runs, one feature replaced by the background mean |
 | LLM escalation + investigator | Working | Needs a configured LLM; live suites gated on `ATTEST_PHASE7_LIVE` |
@@ -189,8 +192,8 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | MCP gateway + tool policy | Working | Per-role authorize; warm-query exfil cap; poisoned tool results denied |
 | Signed attestation envelopes | Working | Ed25519 over SHA-256 of sorted-key canonical JSON |
 | `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
-| Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3/MinIO first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
-| Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers |
+| Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3 first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
+| Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers. PostHog and Sentry stay off unless `ATTEST_TELEMETRY=on` and that vendor's key is set. |
 | Hunter / responder / coordinator agents | Partial | Coordinator is deterministic routing (`POST /v1/coordinate`), not an LLM planner. Hunter (`POST /v1/hunt`) and Responder (`POST /v1/respond`) are LLM paths with a signed-envelope fallback when no model is configured; not yet exercised against a live model in CI. Responder actions are shadow-checked and only *recorded as planned*: nothing is executed against a real IdP/EDR. |
 | AADF / SIDM / eval harness | Planned | Design docs in `docs/` |
 | Helm / Terraform | Working | Reference chart in `infra/helm/attest`. AWS BYOC module in `infra/terraform/aws` (warm S3 bucket + optional Helm release onto an existing EKS cluster). |
@@ -203,7 +206,7 @@ Needs Docker, Rust 1.98, Bun 1.4, uv (Python 3.12), cmake + libcurl + OpenSSL he
 git clone https://github.com/mhomaid/attest.git
 cd attest
 
-# Infra + app services (Redpanda, RisingWave, ClickHouse, MinIO, Postgres, collector, control-plane, …)
+# Infra + app services (Redpanda, RisingWave, ClickHouse, Garage, Postgres, collector, control-plane, …)
 make dev-up-all
 
 # Auth schema + seeded analyst
@@ -360,7 +363,7 @@ Make a clone something you would leave running, not just demo.
 | Authenticated ingest | Per-tenant tokens on the collector | Private-network only; no ingest auth |
 | Iceberg REST catalog | Restart-safe catalog that is not `MemoryCatalog` + `version-hint.text` | Snapshot reload works; catalog is local |
 | Pinned service images | Compose / Helm tags that do not float | Compose infra images are pinned. App images are still built from source. |
-| S3-native object store path | Documented Garage / S3 / R2 swap; RisingWave `hummock+s3://` | Local default is a pinned MinIO rebuild |
+| S3-native object store path | Garage locally, S3 or R2 when hosted | Local default is Garage. See `docs/18_Object_Store.md`. |
 | Helm + Terraform beyond the reference | Same chart onto an existing EKS cluster with fewer manual steps | Store modules for AWS, GCP, and Azure. Helm is `k8s-release` / `eks-release`. None of them create the cluster. |
 
 ### 3 — Broader SOC surface

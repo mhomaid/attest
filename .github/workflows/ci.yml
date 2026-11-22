@@ -86,7 +86,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Start core services (blocks until every healthcheck passes)
-        run: docker compose up -d --wait --wait-timeout 240 redpanda postgres minio clickhouse risingwave
+        run: docker compose up -d --wait --wait-timeout 240 redpanda postgres garage garage-init clickhouse risingwave
 
       - name: Smoke — round-trip through each service
         run: |
@@ -108,7 +108,7 @@ jobs:
     needs: [typescript]
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18.7
         env:
           POSTGRES_USER: attest
           POSTGRES_PASSWORD: attest

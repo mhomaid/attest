@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod compiler;
 pub mod error;
+pub mod harness;
 pub mod parser;
 pub mod sigma;
 
