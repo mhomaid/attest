@@ -42,7 +42,7 @@
 //!   OTEL_EXPORTER_OTLP_ENDPOINT  OTLP gRPC endpoint (e.g. http://127.0.0.1:4317)
 //!   OTEL_SERVICE_NAME            Override default service name for traces
 
-use attest_attestation::Signer;
+use attest_attestation::LocalKey;
 use attest_inference_router::from_env as llm_from_env;
 use attest_orchestrator::{
     agent::{AgentDefinition, ClassifierArtifact, ExecutionPath},
@@ -221,10 +221,10 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Signing key ───────────────────────────────────────────────────────────
     let signer = if let Ok(seed) = std::env::var("ATTEST_SIGNING_KEY") {
-        Signer::from_hex_seed(&seed)?
+        LocalKey::from_hex_seed(&seed)?
     } else {
         tracing::warn!("ATTEST_SIGNING_KEY not set — generating ephemeral signing key");
-        Signer::generate()
+        LocalKey::generate()
     };
 
     tracing::info!(verifying_key = %signer.verifying_key_hex(), "Ed25519 signing key ready");

@@ -6,7 +6,7 @@
 use crate::shadow_check::ShadowChecker;
 use attest_attestation::{
     AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, EvidenceBlock,
-    ExecutionPathKind, ShadowCheckDecision, Signer, TimingBlock, Verdict,
+    ExecutionPathKind, LocalKey, ShadowCheckDecision, TimingBlock, Verdict,
 };
 use chrono::Utc;
 use serde_json::Value;
@@ -84,7 +84,7 @@ pub async fn try_auto_close(
     alert: &Value,
     classifier_evidence: ClassifierEvidence,
     shadow_checker: &ShadowChecker,
-    signer: &Arc<Signer>,
+    signer: &Arc<LocalKey>,
     agent_id: &str,
     tenant_id: &str,
     case_id: Uuid,
@@ -168,6 +168,8 @@ pub async fn try_auto_close(
         },
         prev_hash: String::new(),
         signature: String::new(),
+        alg: String::new(),
+        key_id: String::new(),
         signed_at: finished_at,
     };
     signer.sign(&mut envelope);

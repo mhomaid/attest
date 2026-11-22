@@ -53,6 +53,9 @@ enum Command {
         log: PathBuf,
         #[command(flatten)]
         verifying_key: VerifyingKey,
+        /// JSON keyring: `{ "keys": [{ "key_id", "alg", "public_key" }], "legacy": { ... } }`.
+        #[arg(long, value_name = "PATH")]
+        keyring: Option<PathBuf>,
         /// Fail envelopes whose classifier `model_artifact_hash` differs from this SHA-256.
         #[arg(long, value_name = "SHA256")]
         pin_model: Option<String>,
@@ -92,18 +95,30 @@ fn run() -> Result<ExitCode> {
         Command::Verify {
             log,
             verifying_key,
+            keyring,
             pin_model,
             pin_prompt,
         } => {
-            let key = attest_cli::resolve_verifying_key(
-                verifying_key.key,
-                verifying_key.key_file.as_deref(),
-            )?;
             let envelopes = attest_cli::read_log(&log)?;
             if envelopes.is_empty() {
                 anyhow::bail!("{} contains no envelopes", log.display());
             }
-            let mut report = attest_cli::verify_log(&envelopes, &key);
+            let mut report = if let Some(path) = keyring {
+                let mut ring = attest_cli::resolve_keyring(&path)?;
+                if let Ok(key) = attest_cli::resolve_verifying_key(
+                    verifying_key.key.clone(),
+                    verifying_key.key_file.as_deref(),
+                ) {
+                    ring.with_legacy_ed25519_hex(key);
+                }
+                attest_attestation::verify_log_with_keyring(&envelopes, &ring)
+            } else {
+                let key = attest_cli::resolve_verifying_key(
+                    verifying_key.key,
+                    verifying_key.key_file.as_deref(),
+                )?;
+                attest_cli::verify_log(&envelopes, &key)
+            };
             let pins = attest_cli::Pins {
                 model_artifact_hash: pin_model,
                 system_prompt_hash: pin_prompt,

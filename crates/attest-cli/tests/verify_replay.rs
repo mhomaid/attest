@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use attest_attestation::{
     AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, IntermediateBelief,
-    LlmEvidence, Signer, TimingBlock, ToolCallRecord, Verdict,
+    LlmEvidence, LocalKey, TimingBlock, ToolCallRecord, Verdict,
 };
 use attest_cli::{read_log, replay, verify_log};
 use attest_feature_extractor::AlertFeatures;
@@ -36,7 +36,7 @@ fn test_features() -> AlertFeatures {
 }
 
 fn signed_classifier_envelope(
-    signer: &Signer,
+    signer: &LocalKey,
     features: &AlertFeatures,
     raw: f32,
     shap: HashMap<String, f64>,
@@ -71,6 +71,8 @@ fn signed_classifier_envelope(
         },
         prev_hash: String::new(),
         signature: String::new(),
+        alg: String::new(),
+        key_id: String::new(),
         signed_at: now,
     };
     signer.sign(&mut env);
@@ -90,7 +92,7 @@ fn write_log(dir: &Path, envelopes: &[AttestationEnvelope]) -> PathBuf {
 
 #[test]
 fn verify_roundtrip_and_tampered_verdict() {
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let features = test_features();
     let classifier = OnnxClassifier::load(model_path(), None).unwrap();
@@ -116,7 +118,7 @@ fn verify_roundtrip_and_tampered_verdict() {
 
 #[test]
 fn replay_matches_recorded_prediction() {
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let features = test_features();
     let classifier = OnnxClassifier::load(model_path(), None).unwrap();
@@ -135,7 +137,7 @@ fn replay_matches_recorded_prediction() {
 #[test]
 fn replay_detects_tampered_feature_on_a_valid_signature() {
     // Simulates a signer that recorded features that do not produce `raw_prediction`.
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let features = test_features();
     let classifier = OnnxClassifier::load(model_path(), None).unwrap();
@@ -147,7 +149,7 @@ fn replay_detects_tampered_feature_on_a_valid_signature() {
     }
     signer.sign(&mut env);
     assert!(
-        Signer::verify(&env, &vk).unwrap(),
+        LocalKey::verify(&env, &vk).unwrap(),
         "precondition: envelope must still verify"
     );
 
@@ -165,7 +167,7 @@ fn replay_detects_tampered_feature_on_a_valid_signature() {
 
 #[test]
 fn replay_llm_is_integrity_only_and_rejects_reordered_tools() {
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let now = Utc::now();
     let later = now + Duration::seconds(2);
@@ -218,6 +220,8 @@ fn replay_llm_is_integrity_only_and_rejects_reordered_tools() {
         },
         prev_hash: String::new(),
         signature: String::new(),
+        alg: String::new(),
+        key_id: String::new(),
         signed_at: later,
     };
     signer.sign(&mut env);
@@ -239,7 +243,7 @@ fn replay_llm_is_integrity_only_and_rejects_reordered_tools() {
     assert!(report.lines.iter().any(|l| l.contains("integrity only")));
 }
 
-fn chain_two(signer: &Signer) -> (AttestationEnvelope, AttestationEnvelope) {
+fn chain_two(signer: &LocalKey) -> (AttestationEnvelope, AttestationEnvelope) {
     let features = test_features();
     let classifier = OnnxClassifier::load(model_path(), None).unwrap();
     let (raw, shap) = classifier.predict(&features).unwrap();
@@ -254,7 +258,7 @@ fn chain_two(signer: &Signer) -> (AttestationEnvelope, AttestationEnvelope) {
 
 #[test]
 fn verify_fails_when_a_chained_row_is_deleted() {
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let features = test_features();
     let classifier = OnnxClassifier::load(model_path(), None).unwrap();
@@ -281,7 +285,7 @@ fn verify_fails_when_a_chained_row_is_deleted() {
 
 #[test]
 fn verify_fails_when_chained_rows_are_reordered() {
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let (first, second) = chain_two(&signer);
     let ok = verify_log(&[first.clone(), second.clone()], &vk);
@@ -300,7 +304,7 @@ fn verify_fails_when_chained_rows_are_reordered() {
 
 #[test]
 fn verify_fails_on_duplicate_action_id() {
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let (first, _) = chain_two(&signer);
     let mut clone = first.clone();
@@ -323,7 +327,7 @@ fn verify_fails_on_duplicate_action_id() {
 fn pin_rejects_model_and_prompt_swap() {
     use attest_attestation::{check_pin, AgentPin};
 
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let features = test_features();
     let classifier = OnnxClassifier::load(model_path(), None).unwrap();
     let (raw, shap) = classifier.predict(&features).unwrap();
@@ -354,7 +358,7 @@ fn pin_rejects_model_and_prompt_swap() {
 fn verify_with_pin_model_fails_on_swapped_model() {
     use attest_cli::{apply_pins, Pins};
 
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let vk = signer.verifying_key_hex();
     let (first, second) = chain_two(&signer);
     let log = vec![first, second];

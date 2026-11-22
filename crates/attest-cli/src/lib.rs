@@ -5,11 +5,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use attest_attestation::{
-    AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, LlmEvidence, Signer,
-    Verdict,
+    AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, Keyring,
+    LlmEvidence, LocalKey, PublicKey, SignatureAlg, Verdict,
 };
+use serde::Deserialize;
 
-pub use attest_attestation::{verify_log, LineResult, VerifyReport};
+pub use attest_attestation::{verify_log, verify_log_with_keyring, LineResult, VerifyReport};
 use attest_feature_extractor::AlertFeatures;
 use attest_onnx_runtime::OnnxClassifier;
 use sha2::{Digest, Sha256};
@@ -85,7 +86,7 @@ pub fn replay(
     let mut lines = Vec::new();
     let mut ok = true;
 
-    match Signer::verify(envelope, verifying_key_hex) {
+    match LocalKey::verify(envelope, verifying_key_hex) {
         Ok(true) => lines.push("signature: pass".into()),
         Ok(false) => {
             lines.push("signature: FAIL".into());
@@ -333,6 +334,64 @@ pub fn resolve_verifying_key(key: Option<String>, key_file: Option<&Path>) -> Re
     Ok(hex)
 }
 
+/// One trusted key in a keyring file.
+#[derive(Debug, Clone, Deserialize)]
+struct KeyringFileEntry {
+    key_id: String,
+    /// Signature algorithm, e.g. `"ed25519"`.
+    alg: SignatureAlg,
+    /// Hex-encoded public key (for Ed25519, the 32-byte verifying key).
+    public_key: String,
+}
+
+/// A keyring file: a list of trusted keys, plus an optional legacy key used for
+/// old envelopes that carry no `key_id`.
+///
+/// ```json
+/// {
+///   "keys": [
+///     { "key_id": "ed25519-0011223344556677", "alg": "ed25519", "public_key": "<64 hex>" }
+///   ],
+///   "legacy": { "key_id": "", "alg": "ed25519", "public_key": "<64 hex>" }
+/// }
+/// ```
+#[derive(Debug, Clone, Deserialize)]
+struct KeyringFile {
+    #[serde(default)]
+    keys: Vec<KeyringFileEntry>,
+    #[serde(default)]
+    legacy: Option<KeyringFileEntry>,
+}
+
+impl From<KeyringFileEntry> for PublicKey {
+    fn from(e: KeyringFileEntry) -> Self {
+        PublicKey {
+            key_id: e.key_id,
+            alg: e.alg,
+            public_key_hex: e.public_key,
+        }
+    }
+}
+
+/// Load a [`Keyring`] from a JSON file. Used by `attest verify --keyring`.
+pub fn resolve_keyring(path: &Path) -> Result<Keyring> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read keyring file {}", path.display()))?;
+    let file: KeyringFile = serde_json::from_str(&raw)
+        .with_context(|| format!("{}: invalid keyring JSON", path.display()))?;
+    if file.keys.is_empty() && file.legacy.is_none() {
+        anyhow::bail!("{} lists no keys", path.display());
+    }
+    let mut keyring = Keyring::new();
+    for entry in file.keys {
+        keyring.add(entry.into());
+    }
+    if let Some(legacy) = file.legacy {
+        keyring.with_legacy(legacy.into());
+    }
+    Ok(keyring)
+}
+
 #[cfg(test)]
 mod resolve_key_tests {
     use super::*;
@@ -348,6 +407,20 @@ mod resolve_key_tests {
             resolve_verifying_key(Some("ignored".into()), Some(&path)).unwrap(),
             "abcdef"
         );
+    }
+
+    #[test]
+    fn keyring_json_loads_a_key_and_a_legacy_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ring.json");
+        std::fs::write(
+            &path,
+            r#"{"keys":[{"key_id":"kid-1","alg":"ed25519","public_key":"aaaa"}],"legacy":{"key_id":"","alg":"ed25519","public_key":"bbbb"}}"#,
+        )
+        .unwrap();
+        let ring = resolve_keyring(&path).unwrap();
+        assert_eq!(ring.len(), 1);
+        assert!(!ring.is_empty());
     }
 
     #[test]

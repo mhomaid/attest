@@ -2,17 +2,17 @@
 //!
 //! These are deterministic unit-integration tests — they do NOT need a live
 //! orchestrator. They use `ShadowChecker::new` with hard-coded policies and a
-//! freshly generated `Signer`, verifying that `try_auto_close` gates correctly.
+//! freshly generated `LocalKey`, verifying that `try_auto_close` gates correctly.
 
-use attest_attestation::{CaseState, ClassifierEvidence, EvidenceBlock, Signer, Verdict};
+use attest_attestation::{CaseState, ClassifierEvidence, EvidenceBlock, LocalKey, Verdict};
 use attest_orchestrator::auto_close::try_auto_close;
 use attest_orchestrator::shadow_check::ShadowChecker;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
-fn test_signer() -> Arc<Signer> {
-    Arc::new(Signer::generate())
+fn test_signer() -> Arc<LocalKey> {
+    Arc::new(LocalKey::generate())
 }
 
 fn test_checker(tenant_allows: bool) -> ShadowChecker {
