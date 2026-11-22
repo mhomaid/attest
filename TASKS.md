@@ -184,9 +184,10 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - `expired_token_is_rejected`.
 - Workbench `service auth > production without a secret does not invent a token` and `a configured secret produces an HS256 token for that audience`.
 - ADR: `docs/19_Service_Auth.md`. Helm `serviceAuth.existingSecret` is empty, so the chart does not embed a secret.
-- Live e2e phases were not re-run. `cargo test --workspace` compiles them and they return unless `ATTEST_E2E=1`. The compose containers already running were started before these binaries, so "all e2e phases still pass with auth enabled" is not checked.
-- `VERIFY PASS mode=full checks=14/14 skipped=0 commit=502d735 at=2026-11-22T02:29Z`
-- Status is `review` because the task asks for a second-model review before `done`, and the live e2e criterion is still open.
+- Rebuilt collector, control-plane, orchestrator, mcp-gateway, and ws-gateway. Unsigned calls returned 401; `/healthz` returned 200.
+- E2E with auth enabled: `phase1_streaming` 3/3, `phase2_iceberg` 1/1, `phase6_auto_close` 3/3. `phase4a_triager` 2/3 (`triager_classifier_p99_latency_under_200ms` escalated the benign alert; the HTTP call was authorized). `phase3_detection` 0/2: ingest returned event ids, and the detection runtime emitted the StopLogging alert after the test's 10s poll. Phases 4b, 5, 7-live, and 8 were not run; they need a live LLM or `ATTEST_PHASE8_LIVE`. CI job `Integration (docker-compose smoke)` does not run these phase tests.
+- `VERIFY PASS mode=full checks=14/14 skipped=0 commit=86f010d at=2026-11-22T02:37Z`
+- Status is `review` because this task asks for a second-model review before `done`, and the live e2e criterion is still open.
 
 ### T-011 — Generic OIDC sign-in and roles in the workbench
 - status: todo
