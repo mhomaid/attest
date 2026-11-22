@@ -12,9 +12,10 @@ Outputs (in artifacts/):
   - model_metrics.json     Accuracy, precision, recall, AUC on held-out validation set
 """
 
+import argparse
 import json
 import hashlib
-import os
+import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -24,6 +25,18 @@ import xgboost as xgb
 import onnxmltools
 from onnxmltools.convert.common.data_types import FloatTensorType
 import onnx
+
+_ML_ROOT = Path(__file__).resolve().parents[1]
+if str(_ML_ROOT) not in sys.path:
+    sys.path.append(str(_ML_ROOT))
+
+from datasets.registry import (  # noqa: E402
+    DatasetNotTrainableError,
+    enforce_trainable,
+    index_registry,
+    load_registry,
+    provenance_records,
+)
 
 ARTIFACTS = Path(__file__).parent / "artifacts"
 ARTIFACTS.mkdir(exist_ok=True)
@@ -53,7 +66,33 @@ def load_cases() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def main():
+def main(
+    datasets: list[str] | None = None,
+    registry_path: Path | None = None,
+    registry: object | None = None,
+    artifacts_dir: Path | None = None,
+) -> None:
+    """Train on the synthetic golden cases and record any named dataset provenance.
+
+    Dataset ids are checked against the registry before any fit. A dataset whose
+    allowed_use does not include train raises DatasetNotTrainableError. Row
+    loading for GUIDE and the other registered corpora is a later task; this
+    entry point only pins the ids and checksums the run was allowed to name.
+    """
+    dataset_ids = list(datasets or [])
+    records: list[dict[str, str]] = []
+    if dataset_ids:
+        if registry is not None:
+            by_id = index_registry(registry)
+        else:
+            path = registry_path or (_ML_ROOT / "datasets" / "registry.yaml")
+            by_id = index_registry(load_registry(path))
+        enforce_trainable(dataset_ids, by_id)
+        records = provenance_records(dataset_ids, by_id)
+
+    artifacts = Path(artifacts_dir) if artifacts_dir is not None else ARTIFACTS
+    artifacts.mkdir(parents=True, exist_ok=True)
+
     df = load_cases()
     # Exclude OOD cases from training (they are used for novelty detector only)
     train_df = df[~df["is_ood"]].copy()
@@ -84,13 +123,14 @@ def main():
         "auc": float(roc_auc_score(y_val, y_prob)),
         "train_size": len(X_train),
         "val_size": len(X_val),
+        "datasets": records,
     }
     print(f"Validation metrics: {metrics}")
 
     # Export to ONNX
     initial_type = [("float_input", FloatTensorType([None, len(FEATURE_COLUMNS)]))]
     onnx_model = onnxmltools.convert_xgboost(model, initial_types=initial_type)
-    onnx_path = ARTIFACTS / "model.onnx"
+    onnx_path = artifacts / "model.onnx"
     onnxmltools.utils.save_model(onnx_model, str(onnx_path))
     print(f"Saved ONNX model → {onnx_path}")
 
@@ -98,26 +138,44 @@ def main():
     rng = np.random.RandomState(42)
     bg_idx = rng.choice(len(X_train), size=min(50, len(X_train)), replace=False)
     background = X_train[bg_idx].astype(np.float32)
-    np.save(ARTIFACTS / "shap_background.npy", background)
+    np.save(artifacts / "shap_background.npy", background)
 
     # Feature column hash (consumed by Rust for attestation envelope)
     col_str = ",".join(FEATURE_COLUMNS)
     feature_hash = hashlib.sha256(col_str.encode()).hexdigest()
-    (ARTIFACTS / "feature_hash.txt").write_text(feature_hash)
+    (artifacts / "feature_hash.txt").write_text(feature_hash)
     print(f"Feature hash: {feature_hash}")
 
-    # Save metrics
-    with open(ARTIFACTS / "model_metrics.json", "w") as f:
+    # Save metrics, including the dataset ids and checksums this run named.
+    with open(artifacts / "model_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
     # Save model SHA-256 for attestation
     model_bytes = onnx_path.read_bytes()
     model_hash = hashlib.sha256(model_bytes).hexdigest()
-    (ARTIFACTS / "model_hash.txt").write_text(model_hash)
+    (artifacts / "model_hash.txt").write_text(model_hash)
     print(f"Model SHA-256: {model_hash}")
 
     print("Training complete.")
 
 
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train the triager classifier")
+    parser.add_argument(
+        "--datasets",
+        nargs="*",
+        default=None,
+        help="Registry dataset ids this run is allowed to use. Refused unless allowed_use includes train.",
+    )
+    parser.add_argument("--registry", type=Path, default=None)
+    parser.add_argument("--artifacts", type=Path, default=None)
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    main()
+    args = _parse_args()
+    try:
+        main(datasets=args.datasets, registry_path=args.registry, artifacts_dir=args.artifacts)
+    except DatasetNotTrainableError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)

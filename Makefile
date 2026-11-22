@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: dataset-fetch help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -294,7 +294,13 @@ dev-up-ml: ## Start core services + Python ML sidecar
 smoke: ## Quick sanity check: cargo test + bun test + pytest
 	cargo test --workspace
 	bun run test
-	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
+	cd ml && env -u VIRTUAL_ENV uv run pytest datasets/ triager/ test_smoke.py -q
+
+dataset-fetch: ## Download one registered dataset into the gitignored cache and verify its checksum
+	@test -n "$(ID)" || (echo "usage: make dataset-fetch ID=<id>" >&2; exit 1)
+	cd ml && env -u VIRTUAL_ENV uv run python -m datasets.fetch --id "$(ID)" \
+		--registry "$(abspath $(if $(REGISTRY),$(REGISTRY),$(CURDIR)/ml/datasets/registry.yaml))" \
+		--cache "$(abspath $(if $(CACHE),$(CACHE),$(CURDIR)/ml/datasets/cache))"
 
 seed-data: ## Seed ~30k synthetic CloudTrail events (benign + attack scenarios) into the running stack
 	cargo run --release -p attest-load-gen -- --brokers localhost:19092 --rate 1000 --duration 30 --scenario mixed --tenants 3 --seed-baselines
@@ -305,7 +311,7 @@ fmt: ## Format all Rust code
 test: ## Run all tests: Rust workspace + JS + Python
 	cargo test --workspace
 	bun run test
-	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
+	cd ml && env -u VIRTUAL_ENV uv run pytest datasets/ triager/ test_smoke.py -q
 
 lint: ## Lint all code: clippy + bun lint
 	cargo clippy --workspace --all-targets -- -D warnings

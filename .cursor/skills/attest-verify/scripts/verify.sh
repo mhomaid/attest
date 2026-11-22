@@ -122,7 +122,7 @@ fi
 
 # ── Python (ml)
 if [[ $PY -eq 1 ]] && need uv "python"; then
-  run "pytest (ml)" bash -c 'cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q'
+  run "pytest (ml)" bash -c 'cd ml && env -u VIRTUAL_ENV uv run pytest datasets/ triager/ test_smoke.py -q'
 fi
 
 # ── Infra
