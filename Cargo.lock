@@ -816,6 +816,7 @@ dependencies = [
  "attest-attestation",
  "attest-feature-extractor",
  "attest-inference-router",
+ "attest-mcp-gateway",
  "attest-onnx-runtime",
  "attest-policy-engine",
  "attest-service-auth",
