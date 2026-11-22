@@ -28,7 +28,6 @@ pub use log::AttestationLog;
 pub use pin::{check_pin, AgentPin};
 // `Signer` stays the concrete local key callers already construct
 // (`Signer::generate`). The pluggable trait is `signer::Signer`.
-pub use signer::LocalKey as Signer;
-pub use signer::{verify_with, LocalKey, PublicKey, SignatureAlg};
+pub use signer::{verify_with, LocalKey, PublicKey, SignatureAlg, Signer};
 pub use trace_step::{execution_path_snake, TraceStep, TRACE_STEPS_TOPIC};
 pub use verify::{verify_log, verify_log_with_keyring, Keyring, LineResult, VerifyReport};

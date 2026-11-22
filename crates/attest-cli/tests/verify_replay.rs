@@ -4,9 +4,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use attest_attestation::signer::Signer; // trait, for `verifying_key()`
 use attest_attestation::{
-    AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, IntermediateBelief,
-    LlmEvidence, LocalKey, TimingBlock, ToolCallRecord, Verdict,
+    verify_log_with_keyring, AttestationEnvelope, ClassifierEvidence, EvidenceBlock,
+    ExecutionPathKind, IntermediateBelief, Keyring, LlmEvidence, LocalKey, TimingBlock,
+    ToolCallRecord, Verdict,
 };
 use attest_cli::{read_log, replay, verify_log};
 use attest_feature_extractor::AlertFeatures;
@@ -388,4 +390,87 @@ fn verify_with_pin_model_fails_on_swapped_model() {
     assert!(swapped.results[0]
         .detail
         .contains("model_artifact_hash swap"));
+}
+
+/// A classifier envelope signed by `signer`, without touching the ONNX model.
+fn minimal_signed(signer: &LocalKey) -> AttestationEnvelope {
+    let now = Utc::now();
+    let mut env = AttestationEnvelope {
+        envelope_version: "1.1".into(),
+        agent_action_id: Uuid::new_v4(),
+        case_id: Uuid::new_v4(),
+        tenant_id: "test".into(),
+        agent_id: "triager-hybrid-v1".into(),
+        execution_path: ExecutionPathKind::Classifier,
+        verdict: Verdict::Benign,
+        evidence: EvidenceBlock::Classifier(ClassifierEvidence {
+            model_artifact_hash: "aa".into(),
+            feature_extractor_hash: "bb".into(),
+            input_features: HashMap::new(),
+            shap_values: HashMap::new(),
+            raw_prediction: 0.1,
+            calibrated_confidence: 0.1,
+            novelty_score: 0.0,
+        }),
+        timing: TimingBlock {
+            started_at: now,
+            finished_at: now,
+            total_ms: 1,
+        },
+        prev_hash: String::new(),
+        signature: String::new(),
+        alg: String::new(),
+        key_id: String::new(),
+        signed_at: now,
+    };
+    signer.sign(&mut env);
+    env
+}
+
+#[test]
+fn verify_keyring_accepts_rotation_and_rejects_unknown_key_id() {
+    // Two keys standing for "before rotation" and "after rotation".
+    let old = LocalKey::generate();
+    let new = LocalKey::generate();
+    let before = minimal_signed(&old);
+    let after = minimal_signed(&new);
+
+    // A keyring with both keys verifies envelopes from either side of the rotation.
+    let keyring = Keyring::from_keys([old.verifying_key(), new.verifying_key()]);
+    let report = verify_log_with_keyring(&[before.clone(), after.clone()], &keyring);
+    assert!(report.all_ok(), "{:?}", report.results);
+
+    // A keyring missing the `new` key rejects its envelope by key_id.
+    let partial = Keyring::from_keys([old.verifying_key()]);
+    let report = verify_log_with_keyring(&[before, after], &partial);
+    assert!(!report.all_ok());
+    assert!(
+        report
+            .results
+            .iter()
+            .any(|r| r.detail.contains("unknown key_id")),
+        "{:?}",
+        report.results
+    );
+}
+
+#[test]
+fn committed_sample_without_key_id_still_verifies() {
+    // The checked-in example log predates `alg`/`key_id`; it must keep verifying.
+    let dir = workspace_root().join("examples/verify");
+    let log = read_log(&dir.join("attestations.ndjson")).unwrap();
+    assert!(!log.is_empty());
+    // It is genuinely old-format: no key_id recorded.
+    assert!(log.iter().all(|e| e.key_id.is_empty()));
+
+    let vk = std::fs::read_to_string(dir.join("verifying-key.txt")).unwrap();
+    let vk = vk.trim();
+
+    // Legacy single-key path.
+    assert!(verify_log(&log, vk).all_ok());
+
+    // Keyring path, via the legacy fallback for unkeyed envelopes.
+    let mut keyring = Keyring::new();
+    keyring.with_legacy_ed25519_hex(vk);
+    assert!(verify_log_with_keyring(&log, &keyring).all_ok());
 }
