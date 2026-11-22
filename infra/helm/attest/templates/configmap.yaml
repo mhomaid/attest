@@ -7,6 +7,7 @@ metadata:
 data:
   TENANT_ID: {{ .Values.env.TENANT_ID | quote }}
   KAFKA_BROKERS: {{ .Values.env.KAFKA_BROKERS | quote }}
+  ATTEST_TOPIC_PREFIX: {{ .Values.env.ATTEST_TOPIC_PREFIX | default "attest" | quote }}
   CLICKHOUSE_URL: {{ .Values.env.CLICKHOUSE_URL | quote }}
   RISINGWAVE_HOST: {{ .Values.env.RISINGWAVE_HOST | quote }}
   RISINGWAVE_PORT: {{ .Values.env.RISINGWAVE_PORT | quote }}

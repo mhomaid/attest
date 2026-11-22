@@ -384,7 +384,7 @@ Only after the log and the self-host path are something we can defend.
 
 | Item | Outcome | Today |
 |---|---|---|
-| More sources | Okta, Entra, EDR on the same OCSF collector | CloudTrail is live |
+| More sources | Okta, Entra, EDR on the same OCSF collector | CloudTrail is the first `Source`. Other vendors are not wired. |
 | Live Hunter / Responder | Hunt and planned-containment exercised against a real model in CI | Endpoints exist; fallback is a signed envelope without an LLM |
 | Responder connectors | Recorded actions can be executed against a real IdP / EDR, still shadow-checked | Planned only; nothing is sent to a vendor API |
 | Eval harness (`eval/`) | Golden cases gate classifier + investigator quality in CI | Directory exists; harness is not built |

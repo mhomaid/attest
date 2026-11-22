@@ -287,7 +287,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 ## M2 Sources and context
 
 ### T-020 — Source plugin interface in the collector
-- status: todo
+- status: review
 - milestone: M2
 - area: collector
 - model tier: A · review: A (second model)
@@ -295,14 +295,22 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §4.1
 
 **Acceptance criteria**
-- [ ] `Source` trait (id, decode, normalize) as described in the `attest-add-source` skill; CloudTrail moved onto it
-- [ ] Topics `attest.raw.<source>` and `attest.alerts`; topic names configurable with a prefix
+- [x] `Source` trait (id, decode, normalize) as described in the `attest-add-source` skill; CloudTrail moved onto it
+- [x] Topics `attest.raw.<source>` and `attest.alerts`; topic names configurable with a prefix
 - [ ] Every existing CloudTrail test passes unchanged; e2e phase 1 passes
-- [ ] `FlatEvent` gains HTTP and network fields (path, status, src IP, ASN, disposition) without breaking RisingWave tables (migration included)
+- [x] `FlatEvent` gains HTTP and network fields (path, status, src IP, ASN, disposition) without breaking RisingWave tables (migration included)
 
 **Plan:**
+- `crates/attest-collector/src/source.rs`: `Source`, `CloudTrailSource`, `TopicNames`.
+- Existing `normalize_cloudtrail` delegates to the trait so current tests stay.
+- Producer writes `<prefix>.raw.<id>` and `<prefix>.alerts` for alert sources. CloudTrail also mirrors the historical `cloudtrail` topic unless `ATTEST_MIRROR_LEGACY_CLOUDTRAIL=off`.
+- `FlatEvent` adds optional `http_path`, `http_status`, `src_ip`, `asn`, `disposition`. RisingWave `ADD COLUMN IF NOT EXISTS` in `phase1_baseline.sql`. The Kafka connector and `det_*` views stay.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `cargo test -p attest-collector -p attest-common --lib`: collector 20 passed (existing CloudTrail tests included), common 3 passed. `old_flat_json_without_http_fields_still_parses`.
+- `cargo clippy -p attest-collector -p attest-common -p attest-control-plane -p attest-load-gen --all-targets -- -D warnings` passed.
+- Org-leak check passed (no deny-list file in this worktree; generic checks only).
+- e2e phase 1 was not re-run. `verify.sh full` was not run. Status stays `review` until a second model reads the diff and phase 1 is green.
 
 ### T-021 — Graylog alert source
 - status: todo

@@ -19,7 +19,12 @@ CREATE TABLE IF NOT EXISTS cloudtrail_events (
   auth_status       VARCHAR,
   api_operation     VARCHAR,
   api_service       VARCHAR,
-  raw               JSONB
+  raw               JSONB,
+  http_path         VARCHAR,
+  http_status       VARCHAR,
+  src_ip            VARCHAR,
+  asn               VARCHAR,
+  disposition       VARCHAR
 ) WITH (
   connector                     = 'kafka',
   topic                         = 'cloudtrail',
@@ -191,3 +196,11 @@ FROM cloudtrail_events
 WHERE class_uid     = 'm365'
   AND api_operation IN ('New-InboxRule', 'Set-InboxRule')
   AND (raw->>'parameters')::TEXT ILIKE '%ForwardTo%';
+
+-- Existing clusters already created cloudtrail_events without the HTTP and
+-- network columns. ADD COLUMN keeps the Kafka connector and the det_* views.
+ALTER TABLE cloudtrail_events ADD COLUMN IF NOT EXISTS http_path VARCHAR;
+ALTER TABLE cloudtrail_events ADD COLUMN IF NOT EXISTS http_status VARCHAR;
+ALTER TABLE cloudtrail_events ADD COLUMN IF NOT EXISTS src_ip VARCHAR;
+ALTER TABLE cloudtrail_events ADD COLUMN IF NOT EXISTS asn VARCHAR;
+ALTER TABLE cloudtrail_events ADD COLUMN IF NOT EXISTS disposition VARCHAR;

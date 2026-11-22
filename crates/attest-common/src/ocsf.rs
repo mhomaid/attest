@@ -60,6 +60,9 @@ pub struct AuthenticationEvent {
     /// Raw source payload preserved for attribution.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
+    /// Fields this source did not map, under `unmapped.<prefix>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmapped: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,6 +89,9 @@ pub struct CloudActivityEvent {
     pub resources: Vec<Resource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
+    /// Fields this source did not map, under `unmapped.<prefix>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmapped: Option<serde_json::Value>,
 }
 
 /// API call metadata.
@@ -184,6 +190,7 @@ mod tests {
             severity: Severity::Informational,
             status: AuthStatus::Success,
             raw: None,
+            unmapped: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -213,6 +220,7 @@ mod tests {
             severity: Severity::Low,
             status: AuthStatus::Failure,
             raw: None,
+            unmapped: None,
         });
 
         let json = serde_json::to_string(&ev).unwrap();

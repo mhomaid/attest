@@ -93,6 +93,7 @@ services:
 env:
   TENANT_ID: default
   KAFKA_BROKERS: redpanda:9092
+  ATTEST_TOPIC_PREFIX: attest
   CLICKHOUSE_URL: http://clickhouse:8123
   RISINGWAVE_HOST: risingwave
   RISINGWAVE_PORT: "4566"
