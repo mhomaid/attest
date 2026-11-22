@@ -562,7 +562,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-041 — Terraform module for a security account
-- status: todo
+- status: review
 - milestone: M4
 - area: infra
 - model tier: B
@@ -570,12 +570,15 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §7
 
 **Acceptance criteria**
-- [ ] AWS module creates KMS key, warm and anchor buckets with Object Lock, IAM roles for service accounts
+- [x] AWS module creates KMS key, warm and anchor buckets with Object Lock, IAM roles for service accounts
 - [ ] `make tf-validate` and `tflint` pass
 
 **Plan:**
+- `infra/terraform/aws`: customer-managed KMS key, warm bucket on that key, anchor bucket with Object Lock in COMPLIANCE mode, IRSA roles for the anchor writer and the verifier.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `make tf-validate` passed (aws, gcp, azure, eks-release, k8s-release).
+- Commit `ecb7158` on `feat/t041-tf`. `tflint` is not installed on this machine, so that half of the second criterion is not proven. `.tflint.hcl` is in the tree and `make tf-validate` runs tflint when the binary exists.
 
 ### T-042 — Single-organization deployment guide
 - status: todo
