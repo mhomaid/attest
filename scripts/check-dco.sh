@@ -22,6 +22,8 @@ if [[ -z "${BASE:-}" ]]; then
   exit 1
 fi
 
+# GitHub's pull_request checkout is a merge of the head into the base. That
+# merge commit is created by Actions and has no Signed-off-by line.
 missing=0
 while IFS= read -r sha; do
   [[ -z "$sha" ]] && continue
@@ -30,7 +32,7 @@ while IFS= read -r sha; do
     echo "dco-check: $sha missing Signed-off-by ($subject)"
     missing=1
   fi
-done < <(git rev-list "${BASE}..HEAD")
+done < <(git rev-list --no-merges "${BASE}..HEAD")
 
 if [[ "$missing" -ne 0 ]]; then
   echo "dco-check: FAIL. Create commits with git commit -s."

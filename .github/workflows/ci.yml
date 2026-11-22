@@ -104,7 +104,9 @@ jobs:
 
   workbench-e2e:
     name: Workbench (Playwright)
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04, and Playwright 1.59 cannot install browser
+    # dependencies there. 24.04 is the newest image it supports.
+    runs-on: ubuntu-24.04
     needs: [typescript]
     services:
       postgres:
