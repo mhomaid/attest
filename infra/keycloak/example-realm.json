@@ -1,0 +1,88 @@
+{
+  "realm": "example",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "roles": {
+    "realm": [
+      { "name": "viewer" },
+      { "name": "analyst" },
+      { "name": "lead" },
+      { "name": "auditor" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "attest-workbench",
+      "name": "Attest workbench (e2e)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "e2e-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000"],
+      "defaultClientScopes": ["web-origins", "profile", "email", "roles"],
+      "protocolMappers": [
+        {
+          "name": "attest-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "viewer-user",
+      "email": "viewer-user@example.com",
+      "firstName": "Vera",
+      "lastName": "Viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "e2e-password", "temporary": false }],
+      "realmRoles": ["viewer"]
+    },
+    {
+      "username": "analyst-user",
+      "email": "analyst-user@example.com",
+      "firstName": "Ana",
+      "lastName": "Analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "e2e-password", "temporary": false }],
+      "realmRoles": ["analyst"]
+    },
+    {
+      "username": "lead-user",
+      "email": "lead-user@example.com",
+      "firstName": "Leo",
+      "lastName": "Lead",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "e2e-password", "temporary": false }],
+      "realmRoles": ["lead"]
+    },
+    {
+      "username": "auditor-user",
+      "email": "auditor-user@example.com",
+      "firstName": "Audie",
+      "lastName": "Auditor",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "e2e-password", "temporary": false }],
+      "realmRoles": ["auditor"]
+    }
+  ]
+}

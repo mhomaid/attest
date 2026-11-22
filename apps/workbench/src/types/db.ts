@@ -6,6 +6,8 @@ export interface AuthUsersTable {
   email: string;
   email_verified: boolean;
   image: string | null;
+  /** viewer | analyst | lead | auditor — see `src/lib/roles.ts`. */
+  role: string;
   created_at: Date;
   updated_at: Date;
 }

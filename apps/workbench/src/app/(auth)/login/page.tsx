@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { oidcConfigFromEnv, passwordAuthEnabled } from "@/lib/auth-config";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -14,10 +15,14 @@ export default async function LoginPage({
   }
 
   const { callbackUrl } = await searchParams;
+  const oidc = oidcConfigFromEnv();
+  const password = passwordAuthEnabled();
   return (
     <LoginForm
       callbackUrl={callbackUrl ?? "/workbench/queue"}
-      showLocalHints={process.env.ALLOW_AUTH_SEED === "1"}
+      showLocalHints={password && process.env.ALLOW_AUTH_SEED === "1"}
+      passwordEnabled={password}
+      sso={oidc ? { providerId: oidc.providerId, label: oidc.label } : null}
     />
   );
 }

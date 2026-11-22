@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { passwordAuthEnabled } from "@/lib/auth-config";
 import { formatWaitlistEmail, waitlistSchema } from "@/lib/waitlist";
 
 const WINDOW_MS = 60 * 60 * 1000;
@@ -19,6 +20,10 @@ function rateLimited(ip: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // SSO-only deployments have no waitlist.
+  if (!passwordAuthEnabled()) {
+    return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  }
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (rateLimited(ip)) {
     return NextResponse.json(

@@ -1,5 +1,8 @@
 import { betterAuth } from "better-auth";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
+import { oidcConfigFromEnv, passwordAuthEnabled } from "@/lib/auth-config";
 import { pool } from "@/lib/db";
+import { roleFromClaims } from "@/lib/roles";
 
 const baseURL =
   process.env.BETTER_AUTH_URL ??
@@ -27,6 +30,7 @@ function resolveAuthSecret(): string {
 }
 
 const authSecret = resolveAuthSecret();
+const oidc = oidcConfigFromEnv();
 
 export const auth = betterAuth({
   baseURL,
@@ -34,6 +38,10 @@ export const auth = betterAuth({
   database: pool,
   user: {
     modelName: "auth_users",
+    additionalFields: {
+      // Set only by the server (OIDC claim mapping or a DB migration), never from client input.
+      role: { type: "string", required: false, defaultValue: "viewer", input: false },
+    },
     fields: {
       emailVerified: "email_verified",
       createdAt: "created_at",
@@ -75,12 +83,34 @@ export const auth = betterAuth({
     },
   },
   emailAndPassword: {
-    enabled: true,
+    // ATTEST_AUTH_PASSWORD=off disables email/password sign-in and sign-up (SSO only).
+    enabled: passwordAuthEnabled(),
     requireEmailVerification: false,
     minPasswordLength: 8,
     // Public signup is closed. Seed route still works when ALLOW_AUTH_SEED=1.
     disableSignUp: process.env.ALLOW_AUTH_SEED !== "1",
   },
+  plugins: oidc
+    ? [
+        genericOAuth({
+          config: [
+            {
+              providerId: oidc.providerId,
+              issuer: oidc.issuer,
+              discoveryUrl: oidc.discoveryUrl,
+              clientId: oidc.clientId,
+              clientSecret: oidc.clientSecret,
+              scopes: oidc.scopes,
+              pkce: true,
+              // Re-read the role claim on every sign-in so IdP changes take effect.
+              overrideUserInfo: true,
+              mapProfileToUser: (profile) =>
+                ({ role: roleFromClaims(profile, oidc.roleClaim, oidc.defaultRole) }) as never,
+            },
+          ],
+        }),
+      ]
+    : [],
   trustedOrigins: [
     baseURL,
     "https://attest.homaid.dev",

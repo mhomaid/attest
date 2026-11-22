@@ -147,11 +147,33 @@ jobs:
         working-directory: apps/workbench
         run: bunx playwright install --with-deps chromium firefox webkit
 
+      # Generic realm `example` (infra/keycloak/example-realm.json). Services cannot mount
+      # repo files, so Keycloak runs as a plain container started after checkout.
+      - name: Start Keycloak (realm example)
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "$PWD/infra/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.4 start-dev --import-realm
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:8080/realms/example/.well-known/openid-configuration && exit 0
+            sleep 3
+          done
+          docker logs keycloak
+          exit 1
+
       - name: Run Playwright E2E
         working-directory: apps/workbench
         env:
+          ATTEST_E2E_OIDC: "1"
+          ATTEST_E2E_KEYCLOAK_URL: http://localhost:8080
           DATABASE_URL: postgres://attest:attest@localhost:5432/attest
           ALLOW_AUTH_SEED: "1"
           AUTH_SEED_SECRET: ci-auth-seed-secret
           BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
         run: bun run e2e
+
+      - name: Keycloak logs on failure
+        if: failure()
+        run: docker logs keycloak --tail 200

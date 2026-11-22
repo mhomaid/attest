@@ -1,6 +1,5 @@
-import { auth } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz";
 import { AUDIENCE, serviceAuthorization } from "@/lib/service-auth";
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 const ALLOWED = new Set<string>(Object.values(AUDIENCE));
@@ -10,11 +9,8 @@ const ALLOWED = new Set<string>(Object.values(AUDIENCE));
  * Short-lived service token for a browser WebSocket. Requires a signed-in session.
  */
 export async function GET(req: Request) {
-  const hdrs = await headers();
-  const session = await auth.api.getSession({ headers: hdrs });
-  if (!session?.user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authz = await requirePermission("case.view");
+  if (!authz.ok) return authz.response;
 
   const audience = new URL(req.url).searchParams.get("audience") ?? "";
   if (!ALLOWED.has(audience)) {

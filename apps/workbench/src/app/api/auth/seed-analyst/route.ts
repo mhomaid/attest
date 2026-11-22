@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { passwordAuthEnabled } from "@/lib/auth-config";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 
@@ -9,7 +10,11 @@ const SEED_EMAIL = "analyst@attest.local";
  * Prefer `infra/db` Alembic migration `0002_seed_dev_analyst` (runs with `alembic upgrade head`).
  */
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production" || process.env.ALLOW_AUTH_SEED !== "1") {
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.ALLOW_AUTH_SEED !== "1" ||
+    !passwordAuthEnabled()
+  ) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
@@ -43,5 +48,10 @@ export async function POST(req: Request) {
     }),
   });
 
-  return auth.handler(signUp);
+  const res = await auth.handler(signUp);
+  if (res.ok) {
+    // Sign-up always creates a viewer; the dev analyst needs the analyst role.
+    await db.updateTable("auth_users").set({ role: "analyst" }).where("email", "=", SEED_EMAIL).execute();
+  }
+  return res;
 }
