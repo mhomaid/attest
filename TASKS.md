@@ -190,7 +190,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - Status is `review` because this task asks for a second-model review before `done`, and the live e2e criterion is still open.
 
 ### T-011 — Generic OIDC sign-in and roles in the workbench
-- status: todo
+- status: review
 - milestone: M1
 - area: workbench
 - model tier: B
@@ -198,14 +198,22 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §5.2
 
 **Acceptance criteria**
-- [ ] Better Auth generic OIDC provider configured from env (issuer, client ID, secret, role claim)
-- [ ] Roles `viewer`, `analyst`, `lead`, `auditor` mapped from a claim; server routes enforce them — tests per role
-- [ ] Email/password sign-up and the waitlist can be disabled by flag (`ATTEST_AUTH_PASSWORD=off`); default for production Helm values is off
-- [ ] Playwright e2e signs in through a Keycloak container in CI
+- [x] Better Auth generic OIDC provider configured from env (issuer, client ID, secret, role claim)
+- [x] Roles `viewer`, `analyst`, `lead`, `auditor` mapped from a claim; server routes enforce them — tests per role
+- [x] Email/password sign-up and the waitlist can be disabled by flag (`ATTEST_AUTH_PASSWORD=off`); default for production Helm values is off
+- [x] Playwright e2e signs in through a Keycloak container in CI
 
 **Plan:**
+- Generic OIDC from env. Role claim maps to viewer, analyst, lead, auditor. Most privileged wins.
+- `ATTEST_AUTH_PASSWORD=off` disables email sign-up and the waitlist. Helm default is off. The OIDC client secret comes from `auth.oidc.existingSecret`.
+- CI workbench job starts Keycloak with realm `example`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `bun run test`: 61 pass. Includes `roles.test.ts`, `authz.test.ts`, viewer and auditor override 403, anonymous 401, waitlist 404 when the password flag is off.
+- `bun run typecheck` and `bun run lint` clean.
+- `VERIFY PASS mode=quick checks=11/11` on this branch before the evidence commit.
+- Playwright against Keycloak 26.4, realm `example`: OIDC spec 5/5, existing chromium project 7/7. Firefox and webkit were not run. The GitHub job is wired and has not run yet.
+- Commit `3515801` on `feat/t011-oidc`. `/api/cases/[caseId]/trace` and `/api/detections` are still unauthenticated. `audit.read` is defined and not enforced by a route.
 
 ### T-012 — Pluggable signer with a cloud KMS backend
 - status: todo
