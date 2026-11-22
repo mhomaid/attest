@@ -1,0 +1,21 @@
+# Feature set v2. Sources are column names on a GUIDE-shaped row.
+version: 2
+columns:
+  - name: detector
+    source: DetectorId
+    kind: number
+  - name: category_present
+    source: Category
+    kind: present
+  - name: mitre_present
+    source: MitreTechniques
+    kind: present
+  - name: entity_present
+    source: EntityType
+    kind: present
+  - name: evidence_count
+    source: EvidenceCount
+    kind: number
+  - name: hour_of_day
+    source: Timestamp
+    kind: hour
