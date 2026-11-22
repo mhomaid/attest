@@ -526,6 +526,10 @@ helm-template: ## Render and lint the reference Helm chart
 
 tf-validate: ## terraform fmt + validate aws/gcp/azure store modules (no cloud credentials)
 	terraform fmt -check -recursive infra/terraform
+	@if command -v tflint >/dev/null 2>&1; then \
+	  echo "── tflint terraform/aws ──"; \
+	  (cd infra/terraform/aws && tflint --config ../.tflint.hcl --init >/dev/null && tflint --config ../.tflint.hcl) || exit 1; \
+	else echo "tflint not installed; skipping (config: infra/terraform/.tflint.hcl)"; fi
 	@for root in aws gcp azure; do \
 	  echo "── terraform/$$root ──"; \
 	  (cd infra/terraform/$$root && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; \

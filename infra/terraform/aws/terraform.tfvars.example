@@ -6,3 +6,12 @@ name   = "attest"
 # oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EX"
 # oidc_provider_url = "oidc.eks.us-east-1.amazonaws.com/id/EX"
 # irsa_namespace    = "attest"
+
+# Security-account settings. anchor_retention_days applies Object Lock
+# COMPLIANCE mode: locked anchors cannot be deleted by anyone (including the
+# account root) until retention expires. Use a small value in test accounts.
+# anchor_retention_days = 365
+# warm_retention_days   = 0            # 0 = Object Lock on, no default retention
+# warm_retention_mode   = "GOVERNANCE"
+# irsa_anchor_service_account   = "attest-anchor"
+# irsa_verifier_service_account = "attest-verifier"
