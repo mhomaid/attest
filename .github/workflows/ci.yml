@@ -78,6 +78,30 @@ jobs:
       - name: Test
         run: bun run test
 
+  helm:
+    name: Helm (lint · template · kubeconform)
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.6.7
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: helm lint + template + hardening checks
+        run: make helm-template
+
+      - name: kubeconform schema check
+        run: make helm-kubeconform
+
   integration:
     name: Integration (docker-compose smoke)
     runs-on: ubuntu-latest

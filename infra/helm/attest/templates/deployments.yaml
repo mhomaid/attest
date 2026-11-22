@@ -40,7 +40,7 @@ spec:
     spec:
       serviceAccountName: {{ $sa }}
       securityContext:
-        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+        {{- mergeOverwrite (deepCopy $.Values.podSecurityContext) (default dict $svc.podSecurityContext) | toYaml | nindent 8 }}
       {{- with $.Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -90,6 +90,42 @@ spec:
                   name: {{ . }}
                   key: ingest-hmac
             {{- end }}
+            {{- if $.Values.devDependencies.postgres.enabled }}
+            - name: DATABASE_URL
+              value: {{ printf "postgres://attest@%s-dev-postgres:5432/attest" $full | quote }}
+            {{- else if $.Values.postgres.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.postgres.existingSecret }}
+                  key: database-url
+            {{- end }}
+            {{- with $.Values.clickhouse.existingSecret }}
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: user
+                  optional: true
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: password
+                  optional: true
+            {{- end }}
+            {{- if include "attest.kafkaUsesSecret" $ }}
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.kafka.existingSecret }}
+                  key: username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.kafka.existingSecret }}
+                  key: password
+            {{- end }}
             {{- if $.Values.toolCredentials.existingSecret }}
             - name: ATTEST_SECRET_SOURCE
               value: file
@@ -97,7 +133,7 @@ spec:
               value: {{ $.Values.toolCredentials.mountPath | quote }}
             {{- end }}
           resources:
-            {{- toYaml $.Values.resources | nindent 12 }}
+            {{- toYaml (default $.Values.resources $svc.resources) | nindent 12 }}
           {{- if and $svc.port $svc.healthPath }}
           readinessProbe:
             httpGet:

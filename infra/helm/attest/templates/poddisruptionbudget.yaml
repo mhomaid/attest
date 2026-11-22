@@ -1,0 +1,34 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- $full := include "attest.fullname" . -}}
+{{- $labels := include "attest.labels" . -}}
+{{- $selectors := include "attest.selectorLabels" . -}}
+{{- range $name, $svc := dict
+  "collector" .Values.services.collector
+  "control-plane" .Values.services.controlPlane
+  "orchestrator" .Values.services.orchestrator
+  "mcp-gateway" .Values.services.mcpGateway
+  "storage-iceberg" .Values.services.storageIceberg
+  "workbench" .Values.services.workbench
+}}
+{{- if $svc.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  {{- if gt (int $.Values.replicaCount) 1 }}
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ $.Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}
+{{- end }}

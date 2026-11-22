@@ -546,7 +546,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 ## M4 Packaging
 
 ### T-040 — Helm hardening for a single-organization production deploy
-- status: todo
+- status: review
 - milestone: M4
 - area: infra
 - model tier: B
@@ -554,14 +554,20 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §7
 
 **Acceptance criteria**
-- [ ] Values for external Kafka (SASL/IAM), ClickHouse, S3 and Postgres; bundled dev dependencies off by default
-- [ ] NetworkPolicies (default deny, explicit allows), `securityContext` (non-root, read-only root FS), resource limits, PodDisruptionBudgets
-- [ ] Service-account annotations for cloud IAM; no secrets in values
-- [ ] `make helm-template` plus a kubeconform or similar schema check in CI
+- [x] Values for external Kafka (SASL/IAM), ClickHouse, S3 and Postgres; bundled dev dependencies off by default
+- [x] NetworkPolicies (default deny, explicit allows), `securityContext` (non-root, read-only root FS), resource limits, PodDisruptionBudgets
+- [x] Service-account annotations for cloud IAM; no secrets in values
+- [x] `make helm-template` plus a kubeconform or similar schema check in CI
 
 **Plan:**
+- Default chart: non-root, read-only root filesystem, resource limits, one PodDisruptionBudget per Deployment, default-deny NetworkPolicy plus explicit DNS, in-release, and egress allows.
+- `values-production.example.yaml` points Kafka, ClickHouse, Postgres, and S3 at external services and references existing Secrets. Bundled dev dependencies stay off unless enabled.
+- `make helm-template` runs `scripts/tests/helm_hardening_test.sh`. CI runs that and `make helm-kubeconform`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `make helm-template` passed (6 Deployments, 6 PDBs).
+- `make helm-kubeconform` with kubeconform v0.6.7: ci-values 30 valid, production example 31 valid, 0 invalid.
+- `verify.sh full` was not run, so this stays `review`.
 
 ### T-041 — Terraform module for a security account
 - status: todo

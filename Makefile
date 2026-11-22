@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template helm-kubeconform tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -533,7 +533,20 @@ helm-template: ## Render and lint the reference Helm chart
 	if echo "$$out" | grep -q '^kind: Secret$$'; then echo "prod profile renders a Secret object"; exit 1; fi; \
 	echo "$$out" | grep -q 'secretName: attest-tool-credentials' || { echo "tool credentials secret not mounted"; exit 1; }; \
 	echo "$$out" | grep -q 'name: ATTEST_SECRETS_DIR' || { echo "ATTEST_SECRETS_DIR missing"; exit 1; }
-	@echo "✔ helm lint + template (static keys, IRSA, secrets by reference)"
+	@helm lint infra/helm/attest -f infra/helm/attest/values-production.example.yaml
+	@./scripts/tests/helm_hardening_test.sh
+	@echo "✔ helm lint + template (static keys, IRSA, secrets by reference, hardening)"
+
+helm-kubeconform: ## Validate rendered chart manifests against Kubernetes schemas (needs kubeconform)
+	@command -v kubeconform >/dev/null || { echo "kubeconform not installed: https://github.com/yannh/kubeconform#installation"; exit 1; }
+	@for v in ci-values.yaml values-production.example.yaml; do \
+	  echo "kubeconform: $$v"; \
+	  helm template attest infra/helm/attest -n attest -f infra/helm/attest/$$v \
+	    --set devDependencies.postgres.enabled=true \
+	    --set devDependencies.clickhouse.enabled=true \
+	    --set devDependencies.redpanda.enabled=true \
+	  | kubeconform -strict -summary -kubernetes-version 1.31.0 || exit 1; \
+	done
 
 tf-validate: ## terraform fmt + validate aws/gcp/azure store modules (no cloud credentials)
 	terraform fmt -check -recursive infra/terraform
