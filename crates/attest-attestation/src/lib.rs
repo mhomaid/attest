@@ -9,6 +9,7 @@
 //! newline-delimited JSON to `ATTEST_LOG_PATH` (default `./attestations.ndjson`) and,
 //! when `ATTEST_LOG_S3_BUCKET` is set, a durable object-store replica.
 
+pub mod anchor;
 pub mod envelope;
 #[cfg(feature = "aws-kms")]
 pub mod kms;
@@ -18,6 +19,7 @@ pub mod signer;
 pub mod trace_step;
 pub mod verify;
 
+pub use anchor::{check_anchor, sign_anchor, AnchorSchedule, ChainAnchor};
 pub use envelope::{
     default_alg, AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence,
     CrossReviewBlock, EscalationReason, EvidenceBlock, ExecutionPathKind, HybridEvidence,

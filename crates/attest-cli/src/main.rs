@@ -56,6 +56,9 @@ enum Command {
         /// JSON keyring: `{ "keys": [{ "key_id", "alg", "public_key" }], "legacy": { ... } }`.
         #[arg(long, value_name = "PATH")]
         keyring: Option<PathBuf>,
+        /// Signed chain-tip anchor JSON. A shorter log fails with `truncated after seq N`.
+        #[arg(long, value_name = "PATH")]
+        anchors: Option<PathBuf>,
         /// Fail envelopes whose classifier `model_artifact_hash` differs from this SHA-256.
         #[arg(long, value_name = "SHA256")]
         pin_model: Option<String>,
@@ -96,6 +99,7 @@ fn run() -> Result<ExitCode> {
             log,
             verifying_key,
             keyring,
+            anchors,
             pin_model,
             pin_prompt,
         } => {
@@ -124,6 +128,15 @@ fn run() -> Result<ExitCode> {
                 system_prompt_hash: pin_prompt,
             };
             attest_cli::apply_pins(&mut report, &envelopes, &pins);
+            if let Some(path) = anchors {
+                let raw = std::fs::read_to_string(&path)
+                    .with_context(|| format!("failed to read anchors {}", path.display()))?;
+                let anchor: attest_attestation::ChainAnchor = serde_json::from_str(&raw)
+                    .with_context(|| format!("{}: invalid anchor JSON", path.display()))?;
+                if let Err(detail) = attest_attestation::check_anchor(&envelopes, &anchor) {
+                    anyhow::bail!(detail);
+                }
+            }
             attest_cli::write_report_verify(&report);
             report.all_ok()
         }
