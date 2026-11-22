@@ -597,7 +597,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-043 — Remove or isolate hosted-demo code paths
-- status: todo
+- status: review
 - milestone: M4
 - area: platform
 - model tier: C
@@ -605,12 +605,17 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §7
 
 **Acceptance criteria**
-- [ ] Railway config, waitlist and marketing pages are isolated behind a `demo` build profile or a separate app, and are not in the production image — test: production image contains no waitlist route
-- [ ] README status table updated
+- [x] Railway config, waitlist and marketing pages are isolated behind a `demo` build profile or a separate app, and are not in the production image — test: production image contains no waitlist route
+- [x] README status table updated
 
 **Plan:**
+- `apps/workbench/scripts/apply-build-profile.ts` runs before `next build`. `ATTEST_BUILD_PROFILE=production` (the Dockerfile default) removes marketing pages, the waitlist, the public demo API, and `railway.toml`, and adds a `/` redirect to `/login`.
+- The hosted demo sets `ATTEST_BUILD_PROFILE=demo` in `infra/railway/workbench.json`. `.dockerignore` also keeps `railway.toml` out of the image.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `production image > contains no waitlist route` and `production image > demo profile keeps the waitlist route and marketing pages` passed. `bun run typecheck` passed. Existing waitlist tests still pass.
+- README status table records the production image and the demo profile.
+- Commit `8719aa5` on `feat/t043-demo`. `verify.sh full` was not run, so this stays `review`.
 
 ---
 
