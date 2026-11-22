@@ -9,4 +9,5 @@ Workbench (if enabled):
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "attest.fullname" . }}-workbench {{ .Values.services.workbench.port }}:{{ .Values.services.workbench.port }}
 
 Signing key: {{ if .Values.signingKey }}set{{ else }}empty — orchestrator will mint an ephemeral key (envelopes will not verify after a restart){{ end }}
+Service auth: {{ if .Values.serviceAuth.existingSecret }}secret {{ .Values.serviceAuth.existingSecret }}{{ else }}not mounted — non-health routes return 401 until serviceAuth.existingSecret is set{{ end }}
 IRSA: {{ .Values.objectStore.useIrsa }}

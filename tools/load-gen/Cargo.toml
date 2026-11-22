@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 attest-common = { path = "../../crates/attest-common" }
+attest-service-auth = { path = "../../crates/attest-service-auth" }
 anyhow = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }

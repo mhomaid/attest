@@ -161,7 +161,7 @@ pub async fn start_run(
         .map(|i| {
             (
                 format!("tenant-{:03}", i),
-                format!("user-{:03}@acme.example.com", i),
+                format!("user-{:03}@example.com", i),
             )
         })
         .collect();
@@ -341,8 +341,13 @@ async fn produce_loop(
                 let ts = triage_samples.clone();
                 tokio::spawn(async move {
                     let t0 = Instant::now();
-                    if http.post(&url)
-                        .header("Content-Type", "application/json")
+                    let mut request = http.post(&url).header("Content-Type", "application/json");
+                    if let Some(authorization) = attest_service_auth::authorization_from_env(
+                        attest_service_auth::AUDIENCE_ORCHESTRATOR,
+                    ) {
+                        request = request.header("authorization", authorization);
+                    }
+                    if request
                         .body(serde_json::json!({ "alert": serde_json::from_str::<serde_json::Value>(&body).unwrap_or_default() }).to_string())
                         .send()
                         .await
