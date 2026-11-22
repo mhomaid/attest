@@ -613,7 +613,7 @@ on licensed public data and a synthetic commerce scenario pack, with every datas
 checked by code before it can be used for training.
 
 ### T-050 — Dataset registry and license gate
-- status: todo
+- status: review
 - milestone: MD
 - area: ml
 - model tier: C
@@ -623,15 +623,20 @@ checked by code before it can be used for training.
 **Why:** Public datasets come with different licenses. Some allow commercial training, some only research. The code, not memory, must enforce which is which.
 
 **Acceptance criteria**
-- [ ] `ml/datasets/registry.yaml` lists each dataset: id, source URL, license, `allowed_use` (`train`, `eval`, `fixtures`), expected checksum, citation
-- [ ] `make dataset-fetch ID=<id>` downloads to a gitignored cache and verifies the checksum; nothing under `ml/datasets/cache/` is ever committed (test: `.gitignore` check)
-- [ ] The training entry point refuses any dataset whose `allowed_use` lacks `train` — test: `test_train_refuses_eval_only_dataset`
-- [ ] Each dataset has a short data card in `ml/datasets/cards/<id>.md` (source, license, size, labels, known biases)
-- [ ] Every trained model records the dataset IDs and checksums it used
+- [x] `ml/datasets/registry.yaml` lists each dataset: id, source URL, license, `allowed_use` (`train`, `eval`, `fixtures`), expected checksum, citation
+- [x] `make dataset-fetch ID=<id>` downloads to a gitignored cache and verifies the checksum; nothing under `ml/datasets/cache/` is ever committed (test: `.gitignore` check)
+- [x] The training entry point refuses any dataset whose `allowed_use` lacks `train` — test: `test_train_refuses_eval_only_dataset`
+- [x] Each dataset has a short data card in `ml/datasets/cards/<id>.md` (source, license, size, labels, known biases)
+- [x] Every trained model records the dataset IDs and checksums it used
 
 **Plan:**
+- Registry: GUIDE and RBA may train. BOTS is eval only. CSIC 2010 is fixtures and eval only.
+- Fetch verifies the checksum into `ml/datasets/cache/`, which is gitignored. Training records ids and checksums in `model_metrics.json`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `test_registry_lists_public_datasets`, `test_dataset_cache_is_gitignored`, `test_fetch_verifies_checksum_on_fixture`, `test_data_cards_cover_registry`, `test_train_refuses_eval_only_dataset`, `test_train_records_dataset_ids_and_checksums`.
+- `uv run pytest datasets/ triager/ test_smoke.py`: 11 passed. No dataset bytes committed.
+- Commit `a5a3e9b` on `feat/t050-datasets`. GUIDE and CSIC 2010 have no publisher file digest, so fetch refuses those two until a real checksum is pinned. RBA and BOTS v2 are pinned. Not `done` until `verify.sh full` runs on this branch.
 
 ### T-051 — Feature set v2 and a v0 triage model trained on GUIDE
 - status: todo
