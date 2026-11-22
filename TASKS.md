@@ -156,7 +156,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 ## M1 Trust hardening
 
 ### T-010 — Service-to-service authentication
-- status: todo
+- status: review
 - milestone: M1
 - area: platform
 - model tier: A · review: A (second model)
@@ -166,15 +166,27 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** Today control-plane, orchestrator, mcp-gateway and ws-gateway accept any caller, and collector ingest is open.
 
 **Acceptance criteria**
-- [ ] Every non-health route on those services requires a signed service token (short-lived JWT, audience per service) or mTLS; ADR records the choice
-- [ ] One test per service: request without a token → 401; wrong audience → 401; valid → 200
-- [ ] Collector HTTP ingest requires an HMAC signature over the body with a timestamp; replay older than 5 minutes → 401 — tests: `ingest_rejects_unsigned`, `ingest_rejects_replay`
-- [ ] `/healthz` stays open; no secret appears in logs (test with a log capture)
+- [x] Every non-health route on those services requires a signed service token (short-lived JWT, audience per service) or mTLS; ADR records the choice
+- [x] One test per service: request without a token → 401; wrong audience → 401; valid → 200
+- [x] Collector HTTP ingest requires an HMAC signature over the body with a timestamp; replay older than 5 minutes → 401 — tests: `ingest_rejects_unsigned`, `ingest_rejects_replay`
+- [x] `/healthz` stays open; no secret appears in logs (test with a log capture)
 - [ ] All e2e phases still pass with auth enabled
 
 **Plan:**
+- ADR `docs/19_Service_Auth.md`: HS256 service JWT (audience per service, 2 minute lifetime), not mTLS.
+- `attest-service-auth` middleware. `/healthz` stays open. Collector ingest uses HMAC-SHA256 over `timestamp.body`, 5 minute window.
+- Compose sets a dev secret. Helm does not embed one. Workbench server routes and the alerts websocket attach a token minted from that secret.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `attest_service_auth::control_plane_requires_its_own_audience`, `orchestrator_requires_its_own_audience`, `mcp_gateway_requires_its_own_audience`, `ws_gateway_requires_its_own_audience`: missing token 401, wrong audience 401, valid token 200, `/healthz` open.
+- `ingest_rejects_unsigned`, `ingest_rejects_replay`, `ingest_accepts_a_fresh_signature`.
+- `rejection_log_does_not_contain_the_secret_or_token`.
+- `expired_token_is_rejected`.
+- Workbench `service auth > production without a secret does not invent a token` and `a configured secret produces an HS256 token for that audience`.
+- ADR: `docs/19_Service_Auth.md`. Helm `serviceAuth.existingSecret` is empty, so the chart does not embed a secret.
+- Live e2e phases were not re-run. `cargo test --workspace` compiles them and they return unless `ATTEST_E2E=1`. The compose containers already running were started before these binaries, so "all e2e phases still pass with auth enabled" is not checked.
+- `VERIFY PASS mode=full checks=14/14 skipped=0 commit=502d735 at=2026-11-22T02:29Z`
+- Status is `review` because the task asks for a second-model review before `done`, and the live e2e criterion is still open.
 
 ### T-011 — Generic OIDC sign-in and roles in the workbench
 - status: todo

@@ -110,6 +110,11 @@ impl McpClient {
             attest_telemetry::inject_trace_headers(&mut headers);
             req = req.headers(headers);
         }
+        if let Some(value) =
+            attest_service_auth::authorization_from_env(attest_service_auth::AUDIENCE_MCP_GATEWAY)
+        {
+            req = req.header(http::header::AUTHORIZATION, value);
+        }
 
         let http_resp = req
             .send()

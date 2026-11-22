@@ -58,6 +58,12 @@ objectStore:
 # Hex Ed25519 seed. Empty → orchestrator mints an ephemeral key (dev only).
 signingKey: ""
 
+# Kubernetes Secret name. Keys: service-auth, ingest-hmac.
+# Empty leaves both env vars unset, so every non-health route returns 401.
+# The chart does not create this secret and does not embed a value.
+serviceAuth:
+  existingSecret: ""
+
 services:
   collector:
     enabled: true

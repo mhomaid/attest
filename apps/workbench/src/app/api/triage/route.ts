@@ -1,3 +1,4 @@
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const ORCHESTRATOR_URL =
@@ -6,12 +7,12 @@ const ORCHESTRATOR_URL =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const res = await fetch(`${ORCHESTRATOR_URL}/triage`, {
+    const res = await fetch(`${ORCHESTRATOR_URL}/triage`, withServiceAuth(AUDIENCE.orchestrator, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
-    });
+    }));
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (err) {

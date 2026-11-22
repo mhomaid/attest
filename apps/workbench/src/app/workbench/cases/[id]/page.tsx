@@ -2,6 +2,7 @@ import { CaseInvestigationClient } from "@/components/workbench/case-investigati
 import { CaseStoreFallback } from "@/components/workbench/case-store-fallback";
 import { getCase, upsertCaseSnapshot } from "@/lib/server/case-repository";
 import type { OcsfEvent } from "@/lib/ocsf-to-alert";
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,10 +10,10 @@ const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
 
 async function fetchEvent(id: string): Promise<OcsfEvent | null> {
   try {
-    const res = await fetch(`${CP_URL}/v1/events/recent?id=${encodeURIComponent(id)}`, {
+    const res = await fetch(`${CP_URL}/v1/events/recent?id=${encodeURIComponent(id)}`, withServiceAuth(AUDIENCE.controlPlane, {
       cache: "no-store",
       signal: AbortSignal.timeout(2000),
-    });
+    }));
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -26,7 +27,7 @@ async function fetchBaseline(
   try {
     const res = await fetch(
       `${CP_URL}/v1/baselines/user/${encodeURIComponent(username)}`,
-      { next: { revalidate: 30 }, signal: AbortSignal.timeout(1500) },
+      withServiceAuth(AUDIENCE.controlPlane, { next: { revalidate: 30 }, signal: AbortSignal.timeout(1500) }),
     );
     if (!res.ok) return null;
     return res.json();

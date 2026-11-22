@@ -1,3 +1,4 @@
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextResponse } from "next/server";
 
 const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
@@ -9,10 +10,10 @@ const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
  */
 export async function GET() {
   try {
-    const res = await fetch(`${CP_URL}/v1/detections/fired`, {
+    const res = await fetch(`${CP_URL}/v1/detections/fired`, withServiceAuth(AUDIENCE.controlPlane, {
       // Never cache — we always want the freshest snapshot for the server render.
       cache: "no-store",
-    });
+    }));
 
     if (!res.ok) {
       return NextResponse.json(

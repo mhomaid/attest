@@ -180,8 +180,8 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 
 | Component | Status | Notes |
 |---|---|---|
-| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` (tenant from `X-Tenant-Id`, else `TENANT_ID`). `POST /ingest/s3` or an S3 object-created notification fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. No ingest auth yet: keep the collector on a private network. |
-| RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1 |
+| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` requires an HMAC (`X-Attest-Timestamp`, `X-Attest-Signature`) and rejects replays older than 5 minutes. Tenant from `X-Tenant-Id`, else `TENANT_ID`. `POST /ingest/s3` fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. |
+| RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1. Control-plane, orchestrator, MCP gateway, and ws-gateway require a short-lived service token on every route except `/healthz`. |
 | Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet under `s3://attest-warm/attest/cloudtrail/data/` on Garage. Snapshot commits via iceberg-rust. Phase 2 seeds 10k events and reads them back through ClickHouse `s3()`. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
 | HELIQL detections | Working | 10 rules in `detections/`, each with a positive and a negative fixture. `okta_brute_force` fires at 5 failed Okta logins for one user within 10 minutes. |
@@ -360,7 +360,7 @@ Make a clone something you would leave running, not just demo.
 
 | Item | Outcome | Today |
 |---|---|---|
-| Authenticated ingest | Per-tenant tokens on the collector | Private-network only; no ingest auth |
+| Authenticated ingest | Per-tenant tokens on the collector | HMAC plus a 5-minute replay window. One shared dev secret, not yet a token per tenant. |
 | Iceberg REST catalog | Restart-safe catalog that is not `MemoryCatalog` + `version-hint.text` | Snapshot reload works; catalog is local |
 | Pinned service images | Compose / Helm tags that do not float | Compose infra images are pinned. App images are still built from source. |
 | S3-native object store path | Garage locally, S3 or R2 when hosted | Local default is Garage. See `docs/18_Object_Store.md`. |

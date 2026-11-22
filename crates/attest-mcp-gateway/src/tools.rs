@@ -70,6 +70,11 @@ async fn query_warm_tier(args: &Value, warm_limiter: &WarmTierLimiter) -> Result
         attest_telemetry::inject_trace_headers(&mut headers);
         req = req.headers(headers);
     }
+    if let Some(value) =
+        attest_service_auth::authorization_from_env(attest_service_auth::AUDIENCE_CONTROL_PLANE)
+    {
+        req = req.header(http::header::AUTHORIZATION, value);
+    }
 
     let resp = req
         .send()

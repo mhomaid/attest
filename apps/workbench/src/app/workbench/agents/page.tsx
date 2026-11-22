@@ -1,5 +1,6 @@
 import { Activity, Bot, CheckCircle2, Clock3, Cpu, Zap } from "lucide-react";
 import { StatusBadge } from "@/components/workbench/status-badge";
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL ?? "http://localhost:4300";
 
@@ -12,10 +13,10 @@ type OrchestratorMetrics = {
 
 async function fetchOrchestratorMetrics(): Promise<OrchestratorMetrics | null> {
   try {
-    const res = await fetch(`${ORCHESTRATOR_URL}/metrics`, {
+    const res = await fetch(`${ORCHESTRATOR_URL}/metrics`, withServiceAuth(AUDIENCE.orchestrator, {
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
-    });
+    }));
     if (!res.ok) return null;
     return res.json();
   } catch {

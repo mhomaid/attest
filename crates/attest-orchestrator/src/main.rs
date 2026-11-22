@@ -254,7 +254,12 @@ async fn main() -> anyhow::Result<()> {
         shadow_checker,
     )?;
 
-    let router = build_router(engine);
+    let secret = std::env::var(attest_service_auth::SERVICE_AUTH_ENV).unwrap_or_default();
+    let router = attest_service_auth::protect(
+        build_router(engine),
+        secret,
+        attest_service_auth::AUDIENCE_ORCHESTRATOR,
+    );
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!(port, artifacts_dir, mcp_url, "Orchestrator listening");
 

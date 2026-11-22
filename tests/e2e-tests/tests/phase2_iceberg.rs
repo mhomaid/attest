@@ -71,9 +71,7 @@ async fn seed_events(count: usize, batch: usize) {
             .collect();
 
         let payload = serde_json::json!({ "Records": records });
-        let res = client
-            .post(&url)
-            .json(&payload)
+        let res = e2e_tests::signed_ingest(client.post(&url), &payload)
             .send()
             .await
             .expect("collector /ingest unreachable");
@@ -90,12 +88,14 @@ async fn seed_events(count: usize, batch: usize) {
 
 /// Call /v1/warm/query and return the first integer in the first row (or None).
 async fn warm_count_query(sql: &str) -> Option<u64> {
-    let res = reqwest::Client::new()
-        .post(format!("{}/v1/warm/query", control_plane_url()))
-        .json(&serde_json::json!({ "sql": sql }))
-        .send()
-        .await
-        .ok()?;
+    let res = e2e_tests::authed(
+        reqwest::Client::new().post(format!("{}/v1/warm/query", control_plane_url())),
+        e2e_tests::AUDIENCE_CONTROL_PLANE,
+    )
+    .json(&serde_json::json!({ "sql": sql }))
+    .send()
+    .await
+    .ok()?;
 
     let status = res.status();
     let body_text = res.text().await.unwrap_or_default();

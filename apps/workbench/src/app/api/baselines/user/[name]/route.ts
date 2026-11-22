@@ -1,3 +1,4 @@
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
@@ -10,7 +11,7 @@ export async function GET(
   const upstream = `${CP_URL}/v1/baselines/user/${encodeURIComponent(name)}`;
 
   try {
-    const res = await fetch(upstream, { next: { revalidate: 0 } });
+    const res = await fetch(upstream, withServiceAuth(AUDIENCE.controlPlane, { next: { revalidate: 0 } }));
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (err) {

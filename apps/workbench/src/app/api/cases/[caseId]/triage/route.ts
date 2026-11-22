@@ -1,3 +1,4 @@
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest } from "next/server";
 import {
   getCase,
@@ -116,7 +117,7 @@ async function baselineDeviation(
   try {
     const res = await fetch(
       `${CP_URL}/v1/baselines/user/${encodeURIComponent(username)}`,
-      { next: { revalidate: 30 } },
+      withServiceAuth(AUDIENCE.controlPlane, { next: { revalidate: 30 } }),
     );
     if (!res.ok) return 0;
     const baseline = (await res.json()) as { regions_seen_30d?: string[] };
@@ -251,7 +252,7 @@ export async function POST(
 
   const run = (async () => {
     await markTriageRunning(caseId);
-    const upstream = await fetch(`${ORCHESTRATOR_URL}/triage`, {
+    const upstream = await fetch(`${ORCHESTRATOR_URL}/triage`, withServiceAuth(AUDIENCE.orchestrator, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -261,7 +262,7 @@ export async function POST(
       }),
       // No AbortSignal — let the orchestrator take as long as it needs.
       // The browser connection is the natural boundary.
-    });
+    }));
 
     if (!upstream.ok) {
       throw new Error(`Orchestrator returned ${upstream.status}`);
