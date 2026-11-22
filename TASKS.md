@@ -248,7 +248,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-014 — Secrets interface
-- status: todo
+- status: review
 - milestone: M1
 - area: platform
 - model tier: B
@@ -256,13 +256,20 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §5.4
 
 **Acceptance criteria**
-- [ ] A `SecretSource` abstraction: env (dev), file (Kubernetes secret mount), AWS Secrets Manager (feature)
-- [ ] Tool credentials are resolved per tool ID and reloaded without restart on rotation — test with the file source
-- [ ] No production Helm value requires a secret in plain env
+- [x] A `SecretSource` abstraction: env (dev), file (Kubernetes secret mount), AWS Secrets Manager (feature)
+- [x] Tool credentials are resolved per tool ID and reloaded without restart on rotation — test with the file source
+- [x] No production Helm value requires a secret in plain env
 
 **Plan:**
+- `attest-secrets`: `EnvSource`, `FileSource`, and `AwsSecretsManagerSource` behind the `aws` feature.
+- Helm mounts `toolCredentials.existingSecret`. `values.yaml` holds no secret material.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `crates/attest-secrets/tests/secret_sources.rs`: 8 pass, including `file_source_reloads_after_rotation_without_reconstruction` and `file_source_rejects_path_traversal_and_bad_names`.
+- `cargo clippy -p attest-secrets --all-targets -- -D warnings` clean with and without `--features aws`.
+- `make helm-template` pass.
+- Commit `e47a1c7` on `feat/t014-secrets`. The AWS backend compiles and is not exercised against a live account. No gateway tool calls `ToolCredentials` yet.
+- `verify.sh quick` failed only the workbench bun checks: this worktree has no `node_modules`. Rust, Helm, and the leak check passed. Not `done` until `verify.sh full` is green on a checkout that can run those bun checks.
 
 ### T-015 — Prompt-injection regression suite for log fields
 - status: todo
