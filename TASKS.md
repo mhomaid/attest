@@ -702,7 +702,7 @@ checked by code before it can be used for training.
 **Evidence:**
 
 ### T-054 — Investigator evaluation with public SOC exercises
-- status: todo
+- status: review
 - milestone: MD
 - area: eval
 - model tier: B
@@ -712,14 +712,20 @@ checked by code before it can be used for training.
 **Why:** Splunk Boss of the SOC datasets (CC0) come with questions and answers, which gives ground truth for the LLM investigator.
 
 **Acceptance criteria**
-- [ ] A harness loads a BOTS export (JSON/CSV) into the warm tier and asks the investigator the published questions through the normal MCP tools
-- [ ] Scores exact-match and cited-evidence correctness per question; result stored as a CI artifact
-- [ ] Runs with a recorded or scripted model in CI; a live model run is a manual `make eval-investigator`
-- [ ] No answer key is ever placed in the model context — test
+- [x] A harness loads a BOTS export (JSON/CSV) into the warm tier and asks the investigator the published questions through the normal MCP tools
+- [x] Scores exact-match and cited-evidence correctness per question; result stored as a CI artifact
+- [x] Runs with a recorded or scripted model in CI; a live model run is a manual `make eval-investigator`
+- [x] No answer key is ever placed in the model context — test
 
 **Plan:**
+- `eval/bots_eval` loads a JSON or CSV export into an in-memory warm table (or ClickHouse when `--live`), and the investigator may only query it through a read-only gateway.
+- Scoring is exact-match plus cited-evidence. The scripted model runs in CI and uploads `eval/results/investigator-bots.json`. `make eval-investigator` is the live run and stays off unless `ATTEST_EVAL_LIVE=1`.
+- Fixtures are synthetic and BOTS-shaped. They are not a copy of the Splunk dataset.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `pytest bots_eval/test_harness.py`: 27 passed, including `test_answer_key_is_never_in_the_model_context` and `test_run_eval_stops_before_calling_a_model_when_the_question_leaks`.
+- Scripted run wrote a result with exact 0.80, cited 0.80, n=5.
+- `verify.sh full` was not run, so this stays `review`. The harness uses an in-process gateway with the same allow/deny rules, not the production MCP process.
 
 ### T-055 — Several pinned models, one per detection family
 - status: todo

@@ -296,6 +296,13 @@ smoke: ## Quick sanity check: cargo test + bun test + pytest
 	bun run test
 	cd ml && env -u VIRTUAL_ENV uv run pytest datasets/ triager/ test_smoke.py -q
 
+eval-investigator-ci: ## Scripted BOTS-shaped investigator eval (no live model, no network)
+	cd eval && uv run --with pytest python -m pytest bots_eval/test_harness.py -q
+	cd eval && uv run --with pytest python -m bots_eval --out results/investigator-bots.json
+
+eval-investigator: ## Live investigator eval. Needs ATTEST_EVAL_LIVE=1 plus LLM, ClickHouse and MCP URLs.
+	cd eval && uv run --with pytest python -m bots_eval --live --out results/investigator-bots.json
+
 dataset-fetch: ## Download one registered dataset into the gitignored cache and verify its checksum
 	@test -n "$(ID)" || (echo "usage: make dataset-fetch ID=<id>" >&2; exit 1)
 	cd ml && env -u VIRTUAL_ENV uv run python -m datasets.fetch --id "$(ID)" \

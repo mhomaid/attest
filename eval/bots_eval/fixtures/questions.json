@@ -1,0 +1,24 @@
+{
+  "questions": [
+    {
+      "id": "q-001",
+      "text": "Which host made the earliest connection to 203.0.113.50?"
+    },
+    {
+      "id": "q-002",
+      "text": "Which user account logged in from 198.51.100.23?"
+    },
+    {
+      "id": "q-003",
+      "text": "How many failed logins are there for user jdoe?"
+    },
+    {
+      "id": "q-004",
+      "text": "What domain did host wks-0012 look up?"
+    },
+    {
+      "id": "q-005",
+      "text": "Which process did user jdoe start on host wks-0007?"
+    }
+  ]
+}

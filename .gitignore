@@ -92,3 +92,5 @@ ml/datasets/cache/
 !examples/**/*.ndjson
 # Scratch / debug JSON dumps
 test.json
+# Investigator eval output. CI uploads it as an artifact.
+eval/results/

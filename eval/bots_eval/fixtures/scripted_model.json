@@ -1,0 +1,55 @@
+{
+  "q-001": {
+    "queries": [
+      "SELECT event_id, host FROM bots_events WHERE dst_ip = '203.0.113.50' AND action = 'connect' ORDER BY ts LIMIT 1"
+    ],
+    "answer": {
+      "query": 0,
+      "row": 0,
+      "col": 1
+    },
+    "cite": "all"
+  },
+  "q-002": {
+    "queries": [
+      "SELECT event_id, user FROM bots_events WHERE src_ip = '198.51.100.23' AND action = 'login_success' ORDER BY ts LIMIT 1"
+    ],
+    "answer": {
+      "query": 0,
+      "row": 0,
+      "col": 1
+    },
+    "cite": "all"
+  },
+  "q-003": {
+    "queries": [
+      "SELECT event_id FROM bots_events WHERE user = 'jdoe' AND action = 'login_failed'"
+    ],
+    "answer": {
+      "row_count": true
+    },
+    "cite": "all"
+  },
+  "q-004": {
+    "queries": [
+      "SELECT event_id, host FROM bots_events WHERE host = 'wks-0012' AND action = 'dns_query'"
+    ],
+    "answer": {
+      "query": 0,
+      "row": 0,
+      "col": 1
+    },
+    "cite": "all"
+  },
+  "q-005": {
+    "queries": [
+      "SELECT event_id, message FROM bots_events WHERE user = 'jdoe' AND host = 'wks-0007' AND action = 'process_start'"
+    ],
+    "answer": {
+      "query": 0,
+      "row": 0,
+      "col": 1
+    },
+    "cite": "none"
+  }
+}

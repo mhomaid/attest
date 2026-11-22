@@ -53,6 +53,18 @@ jobs:
         working-directory: ml
         run: uv sync --frozen && uv run pytest triager/ test_smoke.py -q
 
+      - name: Investigator eval (scripted model)
+        working-directory: eval
+        run: |
+          uv run --with pytest python -m pytest bots_eval/test_harness.py -q
+          uv run --with pytest python -m bots_eval --out results/investigator-bots.json
+
+      - name: Upload investigator eval result
+        uses: actions/upload-artifact@v4
+        with:
+          name: investigator-bots
+          path: eval/results/investigator-bots.json
+
   typescript:
     name: TypeScript (bun · typecheck · lint)
     runs-on: ubuntu-latest

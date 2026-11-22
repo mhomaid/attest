@@ -1,0 +1,13 @@
+event_id,ts,sourcetype,host,user,src_ip,dst_ip,action,message
+evt-0001,2024-01-10T09:00:00Z,auth,wks-0007,jdoe,192.0.2.10,,login_failed,bad password
+evt-0002,2024-01-10T09:01:00Z,auth,wks-0007,jdoe,192.0.2.10,,login_failed,bad password
+evt-0003,2024-01-10T09:02:00Z,auth,wks-0007,jdoe,192.0.2.10,,login_failed,bad password
+evt-0004,2024-01-10T09:03:00Z,auth,wks-0007,jdoe,192.0.2.10,,login_success,
+evt-0005,2024-01-10T09:10:00Z,netflow,wks-0007,jdoe,192.0.2.10,203.0.113.50,connect,tcp 443
+evt-0006,2024-01-10T09:20:00Z,netflow,wks-0012,asmith,192.0.2.22,203.0.113.50,connect,tcp 443
+evt-0007,2024-01-10T09:30:00Z,auth,srv-0001,svc-backup,198.51.100.23,,login_success,
+evt-0008,2024-01-10T09:40:00Z,dns,wks-0012,asmith,192.0.2.22,,dns_query,evil.example.net
+evt-0009,2024-01-10T10:00:00Z,auth,wks-0012,asmith,192.0.2.22,,login_success,
+evt-0010,2024-01-10T10:05:00Z,process,wks-0007,jdoe,192.0.2.10,,process_start,tool-x.exe
+evt-0011,2024-01-10T10:06:00Z,process,wks-0012,asmith,192.0.2.22,,process_start,calc.exe
+evt-0012,2024-01-10T10:10:00Z,netflow,srv-0001,svc-backup,198.51.100.23,192.0.2.99,connect,tcp 22
