@@ -47,6 +47,7 @@ run-mcp-gateway: ## Run MCP gateway natively (port 4242) — set CONTROL_PLANE_U
 	$(DOTENV_SH) \
 	CONTROL_PLANE_URL=$${CONTROL_PLANE_URL:-http://localhost:8080} \
 	  MCP_GATEWAY_PORT=4242 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-mcp-gateway
 
 run-control-plane: ## Run control-plane API natively (port 8080) — requires RisingWave, ClickHouse, Kafka reachable via env
@@ -56,6 +57,7 @@ run-control-plane: ## Run control-plane API natively (port 8080) — requires Ri
 	  CLICKHOUSE_URL=$${CLICKHOUSE_URL:-http://localhost:8123} \
 	  KAFKA_BROKERS=$${KAFKA_BROKERS:-localhost:19092} \
 	  PORT=8080 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-control-plane
 
 run-workbench-api: ## Run workbench trace API (port 4400) — reads ATTEST_LOG_PATH (default ./attestations.ndjson)
@@ -77,6 +79,7 @@ run-orchestrator: ## Run orchestrator natively (local Unsloth LLM path — requi
 	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
 	  ATTEST_LLM_API_KEY=$${ATTEST_LLM_API_KEY} \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-orchestrator
 
 run-orchestrator-local: run-orchestrator ## Alias for run-orchestrator (local Unsloth LLM path)
@@ -93,6 +96,7 @@ run-orchestrator-cloud: ## Run orchestrator natively (Anthropic Sonnet LLM path 
 	  ATTEST_LLM_PROVIDER=anthropic \
 	  ATTEST_LLM_MODEL=claude-sonnet-4-5 \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-orchestrator
 
 e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans up
@@ -107,6 +111,7 @@ e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans u
 	  ORCHESTRATOR_PORT=4300 \
 	  CALIBRATION_URL=http://localhost:5001 \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -141,6 +146,7 @@ e2e-phase4b: ## Run Phase 4b E2E tests — hybrid LLM escalation (requires ATTES
 	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -183,6 +189,7 @@ e2e-phase5: ## Run Phase 5 E2E tests — hallucination guardrails (ATTEST_GUARDR
 	  GUARDRAIL_MAX_RETRIES=2 \
 	  CROSS_REVIEW_SEVERITY_THRESHOLD=0.85 \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations-p5.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator-p5.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -225,6 +232,7 @@ e2e-phase6: ## Run Phase 6 E2E tests — shadow check + triager auto-close
 	  AUTO_CLOSE_ACTION_CLASSES=login,api_call,file_access \
 	  ATTEST_GUARDRAILS=on \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations-p6.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator-p6.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
