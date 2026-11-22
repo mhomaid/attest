@@ -8,6 +8,7 @@
 
 pub mod classifier;
 pub mod novelty;
+pub mod registry;
 
 pub use classifier::OnnxClassifier;
 pub use novelty::NoveltyDetector;
