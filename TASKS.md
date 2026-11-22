@@ -636,7 +636,7 @@ checked by code before it can be used for training.
 **Evidence:** 2026-11-22
 - `test_registry_lists_public_datasets`, `test_dataset_cache_is_gitignored`, `test_fetch_verifies_checksum_on_fixture`, `test_data_cards_cover_registry`, `test_train_refuses_eval_only_dataset`, `test_train_records_dataset_ids_and_checksums`.
 - `uv run pytest datasets/ triager/ test_smoke.py`: 11 passed. No dataset bytes committed.
-- Commit `a5a3e9b` on `feat/t050-datasets`. GUIDE and CSIC 2010 have no publisher file digest, so fetch refuses those two until a real checksum is pinned. RBA and BOTS v2 are pinned. Not `done` until `verify.sh full` runs on this branch.
+- Commit `a5a3e9b` on `feat/t050-datasets`. CSIC 2010 is pinned to the sha256 of the three original RAR archives. GUIDE is still `sha256:unpinned` because the files are only on Kaggle and have no published digest, so fetch refuses that id. RBA and BOTS v2 are pinned. Not `done` until `verify.sh full` runs on this branch.
 
 ### T-051 — Feature set v2 and a v0 triage model trained on GUIDE
 - status: todo

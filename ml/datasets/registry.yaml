@@ -1,7 +1,6 @@
 # Public datasets the training and eval code is allowed to name.
-# Checksums are publisher-pinned digests. `sha256:unpinned` means the publisher
-# did not publish a file digest; `make dataset-fetch` verifies the field and
-# refuses to keep bytes until a real sha256 or md5 is recorded here.
+# Checksums are sha256 or md5 of the file fetch stores. `sha256:unpinned` means
+# no file digest is known yet; `make dataset-fetch` refuses that id.
 # Do not commit anything under cache/.
 datasets:
   - id: guide
@@ -39,10 +38,21 @@ datasets:
       Version 2. 2018. https://github.com/splunk/botsv2
 
   - id: csic-2010
-    source_url: http://www.isi.csic.es/dataset/
+    source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/normalTrafficTraining.rar
+    filename: normalTrafficTraining.rar
     license: LicenseRef-CSIC-2010
     allowed_use: [fixtures, eval]
-    checksum: "sha256:unpinned"
+    checksum: "sha256:8c3bb9091ac3d934d9f9ec0fe576c79171a4ef679acc111d637318e77ea69078"
+    files:
+      - filename: normalTrafficTraining.rar
+        source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/normalTrafficTraining.rar
+        checksum: "sha256:8c3bb9091ac3d934d9f9ec0fe576c79171a4ef679acc111d637318e77ea69078"
+      - filename: normalTrafficTest.rar
+        source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/normalTrafficTest.rar
+        checksum: "sha256:0b71decfc65b0b1f1f193e626b4ac947fdfb103cbb71e033a2f23db33bb8b7e0"
+      - filename: anomalousTrafficTest.rar
+        source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/anomalousTrafficTest.rar
+        checksum: "sha256:4f0ce237c1ec326223d3f4f3282f38d3e9af2155d763e05586a11e04c41243c3"
     citation: >-
       Torrano Giménez, Carmen; Pérez Villegas, Alejandro; Álvarez Marañón,
       Gonzalo. HTTP Dataset CSIC 2010. Information Security Institute,

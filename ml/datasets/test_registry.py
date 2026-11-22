@@ -16,9 +16,8 @@ REPO = Path(__file__).resolve().parents[2]
 REGISTRY_PATH = REPO / "ml" / "datasets" / "registry.yaml"
 CARDS = REPO / "ml" / "datasets" / "cards"
 
-# Publisher-pinned digests, copied from the dataset's own release metadata.
-# GUIDE and CSIC 2010 do not publish a file digest; fetch must still verify
-# the checksum field and tests below use a fixture instead of those corpora.
+# RBA and BOTS digests are copied from the publisher. CSIC digests are the
+# sha256 of the original RAR archives. GUIDE has no public file digest.
 RBA_CHECKSUM = "md5:cc1b1078b3929650e6c08678caffcc57"
 BOTS_CHECKSUM = "md5:fd2673726c96e97a39fc03119d6686c6"
 
@@ -65,7 +64,18 @@ def test_registry_lists_public_datasets() -> None:
     assert csic["source_url"].startswith("http")
     assert set(csic["allowed_use"]) == {"fixtures", "eval"}
     assert "train" not in csic["allowed_use"]
-    assert str(csic["checksum"]).startswith(("sha256:", "md5:"))
+    assert csic["checksum"] == (
+        "sha256:8c3bb9091ac3d934d9f9ec0fe576c79171a4ef679acc111d637318e77ea69078"
+    )
+    files = csic["files"]
+    assert [item["filename"] for item in files] == [
+        "normalTrafficTraining.rar",
+        "normalTrafficTest.rar",
+        "anomalousTrafficTest.rar",
+    ]
+    for item in files:
+        algo, digest = item["checksum"].split(":", 1)
+        assert algo == "sha256" and len(digest) == 64
     assert csic["citation"].strip()
     # Research-only / no commercial grant must not be marked trainable.
     assert "CC0" not in csic["license"]

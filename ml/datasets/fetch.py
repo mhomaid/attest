@@ -57,23 +57,37 @@ def _download(url: str, dest: Path) -> None:
             out.write(chunk)
 
 
-def fetch_dataset(dataset_id: str, registry_path: Path, cache_dir: Path) -> Path:
-    by_id = index_registry(load_registry(registry_path))
-    entry = by_id.get(dataset_id)
-    if entry is None:
-        raise ChecksumMismatch(f"unknown dataset {dataset_id}")
-    algo, expected = parse_checksum(entry.get("checksum"))
+def _file_specs(entry: dict) -> list[dict]:
+    listed = entry.get("files")
+    if isinstance(listed, list) and listed:
+        specs = []
+        for item in listed:
+            if not isinstance(item, dict):
+                raise ChecksumMismatch("each files entry must be a mapping")
+            specs.append(item)
+        return specs
+    return [
+        {
+            "source_url": entry.get("source_url"),
+            "filename": entry.get("filename"),
+            "checksum": entry.get("checksum"),
+        }
+    ]
+
+
+def _store_one(dataset_id: str, spec: dict, dest_dir: Path) -> Path:
+    algo, expected = parse_checksum(spec.get("checksum"))
     if expected is None:
         raise ChecksumMismatch(
-            f"{dataset_id}: checksum {entry.get('checksum')!r} is not a pinned "
+            f"{dataset_id}: checksum {spec.get('checksum')!r} is not a pinned "
             "sha256 or md5 digest; refusing to store unverified bytes"
         )
-    url = str(entry["source_url"])
-    filename = str(entry.get("filename") or Path(urlparse(url).path).name or f"{dataset_id}.bin")
+    url = str(spec.get("source_url") or "")
+    if not url:
+        raise ChecksumMismatch(f"{dataset_id}: file has no source_url")
+    filename = str(spec.get("filename") or Path(urlparse(url).path).name or f"{dataset_id}.bin")
     if not filename or filename in {".", "/"}:
         filename = f"{dataset_id}.bin"
-    dest_dir = Path(cache_dir) / dataset_id
-    dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / filename
     partial = dest_dir / f"{filename}.partial"
     try:
@@ -81,12 +95,25 @@ def fetch_dataset(dataset_id: str, registry_path: Path, cache_dir: Path) -> Path
         actual = _hash_file(partial, algo)
         if actual != expected:
             raise ChecksumMismatch(
-                f"{dataset_id}: expected {algo}:{expected}, got {algo}:{actual}"
+                f"{dataset_id}/{filename}: expected {algo}:{expected}, got {algo}:{actual}"
             )
         partial.replace(dest)
     finally:
         partial.unlink(missing_ok=True)
     return dest
+
+
+def fetch_dataset(dataset_id: str, registry_path: Path, cache_dir: Path) -> Path:
+    by_id = index_registry(load_registry(registry_path))
+    entry = by_id.get(dataset_id)
+    if entry is None:
+        raise ChecksumMismatch(f"unknown dataset {dataset_id}")
+    dest_dir = Path(cache_dir) / dataset_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stored: list[Path] = []
+    for spec in _file_specs(entry):
+        stored.append(_store_one(dataset_id, spec, dest_dir))
+    return stored[0]
 
 
 def main(argv: list[str] | None = None) -> int:
