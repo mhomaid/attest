@@ -208,7 +208,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-012 — Pluggable signer with a cloud KMS backend
-- status: todo
+- status: review
 - milestone: M1
 - area: attestation
 - model tier: A · review: A (second model)
@@ -218,16 +218,21 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** `ATTEST_SIGNING_KEY` in an env var lets anyone holding it re-sign a chain.
 
 **Acceptance criteria**
-- [ ] `Signer` trait with `LocalKey` (current behaviour) and `AwsKms` implementations; KMS behind a cargo feature
-- [ ] Envelope records `alg` and `key_id`; `attest verify` accepts a keyring (several public keys) and rejects an unknown `key_id` — tests
-- [ ] Key rotation: envelopes signed before and after a rotation both verify — test
-- [ ] Old envelopes without `key_id` still verify (backwards compatibility test)
-- [ ] Check which signature algorithms the KMS supports; if Ed25519 is not available, use the supported algorithm and record it in `alg` (ADR)
-- [ ] KMS path tested against LocalStack or a recorded mock
+- [x] `Signer` trait with `LocalKey` (current behaviour) and `AwsKms` implementations; KMS behind a cargo feature
+- [x] Envelope records `alg` and `key_id`; `attest verify` accepts a keyring (several public keys) and rejects an unknown `key_id` — tests
+- [x] Key rotation: envelopes signed before and after a rotation both verify — test
+- [x] Old envelopes without `key_id` still verify (backwards compatibility test)
+- [x] Check which signature algorithms the KMS supports; if Ed25519 is not available, use the supported algorithm and record it in `alg` (ADR)
+- [x] KMS path tested against LocalStack or a recorded mock
 
 **Plan:**
+- `LocalKey` keeps Ed25519. `AwsKms` is behind `aws-kms` and talks to a `KmsApi` trait. Tests use `RecordedKmsClient`.
+- `attest verify --keyring` reads JSON. ADR: `docs/20_Signer_KMS.md`. KMS Ed25519 (`ED25519_SHA_512`) matches the local signature, so `alg` stays `ed25519`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `keyring_verifies_known_keys_and_rejects_unknown_key_id`, `keyring_rotation_old_and_new_both_verify`, legacy unkeyed envelope test, `aws_kms_signs_ed25519_and_verifies_in_keyring`, `rotation_from_local_to_kms_both_verify`.
+- `cargo test -p attest-attestation -p attest-cli -p attest-orchestrator --features attest-attestation/aws-kms` passed. Clippy `-D warnings` clean.
+- Commit `02c10bd` on `feat/t012-signer`. Status stays `review` until a second model reads the diff and `verify.sh full` passes. T-013 can start from this commit.
 
 ### T-013 — Anchor the chain tip so tail truncation is detected
 - status: todo
