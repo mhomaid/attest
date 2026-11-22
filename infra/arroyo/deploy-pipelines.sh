@@ -66,8 +66,8 @@ delete_pipeline() {
 
 # Create (and auto-start) a pipeline from a SQL file.
 # Before submitting, perform env-var substitution so the same SQL files
-# work locally (redpanda:9092, minio:9000) and on Railway
-# (redpanda.railway.internal:9092, minio.railway.internal:9000).
+# work locally (redpanda:9092, garage:3900) and on a hosted override
+# (set KAFKA_BROKERS and S3_ENDPOINT).
 create_pipeline() {
     local sql_file="$1"
     local pipeline_name
@@ -76,13 +76,13 @@ create_pipeline() {
     # Resolve runtime hostnames from env vars with local-dev fallbacks.
     local kafka_brokers="${KAFKA_BROKERS:-redpanda:9092}"
     local s3_endpoint_internal
-    # S3_ENDPOINT may be a full URL (http://minio:9000) or just a host:port.
+    # S3_ENDPOINT may be a full URL (http://garage:3900) or just a host:port.
     # We need host:port for use inside the SQL path literal.
     if [[ "${S3_ENDPOINT:-}" =~ ^https?:// ]]; then
         s3_endpoint_internal="${S3_ENDPOINT#http://}"
         s3_endpoint_internal="${s3_endpoint_internal#https://}"
     else
-        s3_endpoint_internal="${S3_ENDPOINT:-minio:9000}"
+        s3_endpoint_internal="${S3_ENDPOINT:-garage:3900}"
     fi
 
     local payload
@@ -98,10 +98,10 @@ sql = re.sub(
     sql
 )
 
-# Substitute MinIO / S3 endpoint in filesystem sink path
-# Handles: s3::http://minio:9000/... and http://minio:9000/...
+# Substitute the local S3 endpoint in the filesystem sink path.
+# Handles s3::http://garage:3900/... and the previous minio:9000 placeholder.
 sql = re.sub(
-    r"(s3::|http://)minio:9000",
+    r"(s3::|http://)(?:garage:3900|minio:9000)",
     r"\g<1>${s3_endpoint_internal}",
     sql
 )

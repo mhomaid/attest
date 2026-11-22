@@ -1,0 +1,12 @@
+---
+description: Prefer Zustand for app and client state management
+alwaysApply: true
+---
+
+# Zustand State Management
+
+- Use Zustand for shared client/app state, especially state that is reused across pages, panels, routes, websocket flows, triage flows, persisted case data, or user sessions.
+- Prefer colocated Zustand stores under existing project patterns such as `apps/workbench/src/lib/stores/`.
+- Keep component-local `useState` for purely local UI state only, such as toggles, hover/open state, transient form inputs, and one-off presentation details.
+- Do not introduce React Context, custom global singletons, or prop-drilled state for cross-component app state when a Zustand store fits the use case.
+- When state should survive refresh/navigation, use Zustand persistence intentionally and keep persisted payloads minimal and versionable.

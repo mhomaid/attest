@@ -1,0 +1,7 @@
+[
+  {
+    "time": "2026-01-01T00:00:00Z",
+    "api_service": "Exchange",
+    "api_operation": "New-InboxRule"
+  }
+]

@@ -2,7 +2,7 @@ name: attest
 
 services:
   redpanda:
-    image: redpandadata/redpanda:v26.2.3
+    image: redpandadata/redpanda:v26.3.1
     command:
       - redpanda
       - start
@@ -33,7 +33,7 @@ services:
       retries: 20
 
   redpanda-console:
-    image: redpandadata/console:v2.8.16
+    image: redpandadata/console:v3.15.0
     environment:
       KAFKA_BROKERS: redpanda:9092
     ports:
@@ -42,7 +42,7 @@ services:
       - redpanda
 
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.7-alpine
     environment:
       POSTGRES_DB: attest
       POSTGRES_USER: attest
@@ -59,48 +59,46 @@ services:
       timeout: 5s
       retries: 10
 
-  # Official community `minio/minio` and `quay.io/minio/minio` pulls are denied.
-  # `quay.io/minio/aistor/minio` is the current official image, but it refuses
-  # every S3 call until a MinIO license is installed (`mc license update`).
-  # A public clone cannot ship that file, so local/dev uses the pgsty rebuild
-  # (same `minio`/`mc` binaries, no license gate).
-  minio:
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
-    command: server /data --console-address ":9001"
+  # S3 API for Iceberg, the attestation log, collector reads, and RisingWave state.
+  # Single-node only. See docs/18_Object_Store.md. The image has no shell;
+  # garage-init creates the buckets once the admin API answers.
+  garage:
+    image: dxflrs/garage:v2.5.0
+    entrypoint: ["/garage"]
+    command: ["server", "--single-node", "--default-bucket"]
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      GARAGE_DEFAULT_ACCESS_KEY: GK0123456789abcdef0123456789abcdef
+      GARAGE_DEFAULT_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      GARAGE_DEFAULT_BUCKET: attest-warm
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "3900:3900"
     volumes:
-      - minio-data:/data
+      - ./infra/garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 5s
 
-  # Creates required MinIO buckets on first start.
-  minio-init:
-    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
+  garage-init:
+    image: curlimages/curl:8.17.0
+    environment:
+      GARAGE_ADMIN_TOKEN: dev-garage-admin-token
+      GARAGE_DEFAULT_ACCESS_KEY: GK0123456789abcdef0123456789abcdef
+      GARAGE_DEFAULT_BUCKET: attest-warm
+    volumes:
+      - ./infra/garage/init-buckets.sh:/init-buckets.sh:ro
+    entrypoint: ["/bin/sh", "/init-buckets.sh"]
     depends_on:
-      minio:
+      garage:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin;
-        mc mb --ignore-existing local/attest-warm;
-        mc policy set public local/attest-warm;
-        mc mb --ignore-existing local/attest-attestations;
-        mc mb --ignore-existing local/attest-cloudtrail;
-        mc mb --ignore-existing local/risingwave;
-        echo 'MinIO buckets ready';
-      "
-    restart: on-failure
+    restart: "no"
 
   clickhouse:
-    image: clickhouse/clickhouse-server:25.8
+    image: clickhouse/clickhouse-server:26.10.3
     environment:
       # Required: without these the entrypoint disables all network access.
       CLICKHOUSE_USER: default
@@ -120,7 +118,7 @@ services:
       retries: 10
 
   tempo:
-    image: grafana/tempo:2.6.1
+    image: grafana/tempo:3.1.1
     command: ["-config.file=/etc/tempo.yaml"]
     ports:
       - "3200:3200"
@@ -131,19 +129,19 @@ services:
       - tempo-data:/var/tempo
 
   risingwave:
-    image: risingwavelabs/risingwave:v3.0.4
+    image: risingwavelabs/risingwave:v3.1.1
     command: single_node
     environment:
-      # Durable state: Hummock SST files stored in MinIO; catalog/meta stored on local volume.
-      RW_STATE_STORE: hummock+minio://minioadmin:minioadmin@minio:9000/risingwave
+      # Path-style S3. This scheme signs region "custom"; garage.toml matches that.
+      RW_STATE_STORE: hummock+minio://GK0123456789abcdef0123456789abcdef:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef@garage:3900/risingwave
       RW_DATA_DIRECTORY: attest-data
     ports:
       - "4566:4566"
     volumes:
       - risingwave-data:/data
     depends_on:
-      # Hummock needs the `risingwave` bucket, which minio-init creates.
-      minio-init:
+      # Hummock needs the `risingwave` bucket, which garage-init creates.
+      garage-init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/4566'"]
@@ -153,19 +151,19 @@ services:
       start_period: 10s
 
   arroyo:
-    image: ghcr.io/arroyosystems/arroyo:0.14.1
+    image: ghcr.io/arroyosystems/arroyo:0.15.0
     ports:
       - "5115:5115"
     environment:
       DATABASE_URL: postgres://attest:attest@postgres:5432/attest
-      # S3 / MinIO credentials for filesystem sink (Parquet output)
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      # S3 credentials for the filesystem sink (Parquet output)
+      AWS_ACCESS_KEY_ID: GK0123456789abcdef0123456789abcdef
+      AWS_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       # AWS_ENDPOINT_URL is the standard env var for S3-compatible endpoint override
-      AWS_ENDPOINT_URL: http://minio:9000
-      AWS_ENDPOINT: http://minio:9000
-      AWS_REGION: us-east-1
-      # Allow HTTP (non-HTTPS) for local MinIO
+      AWS_ENDPOINT_URL: http://garage:3900
+      AWS_ENDPOINT: http://garage:3900
+      AWS_REGION: custom
+      # Allow HTTP for the local Garage endpoint
       AWS_ALLOW_HTTP: "true"
       # Redpanda bootstrap — referenced by pipeline SQL as 'redpanda:9092'
       KAFKA_BROKERS: redpanda:9092
@@ -174,7 +172,7 @@ services:
       - ./infra/arroyo/pipelines:/pipelines:ro
     depends_on:
       - postgres
-      - minio-init
+      - garage-init
       - redpanda
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:5115/api/v1/ping"]
@@ -187,7 +185,7 @@ services:
   # One-shot service: waits for Arroyo to be healthy then deploys all SQL pipelines.
   # Uses the same Arroyo image — has bash, python3, and curl already available.
   arroyo-pipeline-deployer:
-    image: ghcr.io/arroyosystems/arroyo:0.14.1
+    image: ghcr.io/arroyosystems/arroyo:0.15.0
     entrypoint: ["/bin/bash", "/usr/local/bin/deploy-pipelines.sh"]
     environment:
       ARROYO_API: http://arroyo:5115
@@ -198,7 +196,7 @@ services:
     depends_on:
       arroyo:
         condition: service_healthy
-      minio-init:
+      garage-init:
         condition: service_completed_successfully
     restart: on-failure
     profiles:
@@ -206,8 +204,9 @@ services:
 
   # llama.cpp HTTP server — model GGUF must be volume-mounted at runtime.
   # Pull a Qwen 3 ~7B GGUF and set LLAMA_MODEL_PATH on first run.
+  # Pinned build. Do not use the floating `server` tag.
   llama-cpp:
-    image: ghcr.io/ggerganov/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:server-b12602
     ports:
       - "8088:8080"
     volumes:
@@ -230,17 +229,17 @@ services:
       KAFKA_BROKERS: redpanda:9092
       TENANT_ID: local-dev
       PORT: "4000"
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      AWS_REGION: us-east-1
-      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: GK0123456789abcdef0123456789abcdef
+      AWS_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      AWS_REGION: custom
+      AWS_ENDPOINT_URL: http://garage:3900
       COLLECTOR_S3_ALLOWED_BUCKETS: attest-cloudtrail
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-collector
     depends_on:
       - redpanda
       - tempo
-      - minio
+      - garage-init
     profiles:
       - platform
 
@@ -254,6 +253,7 @@ services:
       RISINGWAVE_HOST: risingwave
       RISINGWAVE_PORT: "4566"
       CLICKHOUSE_URL: http://clickhouse:8123
+      WARM_S3_PREFIX: http://garage:3900/attest-warm/
       KAFKA_BROKERS: redpanda:9092
       PORT: "8080"
       LOAD_GEN_URL: http://load-gen:9100
@@ -276,19 +276,18 @@ services:
       KAFKA_BROKERS: redpanda:9092
       KAFKA_TOPIC: cloudtrail
       KAFKA_GROUP_ID: attest-iceberg-writer
-      S3_ENDPOINT: http://minio:9000
+      S3_ENDPOINT: http://garage:3900
       S3_BUCKET: attest-warm
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
-      S3_REGION: us-east-1
+      S3_ACCESS_KEY: GK0123456789abcdef0123456789abcdef
+      S3_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      S3_REGION: custom
       TABLE_PREFIX: cloudtrail
       ICEBERG_WAREHOUSE: s3://attest-warm
       BATCH_SIZE: "1000"
       FLUSH_INTERVAL_SECS: "30"
     depends_on:
       - redpanda
-      - minio
-      - minio-init
+      - garage-init
     profiles:
       - platform
 
@@ -347,10 +346,10 @@ services:
       ATTEST_LOG_PATH: /data/attestations.ndjson
       ATTEST_LOG_S3_BUCKET: attest-attestations
       ATTEST_LOG_S3_PREFIX: attestations
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      AWS_REGION: us-east-1
-      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: GK0123456789abcdef0123456789abcdef
+      AWS_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      AWS_REGION: custom
+      AWS_ENDPOINT_URL: http://garage:3900
       MCP_GATEWAY_URL: http://mcp-gateway:4242
       SYSTEM_PROMPT_PATH: /agents/triager/system_prompt_v1.md
       REVIEWER_PROMPT_PATH: /agents/triager/reviewer_prompt_v1.md
@@ -369,7 +368,7 @@ services:
       - mcp-gateway
       - tempo
       - redpanda
-      - minio
+      - garage-init
     profiles:
       - platform
 
@@ -444,7 +443,8 @@ services:
 volumes:
   redpanda-data:
   postgres-data:
-  minio-data:
+  garage-meta:
+  garage-data:
   clickhouse-data:
   tempo-data:
   llama-models:

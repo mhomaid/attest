@@ -1,0 +1,20 @@
+name: DCO
+
+# Pull request commits must contain a Signed-off-by line (git commit -s).
+# History already on the base branch is not checked.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require Signed-off-by
+        run: scripts/check-dco.sh

@@ -3,13 +3,14 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 import { posthog } from "@/lib/posthog";
+import { shouldInitPosthog } from "@/lib/telemetry";
 
 function PostHogPageviewInner() {
   const pathname = usePathname();
   const search = useSearchParams();
 
   useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+    if (!shouldInitPosthog()) return;
     if (!pathname) return;
     let url = `${window.origin}${pathname}`;
     const q = search?.toString();

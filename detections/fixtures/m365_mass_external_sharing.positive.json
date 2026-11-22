@@ -1,0 +1,79 @@
+[
+  {
+    "time": "2026-01-01T00:00:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r0"
+  },
+  {
+    "time": "2026-01-01T00:01:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r1"
+  },
+  {
+    "time": "2026-01-01T00:02:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r2"
+  },
+  {
+    "time": "2026-01-01T00:03:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r3"
+  },
+  {
+    "time": "2026-01-01T00:04:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r4"
+  },
+  {
+    "time": "2026-01-01T00:05:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r5"
+  },
+  {
+    "time": "2026-01-01T00:06:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r6"
+  },
+  {
+    "time": "2026-01-01T00:07:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r7"
+  },
+  {
+    "time": "2026-01-01T00:08:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r8"
+  },
+  {
+    "time": "2026-01-01T00:09:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r9"
+  },
+  {
+    "time": "2026-01-01T00:10:00Z",
+    "actor_user_name": "ada",
+    "api_service": "SharePoint",
+    "api_operation": "SharingSet",
+    "cloud_region": "r10"
+  }
+]

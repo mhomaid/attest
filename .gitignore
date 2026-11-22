@@ -2,7 +2,15 @@
 .DS_Store
 .idea/
 .vscode/
-.cursor/
+# Local Cursor state. The agent workflow (rules, skills, hooks) is tracked.
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+!.cursor/skills/
+!.cursor/skills/**
+!.cursor/hooks/
+!.cursor/hooks/**
+!.cursor/hooks.json
 docs/.$architecture-diagrams.drawio.bkp
 
 # Node
@@ -18,10 +26,13 @@ apps/workbench/tests/e2e/.auth/
 
 docs/social/*
 !docs/social/.gitkeep
-# Private, local-only material
+# Private, local-only material. The cursor pack is the source for the
+# public workflow files; it stays here and is never committed.
 docs/private/
+docs/private/attest-public-cursor-pack/
 docs/leave-behind/
 docs/Attest_Product_Walkthrough.*
+.attest-denylist
 # Terraform plugin cache (lock files stay committed)
 **/.terraform/
 *.tfstate

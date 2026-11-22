@@ -116,13 +116,16 @@ pub fn check_bucket_allowed(bucket: &str) -> Result<()> {
     bail!("bucket `{bucket}` is not in COLLECTOR_S3_ALLOWED_BUCKETS")
 }
 
-/// Build an S3 client from `AWS_*` env vars. `AWS_ENDPOINT_URL` points at MinIO.
+/// Build an S3 client from `AWS_*` env vars. `AWS_ENDPOINT_URL` points at Garage locally.
 pub fn store_for_bucket(bucket: &str) -> Result<Box<dyn ObjectStore>> {
     let mut builder = AmazonS3Builder::from_env()
         .with_bucket_name(bucket)
         .with_region(std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".into()));
     if let Ok(endpoint) = std::env::var("AWS_ENDPOINT_URL") {
-        builder = builder.with_endpoint(endpoint).with_allow_http(true);
+        builder = builder
+            .with_endpoint(endpoint)
+            .with_allow_http(true)
+            .with_virtual_hosted_style_request(false);
     }
     Ok(Box::new(builder.build().context("S3 client")?))
 }

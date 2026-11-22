@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -9,9 +9,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
 	  /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-dev-up-infra: ## Start core infrastructure (Redpanda, RisingWave, ClickHouse, MinIO, Postgres, Redpanda Console)
-	docker compose up -d redpanda redpanda-console postgres minio clickhouse risingwave
-	docker compose run --rm minio-init
+dev-up-infra: ## Start core infrastructure (Redpanda, RisingWave, ClickHouse, Garage, Postgres, Redpanda Console)
+	docker compose up -d redpanda redpanda-console postgres garage clickhouse risingwave
 
 dev-down-infra: ## Stop core infrastructure containers only
 	docker compose down
@@ -24,14 +23,13 @@ dev-up-services: ## Start app services only — assumes infra is already running
 	docker compose --profile platform up -d --build
 
 dev-up-all: ## ⭐ Start everything in order: infra → init → all services (clean fresh start)
-	docker compose up -d redpanda redpanda-console postgres minio clickhouse risingwave
-	docker compose run --rm minio-init
+	docker compose up -d redpanda redpanda-console postgres garage clickhouse risingwave
 	docker compose --profile platform up -d --build
 
 e2e-phase1: ## Run Phase 1 E2E test — event appears in RisingWave within 5s (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase1_streaming -- --nocapture
 
-e2e-phase2: ## Run Phase 2 E2E test — 10K events land in MinIO Parquet + ClickHouse query (requires ATTEST_E2E=1 + platform)
+e2e-phase2: ## Run Phase 2 E2E test — 10K events land in Garage Parquet + ClickHouse query (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase2_iceberg -- --nocapture
 
 e2e-phase3: ## Run Phase 3 E2E test — HELIQL detections fire alerts on stream (requires ATTEST_E2E=1 + platform)
@@ -304,6 +302,11 @@ test: ## Run all tests: Rust workspace + JS + Python
 lint: ## Lint all code: clippy + bun lint
 	cargo clippy --workspace --all-targets -- -D warnings
 	bun run lint
+
+check-hygiene: ## Org-leak check, its fixture tests, and the DCO fixture test
+	scripts/tests/leak_check_test.sh
+	scripts/tests/dco_check_test.sh
+	.cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh
 
 # ── Railway deployment ────────────────────────────────────────────────────────
 

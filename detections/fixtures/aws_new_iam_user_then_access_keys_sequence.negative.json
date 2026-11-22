@@ -1,0 +1,9 @@
+[
+  {
+    "time": "2026-01-01T00:00:00Z",
+    "actor_user_name": "ada",
+    "api_service": "iam.amazonaws.com",
+    "api_operation": "CreateAccessKey",
+    "cloud_region": "us-east-1"
+  }
+]

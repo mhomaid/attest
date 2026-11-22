@@ -86,7 +86,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Start core services (blocks until every healthcheck passes)
-        run: docker compose up -d --wait --wait-timeout 240 redpanda postgres minio clickhouse risingwave
+        run: docker compose up -d --wait --wait-timeout 240 redpanda postgres garage garage-init clickhouse risingwave
 
       - name: Smoke — round-trip through each service
         run: |
@@ -104,11 +104,13 @@ jobs:
 
   workbench-e2e:
     name: Workbench (Playwright)
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04, and Playwright 1.59 cannot install browser
+    # dependencies there. 24.04 is the newest image it supports.
+    runs-on: ubuntu-24.04
     needs: [typescript]
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18.7
         env:
           POSTGRES_USER: attest
           POSTGRES_PASSWORD: attest

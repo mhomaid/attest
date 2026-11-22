@@ -51,8 +51,85 @@ fn value_to_sql(v: &Value) -> String {
     }
 }
 
+fn qualify(col: &str, alias: Option<&str>) -> String {
+    match alias {
+        Some(alias) => format!("{alias}.{col}"),
+        None => col.to_string(),
+    }
+}
+
+/// Non-window predicates, optionally qualified with a table alias (`c2.auth_status`).
+fn filter_atom_sql(
+    atom: &ConditionAtom,
+    alias: Option<&str>,
+) -> Result<Option<String>, HeliqlError> {
+    match atom {
+        ConditionAtom::Cmp { field, op, value } => {
+            let col = qualify(&field_to_column(field), alias);
+            Ok(Some(format!("{col} {op} {}", value_to_sql(value))))
+        }
+        ConditionAtom::In {
+            field,
+            rhs: InRhs::List(values),
+        } => {
+            let col = qualify(&field_to_column(field), alias);
+            let list = values
+                .iter()
+                .map(value_to_sql)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(Some(format!("{col} IN ({list})")))
+        }
+        ConditionAtom::NotIn {
+            field,
+            rhs: InRhs::List(values),
+        } => {
+            let col = qualify(&field_to_column(field), alias);
+            let list = values
+                .iter()
+                .map(value_to_sql)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(Some(format!("{col} NOT IN ({list})")))
+        }
+        ConditionAtom::Count { .. }
+        | ConditionAtom::Unique { .. }
+        | ConditionAtom::In { .. }
+        | ConditionAtom::NotIn { .. } => Ok(None),
+    }
+}
+
+fn entity_column(d: &Detection) -> String {
+    field_to_column(d.entity.as_deref().unwrap_or("identity.user"))
+}
+
+fn atoms_of(d: &Detection) -> Vec<&ConditionAtom> {
+    let mut out = Vec::new();
+    for cond in d.where_conditions.iter().chain(d.conditions.iter()) {
+        match cond {
+            Condition::Single(atom) => out.push(atom),
+            Condition::And(atoms) | Condition::Or(atoms) => out.extend(atoms),
+        }
+    }
+    out
+}
+
+fn count_filters(d: &Detection) -> Result<String, HeliqlError> {
+    let mut parts = Vec::new();
+    for atom in atoms_of(d) {
+        if let Some(sql) = filter_atom_sql(atom, Some("c2"))? {
+            parts.push(sql);
+        }
+    }
+    if parts.is_empty() {
+        Ok("TRUE".into())
+    } else {
+        Ok(parts.join(" AND "))
+    }
+}
+
 /// Compile a single [`ConditionAtom`] into a SQL `WHERE` predicate fragment.
-fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
+fn atom_to_sql(atom: &ConditionAtom, d: &Detection) -> Result<String, HeliqlError> {
     match atom {
         ConditionAtom::Cmp { field, op, value } => {
             let col = field_to_column(field);
@@ -137,23 +214,42 @@ fn atom_to_sql(atom: &ConditionAtom) -> Result<String, HeliqlError> {
                 ) {op} {threshold}"
             ))
         }
+        ConditionAtom::Count {
+            window,
+            op,
+            threshold,
+        } => {
+            let entity = entity_column(d);
+            let interval = window.to_interval_sql();
+            let filters = count_filters(d)?;
+            Ok(format!(
+                "(\
+                    SELECT count(*) \
+                    FROM cloudtrail_events c2 \
+                    WHERE c2.{entity} = e.{entity} \
+                    AND c2.\"time\" <= e.\"time\" \
+                    AND c2.\"time\" >= e.\"time\" - {interval} \
+                    AND {filters}\
+                ) {op} {threshold}"
+            ))
+        }
     }
 }
 
-fn condition_to_sql(cond: &Condition) -> Result<String, HeliqlError> {
+fn condition_to_sql(cond: &Condition, d: &Detection) -> Result<String, HeliqlError> {
     match cond {
-        Condition::Single(atom) => atom_to_sql(atom),
+        Condition::Single(atom) => atom_to_sql(atom, d),
         Condition::And(atoms) => {
             let parts = atoms
                 .iter()
-                .map(atom_to_sql)
+                .map(|atom| atom_to_sql(atom, d))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(" AND ")))
         }
         Condition::Or(atoms) => {
             let parts = atoms
                 .iter()
-                .map(atom_to_sql)
+                .map(|atom| atom_to_sql(atom, d))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(" OR ")))
         }
@@ -176,11 +272,11 @@ pub fn compile_to_risingwave(d: &Detection) -> Result<String, HeliqlError> {
 
     // where: clauses (pre-filter)
     for cond in &d.where_conditions {
-        predicates.push(condition_to_sql(cond)?);
+        predicates.push(condition_to_sql(cond, d)?);
     }
     // condition: clauses (detection logic)
     for cond in &d.conditions {
-        predicates.push(condition_to_sql(cond)?);
+        predicates.push(condition_to_sql(cond, d)?);
     }
 
     let where_sql = if predicates.is_empty() {

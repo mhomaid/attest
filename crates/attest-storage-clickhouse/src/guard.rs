@@ -185,7 +185,7 @@ pub fn validate_read_query<'a>(sql: &'a str, s3_prefix: &str) -> Result<&'a str,
 mod tests {
     use super::*;
 
-    const PREFIX: &str = "http://minio:9000/attest-warm/";
+    const PREFIX: &str = "http://garage:3900/attest-warm/";
 
     fn ok(sql: &str) {
         assert!(
@@ -204,7 +204,7 @@ mod tests {
         ok("SELECT 1 AS ok");
         ok("SELECT count() FROM cloudtrail_events");
         ok("select event_id, time from cloudtrail where event_id = 'abc' limit 1;");
-        ok("SELECT count(*) FROM s3('http://minio:9000/attest-warm/cloudtrail/**/*.parquet', 'minioadmin', 'minioadmin', 'Parquet')");
+        ok("SELECT count(*) FROM s3('http://garage:3900/attest-warm/cloudtrail/**/*.parquet', 'GK0123456789abcdef0123456789abcdef', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'Parquet')");
         ok("WITH recent AS (SELECT * FROM cloudtrail_events) SELECT cloud_region, count() FROM recent GROUP BY cloud_region");
     }
 
@@ -257,7 +257,7 @@ mod tests {
             err.clone(),
         );
         rejected(
-            "SELECT * FROM s3('http://minio:9000/other-bucket/x', 'Parquet')",
+            "SELECT * FROM s3('http://garage:3900/other-bucket/x', 'Parquet')",
             err.clone(),
         );
         rejected("SELECT * FROM s3(my_named_collection)", err);

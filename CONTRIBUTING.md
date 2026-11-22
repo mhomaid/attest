@@ -28,7 +28,7 @@ Do not use these passwords outside local / hosted demo.
 | cmake, libcurl, OpenSSL headers | any recent | building `librdkafka` (`rdkafka` `cmake-build` feature) |
 | Bun | 1.4.x | workbench (`apps/workbench`) |
 | uv + Python | 3.12 | ML pipeline (`ml/`) and DB migrations (`infra/db`) |
-| Docker + Compose v2 | recent | local stack (Redpanda, RisingWave, ClickHouse, MinIO, Postgres) |
+| Docker + Compose v2 | recent | local stack (Redpanda, RisingWave, ClickHouse, Garage, Postgres) |
 
 On macOS: `brew install cmake openssl pkg-config`. On Debian/Ubuntu:
 `apt-get install cmake libcurl4-openssl-dev libssl-dev pkg-config`.
@@ -46,6 +46,7 @@ Everything CI runs, you can run locally. From the repo root:
 | Classifier latency budget | `cargo test --release -p attest-onnx-runtime --test classifier_integration` | no |
 | Workbench browser E2E | `cd apps/workbench && bun run e2e` (needs Postgres with migrations applied) | Postgres only |
 | Verify / replay CLI | `cargo test -p attest-cli` | no |
+| Org leak + DCO | `make check-hygiene` | no |
 | Platform E2E, per phase | `make dev-up-all`, then `make e2e-phase1` … `make e2e-phase6` | yes |
 
 Offline attestation (after the orchestrator has written `attestations.ndjson`).
@@ -75,8 +76,56 @@ Database migrations: `cd infra/db && uv run alembic upgrade head`
 3. Run the tiers above that cover what you touched. PRs must pass CI.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) for messages
    (`feat(orchestrator): …`, `fix(workbench): …`, `docs: …`, `ci: …`).
-5. Architectural changes (new service, new storage tier, a change to the attestation envelope)
+5. Sign off every commit (Developer Certificate of Origin): `git commit -s`.
+   Pull requests fail the DCO check otherwise. Run `scripts/tests/dco_check_test.sh`
+   to see the check accept a signed commit and reject an unsigned one.
+6. Architectural changes (new service, new storage tier, a change to the attestation envelope)
    need an ADR in `docs/` — see `docs/15_Streaming_Engine_Decision.md` for the format.
+
+### Keep organization-specific content out
+
+This repository is public. Company names, domains, hostnames, account IDs, stream names,
+incident IDs, and real log lines belong in a private overlay, not here. Before you commit:
+
+```sh
+make check-hygiene
+```
+
+That runs three things:
+
+| Command | What a pass means |
+| --- | --- |
+| `scripts/tests/leak_check_test.sh` | A planted deny-list term, a non-placeholder AWS account id, and a private-key header each fail the check and the output is `file:line` only. The AWS docs account `123456789012` passes. |
+| `scripts/tests/dco_check_test.sh` | An unsigned commit fails `scripts/check-dco.sh`; a `Signed-off-by` commit passes. |
+| `.cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh` | The current tree has no generic leak (real-looking account id or private key). |
+
+The same leak check runs on pull requests (`.github/workflows/org-leak-check.yml`). It also
+reads a private term list. Locally that list is `.attest-denylist` (gitignored), one extended
+regex per line, `#` starts a comment:
+
+```text
+# .attest-denylist
+acme\.example
+```
+
+In GitHub Actions the same text is the `ATTEST_ORG_DENYLIST` secret. Fork pull requests do not
+receive the secret; they run the generic checks only. A hit prints `file:line` and never the
+matched text. Remove the content. Do not add an allow list.
+
+Optional local gate, from the repo root:
+
+```sh
+ln -sf ../../.cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh .git/hooks/pre-commit
+chmod +x .cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh
+```
+
+Agent workflow for this repo lives in `AGENTS.md` and `TASKS.md`. The gate an agent must pass
+before calling a task done is:
+
+```sh
+.cursor/skills/attest-verify/scripts/verify.sh quick
+.cursor/skills/attest-verify/scripts/verify.sh full
+```
 
 ### Changing the attestation envelope
 

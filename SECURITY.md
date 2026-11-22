@@ -45,7 +45,7 @@ Out of scope:
 
 ## Local-development defaults
 
-`docker-compose.yml` and `apps/workbench/.env.local.example` ship credentials such as `minioadmin`, the Postgres
+`docker-compose.yml` and `apps/workbench/.env.local.example` ship dev credentials such as the Garage key, the Postgres
 password `attest`, and a dev Better Auth secret. They exist so the stack runs with no setup and
 must never be used in a deployment. Guards:
 

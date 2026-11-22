@@ -43,15 +43,15 @@ ingress:
   tls: []
 
 objectStore:
-  # Empty = AWS default endpoint + IRSA. Set for MinIO or GCS HMAC
-  # (https://storage.googleapis.com).
+  # Empty = AWS default endpoint + IRSA. Set for Garage, another S3
+  # endpoint, or GCS HMAC (https://storage.googleapis.com).
   endpoint: ""
   bucket: attest-warm
   region: us-east-1
   # When true, do not mount static S3 keys (IRSA / instance role).
   useIrsa: false
   existingSecret: ""
-  # Used only when existingSecret is empty and useIrsa is false (local MinIO).
+  # Used only when existingSecret is empty and useIrsa is false (local Garage).
   accessKey: ""
   secretKey: ""
 

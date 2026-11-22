@@ -189,6 +189,22 @@ fn parse_bool_atom(pair: Pair<Rule>) -> Result<ConditionAtom, HeliqlError> {
                 threshold,
             })
         }
+        Rule::count_expr => {
+            let mut parts = inner.into_inner();
+            let window = parse_duration(parts.next().unwrap())?;
+            let op = parse_cmp_op(parts.next().unwrap().as_str())?;
+            let threshold = parts
+                .next()
+                .unwrap()
+                .as_str()
+                .parse::<i64>()
+                .map_err(|e| HeliqlError::ParseError(e.to_string()))?;
+            Ok(ConditionAtom::Count {
+                window,
+                op,
+                threshold,
+            })
+        }
         other => Err(HeliqlError::ParseError(format!(
             "unexpected bool_atom rule: {other:?}"
         ))),

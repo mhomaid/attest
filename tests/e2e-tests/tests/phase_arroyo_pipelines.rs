@@ -106,8 +106,8 @@ async fn count_arroyo_parquet(prefix: &str) -> Option<u64> {
     // Note: ClickHouse treats {..} as named-collection syntax, so we cannot use
     //       {**/*.parquet,*.parquet} — stick to the flat glob for Arroyo output.
     let sql = format!(
-        "SELECT count(*) FROM s3('http://minio:9000/attest-warm/{prefix}/*.parquet', \
-         'minioadmin', 'minioadmin', 'Parquet')"
+        "SELECT count(*) FROM s3('http://garage:3900/attest-warm/{prefix}/*.parquet', \
+         'GK0123456789abcdef0123456789abcdef', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'Parquet')"
     );
     let res = client
         .post(format!("{}/v1/warm/query", control_plane_url()))
@@ -323,7 +323,7 @@ async fn arroyo_etl_pipeline_writes_parquet_to_minio() {
         count.is_some(),
         "No Parquet rows found under s3://attest-warm/arroyo/cloudtrail/ within 90s. \
          Check that the cloudtrail_to_parquet Arroyo pipeline is Running and \
-         that the s3::http://minio:9000 path is reachable from Arroyo."
+         that the s3::http://garage:3900 path is reachable from Arroyo."
     );
     println!(
         "✓ Arroyo ETL: {} rows confirmed in MinIO under arroyo/cloudtrail/",

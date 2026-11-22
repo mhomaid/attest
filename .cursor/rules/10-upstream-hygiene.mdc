@@ -1,0 +1,18 @@
+---
+description: Keep the public repo free of any organization-specific content
+alwaysApply: true
+---
+
+This repository is public. Content from any company that deploys Attest must never land here.
+
+Never write into code, tests, fixtures, docs, commit messages, branch names or PR text:
+- company or product names of a deployer, their domains, hostnames, URLs, IPs, cloud account IDs, ARNs, bucket names
+- log stream names, index names, field names copied from a private system
+- incident IDs, ticket IDs, customer, merchant, store or user identifiers
+- real log lines, screenshots or numbers taken from a private environment
+
+Use neutral placeholders instead: `example.com`, `acme`, `tenant-a`, `store_id: 1001`, `203.0.113.0/24` (TEST-NET), `123456789012` (AWS docs account ID).
+
+Organization-specific mapping belongs in configuration files that the private overlay supplies at deploy time. If a feature only makes sense with private details, build the generic extension point here and stop.
+
+Before every commit run `.cursor/skills/attest-upstream-hygiene/scripts/check-org-leaks.sh`. If it reports a hit, remove the content; do not add it to an allow list.

@@ -148,6 +148,12 @@ pub enum ConditionAtom {
         op: CmpOp,
         threshold: i64,
     },
+    /// `count(window: 10m) >= 5` — events for the rule's entity inside the window.
+    Count {
+        window: Duration,
+        op: CmpOp,
+        threshold: i64,
+    },
 }
 
 /// Combined boolean expression.

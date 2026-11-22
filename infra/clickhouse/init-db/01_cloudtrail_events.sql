@@ -1,5 +1,6 @@
 -- Auto-created on ClickHouse startup.
--- Points at the Parquet files written by attest-storage-iceberg into MinIO (attest-warm bucket).
+-- Points at the Parquet files written by attest-storage-iceberg into Garage (attest-warm bucket).
+-- The key pair is the local dev default from docker-compose.yml.
 CREATE TABLE IF NOT EXISTS cloudtrail_events
 (
     event_id          String,
@@ -16,4 +17,4 @@ CREATE TABLE IF NOT EXISTS cloudtrail_events
     api_service       Nullable(String),
     raw               Nullable(String)
 )
-ENGINE = S3('http://minio:9000/attest-warm/cloudtrail/**/*.parquet', 'minioadmin', 'minioadmin', 'Parquet');
+ENGINE = S3('http://garage:3900/attest-warm/attest/cloudtrail/data/*.parquet', 'GK0123456789abcdef0123456789abcdef', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'Parquet');

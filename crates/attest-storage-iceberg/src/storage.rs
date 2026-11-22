@@ -1,4 +1,4 @@
-//! Iceberg `Storage` backed by `object_store` (MinIO / S3).
+//! Iceberg `Storage` backed by `object_store` (Garage locally, S3 in production).
 //!
 //! iceberg-rust 0.9 only ships `file://` and `memory://`. The warm tier lives
 //! on S3-compatible object storage, so we inject this factory into MemoryCatalog.
@@ -36,6 +36,7 @@ impl ObjectStoreStorageFactory {
             if self.endpoint.starts_with("http://") {
                 builder = builder.with_allow_http(true);
             }
+            builder = builder.with_virtual_hosted_style_request(false);
         }
         if !self.access_key.is_empty() {
             builder = builder

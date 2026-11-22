@@ -161,7 +161,7 @@ pub async fn start_run(
         .map(|i| {
             (
                 format!("tenant-{:03}", i),
-                format!("user-{:03}@acme.example.com", i),
+                format!("user-{:03}@example.com", i),
             )
         })
         .collect();

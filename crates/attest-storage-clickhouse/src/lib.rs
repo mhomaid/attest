@@ -12,7 +12,7 @@ pub use guard::{validate_read_query, Rejection};
 use serde_json::Value;
 
 pub const DEFAULT_URL: &str = "http://localhost:8123";
-pub const DEFAULT_S3_PREFIX: &str = "http://minio:9000/attest-warm/";
+pub const DEFAULT_S3_PREFIX: &str = "http://garage:3900/attest-warm/";
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
@@ -60,7 +60,7 @@ impl ClickHouseClient {
     }
 
     /// `CLICKHOUSE_URL` (default `http://localhost:8123`) and `WARM_S3_PREFIX`
-    /// (default `http://minio:9000/attest-warm/`).
+    /// (default `http://garage:3900/attest-warm/`).
     pub fn from_env() -> Self {
         let client =
             Self::new(std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| DEFAULT_URL.to_string()));

@@ -7,7 +7,7 @@
 -- Output:  s3://attest-warm/arroyo/cloudtrail/
 -- Flush:   30-second inactivity interval OR 30-second rolling interval
 -- Creds:   read from container env vars (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
--- MinIO:   path-style access via s3::http://minio:9000/ URL format
+-- Garage:  path-style access via s3::http://garage:3900/ URL format
 
 CREATE TABLE cloudtrail_source (
     event_id          TEXT,
@@ -47,7 +47,7 @@ CREATE TABLE cloudtrail_parquet_sink (
     connector = 'filesystem',
     format = 'parquet',
     type = 'sink',
-    path = 's3::http://minio:9000/attest-warm/arroyo/cloudtrail',
+    path = 's3::http://garage:3900/attest-warm/arroyo/cloudtrail',
     'rolling_policy.interval' = interval '30 seconds',
     'rolling_policy.inactivity_interval' = interval '30 seconds'
 );
