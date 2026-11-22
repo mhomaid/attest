@@ -522,7 +522,18 @@ helm-template: ## Render and lint the reference Helm chart
 	  --set objectStore.useIrsa=true \
 	  --set signingKey=00 \
 	  --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::123:role/attest >/dev/null
-	@echo "✔ helm lint + template (static keys and IRSA)"
+	@# Production profile: every secret is referenced from an existing Kubernetes Secret.
+	@# The render must create no Secret object and carry no secret material.
+	@out=$$(helm template attest infra/helm/attest -n attest \
+	  --set objectStore.useIrsa=true \
+	  --set objectStore.existingSecret=attest-objstore \
+	  --set signing.existingSecret=attest-signing \
+	  --set serviceAuth.existingSecret=attest-service-auth \
+	  --set toolCredentials.existingSecret=attest-tool-credentials) || exit 1; \
+	if echo "$$out" | grep -q '^kind: Secret$$'; then echo "prod profile renders a Secret object"; exit 1; fi; \
+	echo "$$out" | grep -q 'secretName: attest-tool-credentials' || { echo "tool credentials secret not mounted"; exit 1; }; \
+	echo "$$out" | grep -q 'name: ATTEST_SECRETS_DIR' || { echo "ATTEST_SECRETS_DIR missing"; exit 1; }
+	@echo "✔ helm lint + template (static keys, IRSA, secrets by reference)"
 
 tf-validate: ## terraform fmt + validate aws/gcp/azure store modules (no cloud credentials)
 	terraform fmt -check -recursive infra/terraform

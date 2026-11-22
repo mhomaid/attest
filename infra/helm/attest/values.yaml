@@ -56,13 +56,27 @@ objectStore:
   secretKey: ""
 
 # Hex Ed25519 seed. Empty → orchestrator mints an ephemeral key (dev only).
+# Production: set signing.existingSecret instead (key: signing-key) and leave this empty.
 signingKey: ""
+signing:
+  existingSecret: ""
 
 # Kubernetes Secret name. Keys: service-auth, ingest-hmac.
 # Empty leaves both env vars unset, so every non-health route returns 401.
 # The chart does not create this secret and does not embed a value.
 serviceAuth:
   existingSecret: ""
+
+# Tool credentials (MCP tools such as search or enrichment APIs), resolved per tool ID by
+# the SecretSource interface (crates/attest-secrets).
+# existingSecret names a Kubernetes Secret you create out of band. It is mounted read-only
+# as files under mountPath; the key `tool-<tool_id>` holds the credential for `<tool_id>`.
+# Mounted files are re-read on every resolve, so rotating the Secret takes effect without
+# a pod restart (the kubelet refreshes the mount, typically within a minute).
+# Empty leaves the source on `env` (dev). The chart never embeds a credential value.
+toolCredentials:
+  existingSecret: ""
+  mountPath: /var/run/attest/secrets
 
 services:
   collector:
