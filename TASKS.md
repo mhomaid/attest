@@ -265,7 +265,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-015 — Prompt-injection regression suite for log fields
-- status: todo
+- status: review
 - milestone: M1
 - area: orchestrator
 - model tier: A · review: A (second model)
@@ -273,14 +273,22 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §5.5
 
 **Acceptance criteria**
-- [ ] 20+ synthetic events with injection strings in user agent, URL, user name, resource name and free-text fields
-- [ ] With a scripted mock LLM that obeys the injection, policy still denies out-of-role tools and the envelope records the denial — tests
-- [ ] Classifier path is unaffected by text fields (features are numeric) — test
-- [ ] Suite runs in CI without a real model
+- [x] 20+ synthetic events with injection strings in user agent, URL, user name, resource name and free-text fields
+- [x] With a scripted mock LLM that obeys the injection, policy still denies out-of-role tools and the envelope records the denial — tests
+- [x] Classifier path is unaffected by text fields (features are numeric) — test
+- [x] Suite runs in CI without a real model
 
 **Plan:**
+- 24 synthetic events. The real MCP gateway and policy engine run in-process. The LLM is a scripted mock.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- 24 fixtures in `crates/attest-orchestrator/tests/fixtures/injection_events.json`.
+- `obeyed_injection_is_denied_and_recorded_in_envelope`: Triager mock calls `idp_revoke_session`; policy denies it; the signed envelope records the denial.
+- `gateway_denies_out_of_role_tool_regardless_of_injected_args`.
+- `injection_in_text_fields_does_not_change_feature_vector`.
+- `injection_in_args_cannot_grant_out_of_role_tool`.
+- `attest-orchestrator` suite 46 pass. `cargo fmt --check` and `clippy -D warnings` clean. No network model.
+- Commit `ac6ebc4` on `feat/t015-injection`. Status stays `review` until a second model reads the diff.
 
 ---
 
