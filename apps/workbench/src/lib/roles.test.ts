@@ -9,12 +9,14 @@ describe("role matrix", () => {
   test("viewer can only read cases", () => {
     expect(can("viewer", "case.view")).toBe(true);
     expect(can("viewer", "case.override")).toBe(false);
+    expect(can("viewer", "label.write")).toBe(false);
     expect(can("viewer", "audit.read")).toBe(false);
   });
 
-  test("analyst can read and override but not read the audit trail", () => {
+  test("analyst can read, override and label but not read the audit trail", () => {
     expect(can("analyst", "case.view")).toBe(true);
     expect(can("analyst", "case.override")).toBe(true);
+    expect(can("analyst", "label.write")).toBe(true);
     expect(can("analyst", "audit.read")).toBe(false);
   });
 
@@ -22,10 +24,11 @@ describe("role matrix", () => {
     for (const p of PERMISSIONS) expect(can("lead", p)).toBe(true);
   });
 
-  test("auditor reads cases and the audit trail but cannot override", () => {
+  test("auditor reads cases and the audit trail but cannot override or label", () => {
     expect(can("auditor", "case.view")).toBe(true);
     expect(can("auditor", "audit.read")).toBe(true);
     expect(can("auditor", "case.override")).toBe(false);
+    expect(can("auditor", "label.write")).toBe(false);
   });
 
   test("an unknown role has no permissions", () => {

@@ -75,6 +75,18 @@ export interface WorkbenchCaseTraceStepsTable {
   created_at: Date;
 }
 
+export interface WorkbenchAnalystLabelsTable {
+  id: string;
+  case_id: string;
+  envelope_id: string;
+  agreement: string;
+  disposition: string;
+  reason: string;
+  user_id: string;
+  user_email: string;
+  created_at: Date;
+}
+
 export interface DB {
   auth_users: AuthUsersTable;
   auth_sessions: AuthSessionsTable;
@@ -82,4 +94,5 @@ export interface DB {
   auth_verifications: AuthVerificationsTable;
   workbench_cases: WorkbenchCasesTable;
   workbench_case_trace_steps: WorkbenchCaseTraceStepsTable;
+  workbench_analyst_labels: WorkbenchAnalystLabelsTable;
 }
