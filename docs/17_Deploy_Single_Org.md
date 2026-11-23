@@ -3,6 +3,17 @@
 Prerequisites, the private overlay, configuration, a shadow rollout, go-live
 gates, and rollback. Organization-specific values stay in the overlay.
 
+## Pick up
+
+1. Clone this repo.
+2. Copy `examples/overlay/` into a private repository. That directory is the
+   starting policy, field map, and env file. Replace every placeholder there.
+3. `make dev-up-all`, then `make dev-up-live`.
+4. Run the workbench with the private `.env`. Sign-in is the local Keycloak
+   realm until you change `ATTEST_OIDC_ISSUER`.
+5. Confirm one edge post and one SIEM-shaped alert arrived, then follow the
+   shadow-mode steps below before any production host.
+
 ## Local live context
 
 `make dev-up-live` starts three services and turns the collector flags on:

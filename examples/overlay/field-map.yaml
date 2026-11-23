@@ -1,0 +1,13 @@
+# Private log field names go in the overlay copy of this file.
+# `from` is the name on the event. `to` is the Attest name.
+# email, phone, and card are dropped or hashed before the bus.
+prefix: commerce
+fields:
+  - from: client_ip
+    to: src_ip
+  - from: request_path
+    to: http_path
+drop:
+  - email
+  - phone
+  - card

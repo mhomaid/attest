@@ -172,6 +172,24 @@ mod tests {
     }
 
     #[test]
+    fn example_overlay_field_map_loads_and_renames() {
+        let yaml = include_str!("../../../examples/overlay/field-map.yaml");
+        let mapping = FieldMapping::parse(yaml).unwrap();
+        let raw = serde_json::json!({
+            "client_ip": "203.0.113.10",
+            "request_path": "/checkout",
+            "email": "alice@example.com",
+            "ticket": "1001"
+        });
+        let (mapped, unmapped) = apply(&raw, &mapping);
+        assert_eq!(mapped["src_ip"], "203.0.113.10");
+        assert_eq!(mapped["http_path"], "/checkout");
+        let blob = mapped.to_string() + &unmapped.unwrap().to_string();
+        assert!(!blob.contains("alice@example.com"));
+        assert!(blob.contains("commerce"));
+    }
+
+    #[test]
     fn invalid_mapping_yaml_is_an_error() {
         let err = FieldMapping::parse("fields: [").unwrap_err();
         assert!(err.to_string().contains("invalid field mapping"));
