@@ -1,0 +1,60 @@
+# Public datasets the training and eval code is allowed to name.
+# Checksums are sha256 or md5 of the file fetch stores. `sha256:unpinned` means
+# no file digest is known yet; `make dataset-fetch` refuses that id.
+# Do not commit anything under cache/.
+datasets:
+  - id: guide
+    source_url: https://www.kaggle.com/datasets/Microsoft/microsoft-security-incident-prediction
+    license: CDLA-Permissive-2.0
+    allowed_use: [train, eval]
+    checksum: "sha256:unpinned"
+    citation: >-
+      Freitas, Scott; Kalajdjieski, Jovan; Gharib, Amir; McCann, Robert.
+      AI-Driven Guided Response for Security Operation Centers with Microsoft
+      Copilot for Security. arXiv:2407.09017, 2024.
+      https://arxiv.org/abs/2407.09017
+
+  - id: rba-login
+    source_url: https://zenodo.org/records/6782156/files/rba-dataset.zip
+    filename: rba-dataset.zip
+    license: CC-BY-4.0
+    allowed_use: [train, eval]
+    checksum: "md5:cc1b1078b3929650e6c08678caffcc57"
+    citation: >-
+      Wiefling, Stephan; Jørgensen, Paul René; Thunem, Sigurd; Lo Iacono, Luigi.
+      Pump Up Password Security! Evaluating and Enhancing Risk-Based
+      Authentication on a Real-World Large-Scale Online Service.
+      ACM Transactions on Privacy and Security, 2022.
+      https://doi.org/10.1145/3546069
+
+  - id: splunk-bots
+    source_url: https://s3.amazonaws.com/botsdataset/botsv2/botsv2_data_set.tgz
+    filename: botsv2_data_set.tgz
+    license: CC0-1.0
+    allowed_use: [eval]
+    checksum: "md5:fd2673726c96e97a39fc03119d6686c6"
+    citation: >-
+      Herrald, David, and contributors. Boss of the SOC (BOTS) Dataset
+      Version 2. 2018. https://github.com/splunk/botsv2
+
+  - id: csic-2010
+    source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/normalTrafficTraining.rar
+    filename: normalTrafficTraining.rar
+    license: LicenseRef-CSIC-2010
+    allowed_use: [fixtures, eval]
+    checksum: "sha256:8c3bb9091ac3d934d9f9ec0fe576c79171a4ef679acc111d637318e77ea69078"
+    files:
+      - filename: normalTrafficTraining.rar
+        source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/normalTrafficTraining.rar
+        checksum: "sha256:8c3bb9091ac3d934d9f9ec0fe576c79171a4ef679acc111d637318e77ea69078"
+      - filename: normalTrafficTest.rar
+        source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/normalTrafficTest.rar
+        checksum: "sha256:0b71decfc65b0b1f1f193e626b4ac947fdfb103cbb71e033a2f23db33bb8b7e0"
+      - filename: anomalousTrafficTest.rar
+        source_url: https://web.archive.org/web/20130612150713id_/http://www.iec.csic.es/dataset/anomalousTrafficTest.rar
+        checksum: "sha256:4f0ce237c1ec326223d3f4f3282f38d3e9af2155d763e05586a11e04c41243c3"
+    citation: >-
+      Torrano Giménez, Carmen; Pérez Villegas, Alejandro; Álvarez Marañón,
+      Gonzalo. HTTP Dataset CSIC 2010. Information Security Institute,
+      Spanish National Research Council, 2010.
+      http://www.isi.csic.es/dataset/

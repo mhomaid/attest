@@ -90,7 +90,9 @@ values="$(grep -v '^ *#' "$CHART/values.yaml")"
 for key in accessKey secretKey signingKey; do
   printf '%s\n' "$values" | grep -E "^ *$key:" | grep -vqE ': *""' && fail "values.yaml: $key is not empty"
 done
-assert_lacks values 'password:' "$values"
+# auth.password is the sign-in feature flag ("off"), not a credential.
+without_flag="$(printf '%s\n' "$values" | grep -v 'password: "off"')"
+assert_lacks values 'password:' "$without_flag"
 assert_lacks values 'postgres://[^ ]*:[^ @]*@' "$values"
 
 # ── production overlay example ────────────────────────────────────────────

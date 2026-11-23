@@ -663,7 +663,7 @@ on licensed public data and a synthetic commerce scenario pack, with every datas
 checked by code before it can be used for training.
 
 ### T-050 — Dataset registry and license gate
-- status: todo
+- status: review
 - milestone: MD
 - area: ml
 - model tier: C
@@ -673,15 +673,20 @@ checked by code before it can be used for training.
 **Why:** Public datasets come with different licenses. Some allow commercial training, some only research. The code, not memory, must enforce which is which.
 
 **Acceptance criteria**
-- [ ] `ml/datasets/registry.yaml` lists each dataset: id, source URL, license, `allowed_use` (`train`, `eval`, `fixtures`), expected checksum, citation
-- [ ] `make dataset-fetch ID=<id>` downloads to a gitignored cache and verifies the checksum; nothing under `ml/datasets/cache/` is ever committed (test: `.gitignore` check)
-- [ ] The training entry point refuses any dataset whose `allowed_use` lacks `train` — test: `test_train_refuses_eval_only_dataset`
-- [ ] Each dataset has a short data card in `ml/datasets/cards/<id>.md` (source, license, size, labels, known biases)
-- [ ] Every trained model records the dataset IDs and checksums it used
+- [x] `ml/datasets/registry.yaml` lists each dataset: id, source URL, license, `allowed_use` (`train`, `eval`, `fixtures`), expected checksum, citation
+- [x] `make dataset-fetch ID=<id>` downloads to a gitignored cache and verifies the checksum; nothing under `ml/datasets/cache/` is ever committed (test: `.gitignore` check)
+- [x] The training entry point refuses any dataset whose `allowed_use` lacks `train` — test: `test_train_refuses_eval_only_dataset`
+- [x] Each dataset has a short data card in `ml/datasets/cards/<id>.md` (source, license, size, labels, known biases)
+- [x] Every trained model records the dataset IDs and checksums it used
 
 **Plan:**
+- Registry: GUIDE and RBA may train. BOTS is eval only. CSIC 2010 is fixtures and eval only.
+- Fetch verifies the checksum into `ml/datasets/cache/`, which is gitignored. Training records ids and checksums in `model_metrics.json`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `test_registry_lists_public_datasets`, `test_dataset_cache_is_gitignored`, `test_fetch_verifies_checksum_on_fixture`, `test_data_cards_cover_registry`, `test_train_refuses_eval_only_dataset`, `test_train_records_dataset_ids_and_checksums`.
+- `uv run pytest datasets/ triager/ test_smoke.py`: 11 passed. No dataset bytes committed.
+- Commit `a5a3e9b` on `feat/t050-datasets`. CSIC 2010 is pinned to the sha256 of the three original RAR archives. GUIDE is still `sha256:unpinned` because the files are only on Kaggle and have no published digest, so fetch refuses that id. RBA and BOTS v2 are pinned. Not `done` until `verify.sh full` runs on this branch.
 
 ### T-051 — Feature set v2 and a v0 triage model trained on GUIDE
 - status: todo
@@ -747,7 +752,7 @@ checked by code before it can be used for training.
 **Evidence:**
 
 ### T-054 — Investigator evaluation with public SOC exercises
-- status: todo
+- status: review
 - milestone: MD
 - area: eval
 - model tier: B
@@ -757,14 +762,20 @@ checked by code before it can be used for training.
 **Why:** Splunk Boss of the SOC datasets (CC0) come with questions and answers, which gives ground truth for the LLM investigator.
 
 **Acceptance criteria**
-- [ ] A harness loads a BOTS export (JSON/CSV) into the warm tier and asks the investigator the published questions through the normal MCP tools
-- [ ] Scores exact-match and cited-evidence correctness per question; result stored as a CI artifact
-- [ ] Runs with a recorded or scripted model in CI; a live model run is a manual `make eval-investigator`
-- [ ] No answer key is ever placed in the model context — test
+- [x] A harness loads a BOTS export (JSON/CSV) into the warm tier and asks the investigator the published questions through the normal MCP tools
+- [x] Scores exact-match and cited-evidence correctness per question; result stored as a CI artifact
+- [x] Runs with a recorded or scripted model in CI; a live model run is a manual `make eval-investigator`
+- [x] No answer key is ever placed in the model context — test
 
 **Plan:**
+- `eval/bots_eval` loads a JSON or CSV export into an in-memory warm table (or ClickHouse when `--live`), and the investigator may only query it through a read-only gateway.
+- Scoring is exact-match plus cited-evidence. The scripted model runs in CI and uploads `eval/results/investigator-bots.json`. `make eval-investigator` is the live run and stays off unless `ATTEST_EVAL_LIVE=1`.
+- Fixtures are synthetic and BOTS-shaped. They are not a copy of the Splunk dataset.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `pytest bots_eval/test_harness.py`: 27 passed, including `test_answer_key_is_never_in_the_model_context` and `test_run_eval_stops_before_calling_a_model_when_the_question_leaks`.
+- Scripted run wrote a result with exact 0.80, cited 0.80, n=5.
+- `verify.sh full` was not run, so this stays `review`. The harness uses an in-process gateway with the same allow/deny rules, not the production MCP process.
 
 ### T-055 — Several pinned models, one per detection family
 - status: todo

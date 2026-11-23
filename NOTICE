@@ -2,3 +2,7 @@ Attest
 Copyright 2026 Mohamed Homaid
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The optional login-risk training set is the RBA login dataset by Stephan
+Wiefling, Paul René Jørgensen, Sigurd Thunem, and Luigi Lo Iacono, licensed
+CC BY 4.0. https://doi.org/10.1145/3546069

@@ -1,0 +1,41 @@
+{
+  "key": [
+    {
+      "id": "q-001",
+      "answer": "wks-0007",
+      "evidence_ids": [
+        "evt-0005"
+      ]
+    },
+    {
+      "id": "q-002",
+      "answer": "svc-backup",
+      "evidence_ids": [
+        "evt-0007"
+      ]
+    },
+    {
+      "id": "q-003",
+      "answer": "3",
+      "evidence_ids": [
+        "evt-0001",
+        "evt-0002",
+        "evt-0003"
+      ]
+    },
+    {
+      "id": "q-004",
+      "answer": "evil.example.net",
+      "evidence_ids": [
+        "evt-0008"
+      ]
+    },
+    {
+      "id": "q-005",
+      "answer": "tool-x.exe",
+      "evidence_ids": [
+        "evt-0010"
+      ]
+    }
+  ]
+}
