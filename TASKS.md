@@ -555,7 +555,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-035 — Golden-set evaluation in CI
-- status: todo
+- status: review
 - milestone: M3
 - area: ml
 - model tier: B
@@ -563,12 +563,15 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §6.5
 
 **Acceptance criteria**
-- [ ] `eval/run_eval.py` runs the classifier and (with a mock LLM) the investigator over golden cases and fails on any missed true positive or a drop in agreement beyond a threshold
-- [ ] Runs in CI; result attached as an artifact
+- [x] `eval/run_eval.py` runs the classifier and (with a mock LLM) the investigator over golden cases and fails on any missed true positive or a drop in agreement beyond a threshold
+- [x] Runs in CI; result attached as an artifact
 
 **Plan:**
+- `eval/run_eval.py` scores eight synthetic cases with an offline classifier and a scripted investigator. Exit is non-zero when a labeled true positive is missed or agreement falls below 0.90. The Python CI job uploads `eval/results/golden-eval.json`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- Commit `3535994` on `feat/t035-golden`. `pytest eval/test_run_eval.py`: 15 passed. The shipped set exits 0 (`n=8`, agreement `1.000`, missed true positives `0`).
+- T-031 is still open, so this runner does not retrain from labels. `verify.sh full` was not run, so this stays `review`.
 
 ---
 

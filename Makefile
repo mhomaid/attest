@@ -1,4 +1,4 @@
-.PHONY: dataset-fetch eval-investigator eval-investigator-ci help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template helm-kubeconform tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: dataset-fetch eval-investigator eval-investigator-ci eval-golden help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template helm-kubeconform tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -304,6 +304,10 @@ smoke: ## Quick sanity check: cargo test + bun test + pytest
 eval-investigator-ci: ## Scripted BOTS-shaped investigator eval (no live model, no network)
 	cd eval && uv run --with pytest python -m pytest bots_eval/test_harness.py -q
 	cd eval && uv run --with pytest python -m bots_eval --out results/investigator-bots.json
+
+eval-golden: ## Offline golden-set eval (classifier-style scorer + scripted investigator)
+	cd eval && uv run --with pytest python -m pytest test_run_eval.py -q
+	cd eval && uv run --with pytest python run_eval.py --out results/golden-eval.json
 
 eval-investigator: ## Live investigator eval. Needs ATTEST_EVAL_LIVE=1 plus LLM, ClickHouse and MCP URLs.
 	cd eval && uv run --with pytest python -m bots_eval --live --out results/investigator-bots.json

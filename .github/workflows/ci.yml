@@ -65,6 +65,18 @@ jobs:
           name: investigator-bots
           path: eval/results/investigator-bots.json
 
+      - name: Golden-set eval
+        working-directory: eval
+        run: |
+          uv run --with pytest python -m pytest test_run_eval.py -q
+          uv run --with pytest python run_eval.py --out results/golden-eval.json
+
+      - name: Upload golden-set eval result
+        uses: actions/upload-artifact@v6
+        with:
+          name: golden-eval
+          path: eval/results/golden-eval.json
+
   typescript:
     name: TypeScript (bun · typecheck · lint)
     runs-on: ubuntu-latest
