@@ -1,0 +1,156 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $full := include "attest.fullname" . -}}
+{{- $labels := include "attest.labels" . -}}
+{{- $selectors := include "attest.selectorLabels" . -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $ports := include "attest.internalPorts" . | trim -}}
+# Default deny: selects every pod of this release, allows nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-default-deny
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS egress to the cluster resolver.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-dns
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $np.dns.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.dns.podSelector | nindent 14 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Pod-to-pod traffic inside the release, on service ports only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-release-internal
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $selectors | nindent 14 }}
+      ports:
+        {{- $ports | nindent 8 }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $selectors | nindent 14 }}
+      ports:
+        {{- $ports | nindent 8 }}
+{{- if and .Values.ingress.enabled .Values.services.workbench.enabled }}
+---
+# Ingress controller to the workbench only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-ingress-controller
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+      app.kubernetes.io/component: workbench
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $np.ingress.controllerNamespaceSelector | nindent 14 }}
+      ports:
+        - port: {{ .Values.services.workbench.port }}
+          protocol: TCP
+{{- end }}
+{{- if and .Values.services.collector.enabled $np.ingress.collectorFrom }}
+---
+# Configured sources (log shippers, webhooks) to the collector only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-collector-ingress
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+      app.kubernetes.io/component: collector
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- toYaml $np.ingress.collectorFrom | nindent 8 }}
+      ports:
+        - port: {{ .Values.services.collector.port }}
+          protocol: TCP
+{{- end }}
+---
+# Egress to Kafka, ClickHouse, Postgres, HTTPS (object store, cloud token services) and extras.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-external-egress
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selectors | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- range $dep := list "kafka" "clickhouse" "postgres" "https" }}
+    {{- $rule := index $np.egress $dep }}
+    {{- if $rule.to }}
+    # {{ $dep }}
+    - to:
+        {{- toYaml $rule.to | nindent 8 }}
+      ports:
+        {{- range $rule.ports }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- with $np.egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

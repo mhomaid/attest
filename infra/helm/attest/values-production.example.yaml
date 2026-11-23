@@ -1,0 +1,57 @@
+# Placeholder production overlay. Copy into your private overlay repo and replace every
+# example.com host, ARN and Secret name. It contains no credentials: every secret is
+# referenced by the name of a Kubernetes Secret you create out of band (External Secrets,
+# Sealed Secrets, CSI driver).
+#
+#   helm template attest infra/helm/attest -n attest -f values-production.example.yaml
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/attest-example
+
+# MSK with IAM auth: no username or password. The role above needs kafka-cluster:* on the cluster.
+kafka:
+  brokers: b-1.example.kafka.us-east-1.amazonaws.com:9098,b-2.example.kafka.us-east-1.amazonaws.com:9098
+  securityProtocol: SASL_SSL
+  saslMechanism: AWS_MSK_IAM
+  awsRegion: us-east-1
+
+clickhouse:
+  url: https://clickhouse.example.com:8443
+  existingSecret: attest-clickhouse # keys: user, password
+
+postgres:
+  existingSecret: attest-postgres # key: database-url
+
+objectStore:
+  bucket: attest-warm-example
+  region: us-east-1
+  useIrsa: true # S3 access through the service account role, no static keys
+
+signing:
+  existingSecret: attest-signing # key: signing-key
+serviceAuth:
+  existingSecret: attest-service-auth # keys: service-auth, ingest-hmac
+toolCredentials:
+  existingSecret: attest-tool-credentials
+
+env:
+  TENANT_ID: tenant-a
+  RISINGWAVE_HOST: risingwave.example.com
+  ICEBERG_WAREHOUSE: s3://attest-warm-example
+
+ingress:
+  enabled: true
+  host: attest.example.com
+
+networkPolicy:
+  egress:
+    # Narrow to your subnet CIDRs (TEST-NET placeholders shown).
+    kafka:
+      to: [{ ipBlock: { cidr: 203.0.113.0/24 } }]
+    clickhouse:
+      to: [{ ipBlock: { cidr: 203.0.113.0/24 } }]
+    postgres:
+      to: [{ ipBlock: { cidr: 203.0.113.0/24 } }]
+
+replicaCount: 2

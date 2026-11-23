@@ -4,6 +4,9 @@
 {{- $sa := include "attest.serviceAccountName" . -}}
 {{- $secret := include "attest.objectStoreSecret" . -}}
 {{- $signingSecret := ternary (printf "%s-signing" $full) $secret .Values.objectStore.useIrsa -}}
+{{- if .Values.signing.existingSecret -}}
+{{- $signingSecret = .Values.signing.existingSecret -}}
+{{- end -}}
 {{- range $name, $svc := dict
   "collector" .Values.services.collector
   "control-plane" .Values.services.controlPlane
@@ -37,7 +40,7 @@ spec:
     spec:
       serviceAccountName: {{ $sa }}
       securityContext:
-        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+        {{- mergeOverwrite (deepCopy $.Values.podSecurityContext) (default dict $svc.podSecurityContext) | toYaml | nindent 8 }}
       {{- with $.Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -87,8 +90,50 @@ spec:
                   name: {{ . }}
                   key: ingest-hmac
             {{- end }}
+            {{- if $.Values.devDependencies.postgres.enabled }}
+            - name: DATABASE_URL
+              value: {{ printf "postgres://attest@%s-dev-postgres:5432/attest" $full | quote }}
+            {{- else if $.Values.postgres.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.postgres.existingSecret }}
+                  key: database-url
+            {{- end }}
+            {{- with $.Values.clickhouse.existingSecret }}
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: user
+                  optional: true
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: password
+                  optional: true
+            {{- end }}
+            {{- if include "attest.kafkaUsesSecret" $ }}
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.kafka.existingSecret }}
+                  key: username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.kafka.existingSecret }}
+                  key: password
+            {{- end }}
+            {{- if $.Values.toolCredentials.existingSecret }}
+            - name: ATTEST_SECRET_SOURCE
+              value: file
+            - name: ATTEST_SECRETS_DIR
+              value: {{ $.Values.toolCredentials.mountPath | quote }}
+            {{- end }}
           resources:
-            {{- toYaml $.Values.resources | nindent 12 }}
+            {{- toYaml (default $.Values.resources $svc.resources) | nindent 12 }}
           {{- if and $svc.port $svc.healthPath }}
           readinessProbe:
             httpGet:
@@ -108,11 +153,22 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /data
+            {{- if $.Values.toolCredentials.existingSecret }}
+            - name: tool-credentials
+              mountPath: {{ $.Values.toolCredentials.mountPath | quote }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
         - name: data
           emptyDir: {}
+        {{- if $.Values.toolCredentials.existingSecret }}
+        - name: tool-credentials
+          secret:
+            secretName: {{ $.Values.toolCredentials.existingSecret }}
+            defaultMode: 0440
+        {{- end }}
 {{- if $svc.port }}
 ---
 apiVersion: v1

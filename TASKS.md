@@ -253,7 +253,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-014 — Secrets interface
-- status: todo
+- status: review
 - milestone: M1
 - area: platform
 - model tier: B
@@ -261,13 +261,20 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §5.4
 
 **Acceptance criteria**
-- [ ] A `SecretSource` abstraction: env (dev), file (Kubernetes secret mount), AWS Secrets Manager (feature)
-- [ ] Tool credentials are resolved per tool ID and reloaded without restart on rotation — test with the file source
-- [ ] No production Helm value requires a secret in plain env
+- [x] A `SecretSource` abstraction: env (dev), file (Kubernetes secret mount), AWS Secrets Manager (feature)
+- [x] Tool credentials are resolved per tool ID and reloaded without restart on rotation — test with the file source
+- [x] No production Helm value requires a secret in plain env
 
 **Plan:**
+- `attest-secrets`: `EnvSource`, `FileSource`, and `AwsSecretsManagerSource` behind the `aws` feature.
+- Helm mounts `toolCredentials.existingSecret`. `values.yaml` holds no secret material.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `crates/attest-secrets/tests/secret_sources.rs`: 8 pass, including `file_source_reloads_after_rotation_without_reconstruction` and `file_source_rejects_path_traversal_and_bad_names`.
+- `cargo clippy -p attest-secrets --all-targets -- -D warnings` clean with and without `--features aws`.
+- `make helm-template` pass.
+- Commit `e47a1c7` on `feat/t014-secrets`. The AWS backend compiles and is not exercised against a live account. No gateway tool calls `ToolCredentials` yet.
+- `verify.sh quick` failed only the workbench bun checks: this worktree has no `node_modules`. Rust, Helm, and the leak check passed. Not `done` until `verify.sh full` is green on a checkout that can run those bun checks.
 
 ### T-015 — Prompt-injection regression suite for log fields
 - status: review
@@ -560,7 +567,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 ## M4 Packaging
 
 ### T-040 — Helm hardening for a single-organization production deploy
-- status: todo
+- status: review
 - milestone: M4
 - area: infra
 - model tier: B
@@ -568,14 +575,20 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §7
 
 **Acceptance criteria**
-- [ ] Values for external Kafka (SASL/IAM), ClickHouse, S3 and Postgres; bundled dev dependencies off by default
-- [ ] NetworkPolicies (default deny, explicit allows), `securityContext` (non-root, read-only root FS), resource limits, PodDisruptionBudgets
-- [ ] Service-account annotations for cloud IAM; no secrets in values
-- [ ] `make helm-template` plus a kubeconform or similar schema check in CI
+- [x] Values for external Kafka (SASL/IAM), ClickHouse, S3 and Postgres; bundled dev dependencies off by default
+- [x] NetworkPolicies (default deny, explicit allows), `securityContext` (non-root, read-only root FS), resource limits, PodDisruptionBudgets
+- [x] Service-account annotations for cloud IAM; no secrets in values
+- [x] `make helm-template` plus a kubeconform or similar schema check in CI
 
 **Plan:**
+- Default chart: non-root, read-only root filesystem, resource limits, one PodDisruptionBudget per Deployment, default-deny NetworkPolicy plus explicit DNS, in-release, and egress allows.
+- `values-production.example.yaml` points Kafka, ClickHouse, Postgres, and S3 at external services and references existing Secrets. Bundled dev dependencies stay off unless enabled.
+- `make helm-template` runs `scripts/tests/helm_hardening_test.sh`. CI runs that and `make helm-kubeconform`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `make helm-template` passed (6 Deployments, 6 PDBs).
+- `make helm-kubeconform` with kubeconform v0.6.7: ci-values 30 valid, production example 31 valid, 0 invalid.
+- `verify.sh full` was not run, so this stays `review`.
 
 ### T-041 — Terraform module for a security account
 - status: review

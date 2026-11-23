@@ -1,7 +1,10 @@
 Attest {{ .Chart.AppVersion }} — reference install.
 
-This chart starts the Attest binaries only. You still need Kafka/Redpanda,
-RisingWave, ClickHouse, and an S3-compatible bucket reachable at:
+This chart starts the Attest binaries only. Point it at external Kafka, ClickHouse,
+Postgres, RisingWave and an S3-compatible bucket (see values-production.example.yaml).
+Bundled dev dependencies: postgres={{ .Values.devDependencies.postgres.enabled }} clickhouse={{ .Values.devDependencies.clickhouse.enabled }} redpanda={{ .Values.devDependencies.redpanda.enabled }}
+NetworkPolicy default-deny: {{ .Values.networkPolicy.enabled }} (explicit egress allows are in networkPolicy.egress)
+Object store:
 
   {{ .Values.objectStore.endpoint }}  bucket={{ .Values.objectStore.bucket }}
 

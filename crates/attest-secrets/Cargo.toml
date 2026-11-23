@@ -1,0 +1,23 @@
+[package]
+name = "attest-secrets"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SecretSource abstraction: env (dev), file (Kubernetes mount), AWS Secrets Manager (feature)"
+
+[features]
+default = []
+# AWS Secrets Manager backend. Off by default so the default build pulls no AWS SDK.
+aws = ["dep:aws-config", "dep:aws-sdk-secretsmanager"]
+
+[dependencies]
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "time"] }
+aws-config = { version = "1", optional = true, features = ["behavior-version-latest"] }
+aws-sdk-secretsmanager = { version = "1", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["time"] }
