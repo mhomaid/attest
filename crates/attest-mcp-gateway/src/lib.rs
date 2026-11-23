@@ -6,10 +6,15 @@
 //! - Dispatch to internal Attest tools
 //! - Rate-limit per agent/tenant
 
+pub mod asn_lookup;
+pub mod demo;
+pub mod entity_lookup;
 pub mod graylog_search;
 pub mod registry;
 pub mod server;
+pub mod threat_intel;
 pub mod tools;
+pub mod user_baseline;
 pub mod warm_limit;
 
 pub use registry::{ToolDescriptor, ToolRegistry};

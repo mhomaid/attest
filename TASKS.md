@@ -410,7 +410,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-025 — Real enrichment tools
-- status: todo
+- status: review
 - milestone: M2
 - area: gateway
 - model tier: B · review: A
@@ -424,11 +424,14 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - [ ] With `ATTEST_DEMO_MODE` unset, no tool returns a `*_stub` source — test
 
 **Plan:**
+- ASN, threat intel, and baseline lookups read local files. A bad `.mmdb` is rejected. The happy ASN path uses a JSON network table. Threat intel reports `synced_at` or the file mtime and does not download a feed. Baselines are file rows, not the hot tier. The new tools return an error instead of a `*_stub` source when demo mode is unset. Older tools can still return a stub.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- Commit `34e4e88` on `feat/t025-enrich`. `cargo test -p attest-mcp-gateway`: 27 passed. `cargo test -p attest-policy-engine`: 16 passed. Clippy `-D warnings` passed for those crates.
+- The four criteria stay open: no decoded MMDB fixture, no feed sync, no hot-tier baseline, and the stub ban does not cover every older tool. Tier A review is still required. `verify.sh full` was not run.
 
 ### T-026 — Generic entity lookup tool over read-only SQL templates
-- status: todo
+- status: review
 - milestone: M2
 - area: gateway
 - model tier: B · review: A
@@ -439,12 +442,15 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 
 **Acceptance criteria**
 - [ ] `entity_lookup` runs only named, parameterized query templates from config against a read-only Postgres/MySQL connection
-- [ ] Free-form SQL is impossible through the tool — test; parameters are bound, never interpolated — injection test
-- [ ] Row cap, timeout, column allow list; redaction rules from T-024 apply
+- [x] Free-form SQL is impossible through the tool — test; parameters are bound, never interpolated — injection test
+- [x] Row cap, timeout, column allow list; redaction rules from T-024 apply
 
 **Plan:**
+- `entity_lookup` loads named YAML templates. Postgres gets a read-only session preamble. MySQL templates bind `?` placeholders, and the MySQL driver is not linked. There is no live database run. Example templates live in `examples/overlay/entity-queries.yaml`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- Same commit `34e4e88`. Tests `free_form_sql_is_rejected`, `injection_reaches_the_executor_as_a_bound_parameter`, `row_cap_truncates`, `timeout_is_enforced`, and `email_and_card_values_are_redacted` are in that gateway suite.
+- The live Postgres and MySQL connection criterion stays open. Tier A review is still required.
 
 ### T-027 — AWS GuardDuty source
 - status: todo

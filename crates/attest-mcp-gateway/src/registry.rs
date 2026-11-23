@@ -85,15 +85,28 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "lookup_threat_intel".into(),
-        description: "Look up an IP, domain, or file hash in the Attest threat intelligence index."
+        description: "Look up an IP, domain, URL, or file hash in the local threat-intel feed. The result includes the feed last-sync time."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "indicator": { "type": "string" },
-                "indicator_type": { "type": "string", "enum": ["ip", "domain", "file_hash"] }
+                "indicator_type": { "type": "string", "enum": ["ip", "domain", "url", "file_hash"] }
             },
             "required": ["indicator", "indicator_type"]
+        }),
+        class: ToolClass::Internal,
+    });
+
+    r.register(ToolDescriptor {
+        id: "ip_asn_lookup".into(),
+        description: "Look up an IPv4 address in the offline ASN database. Returns the ASN and organization when the address is present.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "ip": { "type": "string", "description": "IPv4 address" }
+            },
+            "required": ["ip"]
         }),
         class: ToolClass::Internal,
     });
@@ -115,7 +128,7 @@ pub fn default_registry() -> ToolRegistry {
 
     r.register(ToolDescriptor {
         id: "get_user_baseline".into(),
-        description: "Return the UEBA baseline statistics for a user principal from RisingWave."
+        description: "Return baseline statistics computed from stored rows for a user principal."
             .into(),
         input_schema: serde_json::json!({
             "type": "object",
@@ -123,6 +136,20 @@ pub fn default_registry() -> ToolRegistry {
                 "principal": { "type": "string", "description": "User principal name or ID" }
             },
             "required": ["principal"]
+        }),
+        class: ToolClass::Internal,
+    });
+
+    r.register(ToolDescriptor {
+        id: "entity_lookup".into(),
+        description: "Run a named read-only query template. Arguments are bound parameters, not SQL.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Template name from the entity query config" },
+                "params": { "type": "object", "description": "Parameter values for the named template" }
+            },
+            "required": ["query"]
         }),
         class: ToolClass::Internal,
     });

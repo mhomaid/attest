@@ -10,6 +10,8 @@ read_only:
   - analyze_code_snippet
   - sandbox_detonate
   - graylog_search
+  - ip_asn_lookup
+  - entity_lookup
 roles:
   triager:
     - triager_auto_close

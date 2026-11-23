@@ -1,0 +1,16 @@
+# Named entity lookups. Copy into the private overlay and point the
+# statements at a read-only database role. Agents pass `query` and `params`;
+# they cannot send SQL.
+dialect: postgres
+row_cap: 50
+timeout_ms: 2000
+columns:
+  - tenant_id
+  - store_id
+  - owner
+queries:
+  store_owner:
+    sql: "SELECT tenant_id, store_id, owner FROM entities WHERE store_id = $1 AND tenant_id = $2"
+    params:
+      - store_id
+      - tenant_id

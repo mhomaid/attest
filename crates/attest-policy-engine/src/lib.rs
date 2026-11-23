@@ -97,6 +97,8 @@ pub fn authorize_with(
             | "get_user_baseline"
             | "get_asset_context"
             | "lookup_threat_intel"
+            | "ip_asn_lookup"
+            | "entity_lookup"
             | "analyze_code_snippet"
             | "sandbox_detonate"
             | "graylog_search"
@@ -282,6 +284,33 @@ mod tests {
             tenant_allows_automation: true,
             ..PolicyContext::default()
         }
+    }
+
+    #[test]
+    fn enrichment_tools_are_read_only_and_actions_stay_denied() {
+        let file = file::PolicyFile::builtin();
+        assert!(file.read_only.iter().any(|t| t == "ip_asn_lookup"));
+        assert!(file.read_only.iter().any(|t| t == "entity_lookup"));
+        for role in [
+            AgentRole::Triager,
+            AgentRole::Investigator,
+            AgentRole::Hunter,
+            AgentRole::DetectionEngineer,
+            AgentRole::Responder,
+            AgentRole::Coordinator,
+        ] {
+            assert!(authorize(&role, "ip_asn_lookup", &ctx()).is_allowed());
+            assert!(authorize(&role, "entity_lookup", &ctx()).is_allowed());
+            assert!(file.allows(&role, "ip_asn_lookup"));
+            assert!(file.allows(&role, "entity_lookup"));
+        }
+        assert!(!authorize(&AgentRole::Triager, "idp_revoke_session", &ctx()).is_allowed());
+        assert!(!authorize(&AgentRole::Investigator, "entity_lookup_raw_sql", &ctx()).is_allowed());
+        let mut poisoned = ctx();
+        poisoned.calibrated_confidence = 1.0;
+        poisoned.user = "1001'; DROP TABLE entities; --".into();
+        assert!(!authorize(&AgentRole::Triager, "idp_revoke_session", &poisoned).is_allowed());
+        assert!(authorize(&AgentRole::Triager, "entity_lookup", &poisoned).is_allowed());
     }
 
     #[test]
