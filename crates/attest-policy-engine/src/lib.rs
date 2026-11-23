@@ -3,6 +3,8 @@
 //! Hard-coded Rust policies per `AgentRole` for MVP. GA v1 will expose
 //! customer-editable policies via a typed DSL.
 
+pub mod file;
+
 use serde::{Deserialize, Serialize};
 
 /// Every agent role in the system.
@@ -63,12 +65,30 @@ pub struct PolicyContext {
     pub blast_radius: u32,
     /// Whether the issuing tenant has enabled automated actions.
     pub tenant_allows_automation: bool,
+    /// Entity the action would touch. Empty means "not supplied".
+    pub user: String,
+    pub account: String,
+    pub ip: String,
+    pub asn: String,
+    pub tenant_id: String,
 }
 
 /// Authorise a tool call for the given agent role.
 ///
 /// Returns `PolicyDecision::Allow`, `Deny`, or `Escalate`.
 pub fn authorize(role: &AgentRole, tool_id: &str, ctx: &PolicyContext) -> PolicyDecision {
+    authorize_with(&file::PolicyFile::builtin(), role, tool_id, ctx)
+}
+
+pub fn authorize_with(
+    policy: &file::PolicyFile,
+    role: &AgentRole,
+    tool_id: &str,
+    ctx: &PolicyContext,
+) -> PolicyDecision {
+    if let Some(decision) = file::do_not_touch_decision(policy, ctx) {
+        return decision;
+    }
     // All roles: read-only hot/warm tier and baseline queries are always allowed.
     if matches!(
         tool_id,
@@ -79,6 +99,7 @@ pub fn authorize(role: &AgentRole, tool_id: &str, ctx: &PolicyContext) -> Policy
             | "lookup_threat_intel"
             | "analyze_code_snippet"
             | "sandbox_detonate"
+            | "graylog_search"
     ) {
         return PolicyDecision::allow();
     }
@@ -259,6 +280,7 @@ mod tests {
             recent_actions_last_hour: 0,
             blast_radius: 1,
             tenant_allows_automation: true,
+            ..PolicyContext::default()
         }
     }
 

@@ -75,6 +75,7 @@ fn signed_classifier_envelope(
         signature: String::new(),
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
         signed_at: now,
     };
     signer.sign(&mut env);
@@ -224,6 +225,7 @@ fn replay_llm_is_integrity_only_and_rejects_reordered_tools() {
         signature: String::new(),
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
         signed_at: later,
     };
     signer.sign(&mut env);
@@ -421,6 +423,7 @@ fn minimal_signed(signer: &LocalKey) -> AttestationEnvelope {
         signature: String::new(),
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
         signed_at: now,
     };
     signer.sign(&mut env);

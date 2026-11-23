@@ -247,6 +247,7 @@ mod tests {
             signature: String::new(),
             alg: String::new(),
             key_id: String::new(),
+            policy_hash: String::new(),
             signed_at: now,
         }
     }

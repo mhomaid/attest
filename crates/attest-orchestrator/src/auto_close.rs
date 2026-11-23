@@ -170,6 +170,7 @@ pub async fn try_auto_close(
         signature: String::new(),
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
         signed_at: finished_at,
     };
     signer.sign(&mut envelope);

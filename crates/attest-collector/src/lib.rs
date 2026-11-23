@@ -1,5 +1,8 @@
+pub mod edge;
 pub mod error;
+pub mod graylog;
 pub mod http;
+pub mod mapping;
 pub mod normalizer;
 pub mod producer;
 pub mod s3;

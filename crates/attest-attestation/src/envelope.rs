@@ -232,6 +232,11 @@ pub struct AttestationEnvelope {
     /// non-forgeable hints used only to select the verifying key.
     #[serde(default)]
     pub key_id: String,
+    /// SHA-256 of the policy file that authorized this action. Empty on
+    /// envelopes signed before a policy file was installed, and omitted from
+    /// the canonical body in that case so older logs still verify.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub policy_hash: String,
     pub signed_at: DateTime<Utc>,
 }
 
@@ -273,6 +278,8 @@ impl AttestationEnvelope {
             evidence: &'a EvidenceBlock,
             timing: &'a TimingBlock,
             prev_hash: &'a str,
+            #[serde(skip_serializing_if = "str::is_empty")]
+            policy_hash: &'a str,
             signed_at: &'a DateTime<Utc>,
         }
         let body = Body {
@@ -286,6 +293,7 @@ impl AttestationEnvelope {
             evidence: &self.evidence,
             timing: &self.timing,
             prev_hash: &self.prev_hash,
+            policy_hash: &self.policy_hash,
             signed_at: &self.signed_at,
         };
         let value = serde_json::to_value(&body).expect("envelope serialisation is infallible");

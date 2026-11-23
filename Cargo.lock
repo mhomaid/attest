@@ -646,10 +646,13 @@ dependencies = [
  "chrono",
  "clap",
  "flate2",
+ "hex",
  "object_store",
  "rdkafka",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -858,12 +861,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "attest-outputs"
+version = "0.1.0"
+dependencies = [
+ "attest-attestation",
+ "chrono",
+ "hex",
+ "hmac 0.12.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "uuid",
+]
+
+[[package]]
 name = "attest-policy-engine"
 version = "0.1.0"
 dependencies = [
+ "attest-attestation",
  "chrono",
+ "hex",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
  "tracing",
 ]
 

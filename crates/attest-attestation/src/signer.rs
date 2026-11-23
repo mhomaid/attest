@@ -18,6 +18,19 @@ use ed25519_dalek::{Signature, Signer as DalekSigner, SigningKey, Verifier, Veri
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
+
+static POLICY_HASH: OnceLock<String> = OnceLock::new();
+
+/// Record the loaded policy file hash. Later `sign` calls copy it onto the
+/// envelope when the envelope does not already carry one.
+pub fn set_policy_hash(hash: impl Into<String>) {
+    let _ = POLICY_HASH.set(hash.into());
+}
+
+pub fn installed_policy_hash() -> Option<String> {
+    POLICY_HASH.get().cloned()
+}
 
 /// Signature algorithm recorded in an envelope's `alg` field.
 ///
@@ -165,6 +178,11 @@ impl LocalKey {
     /// Sign an envelope: sets `alg`, `key_id`, and the hex-encoded Ed25519
     /// signature over `sha256(canonical_bytes)`. Infallible for a local key.
     pub fn sign(&self, envelope: &mut AttestationEnvelope) {
+        if envelope.policy_hash.is_empty() {
+            if let Some(hash) = installed_policy_hash() {
+                envelope.policy_hash = hash;
+            }
+        }
         envelope.alg = SignatureAlg::Ed25519.as_str().to_string();
         envelope.key_id = self.key_id();
         envelope.signature = String::new(); // clear before signing
@@ -242,8 +260,19 @@ mod tests {
             signature: String::new(),
             alg: String::new(),
             key_id: String::new(),
+            policy_hash: String::new(),
             signed_at: now,
         }
+    }
+
+    #[test]
+    fn sign_copies_the_installed_policy_hash() {
+        set_policy_hash("policy-hash-for-test");
+        let signer = LocalKey::generate();
+        let mut env = dummy_envelope();
+        signer.sign(&mut env);
+        assert_eq!(env.policy_hash, "policy-hash-for-test");
+        assert!(LocalKey::verify(&env, &signer.verifying_key_hex()).unwrap());
     }
 
     #[test]

@@ -33,6 +33,7 @@ pub enum Scenario {
     Mixed,
     Attack,
     Benign,
+    Commerce,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,6 +296,15 @@ async fn produce_loop(
             Scenario::Mixed => scenarios::pick_event(tenant_id, user_name),
             Scenario::Attack => scenarios::geo_anomaly(tenant_id, user_name),
             Scenario::Benign => scenarios::benign_login(tenant_id, user_name),
+            Scenario::Commerce => {
+                let packed = match idx % 3 {
+                    0 => crate::commerce::card_testing(tenant_id),
+                    1 => crate::commerce::otp_burst(tenant_id),
+                    _ => crate::commerce::edge_block(tenant_id, "/hooks/callback"),
+                };
+                tracing::debug!(label = ?packed.label, "commerce scenario");
+                packed.event
+            }
         };
 
         let key = event.tenant_id.clone();

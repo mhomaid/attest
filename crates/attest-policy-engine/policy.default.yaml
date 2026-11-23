@@ -1,0 +1,35 @@
+# Default Attest policy. A private overlay may replace this file.
+# Empty do-not-touch lists. Effect is deny: a match is never allowed.
+read_only:
+  - query_hot_tier
+  - query_warm_tier
+  - get_user_baseline
+  - get_asset_context
+  - lookup_threat_intel
+  - analyze_code_snippet
+  - sandbox_detonate
+  - graylog_search
+roles:
+  triager:
+    - triager_auto_close
+  investigator:
+    - propose_escalation
+    - request_human_review
+  detection_engineer:
+    - propose_detection_pr
+    - deploy_detection
+  hunter:
+    - propose_detection_pr
+    - request_human_review
+  responder:
+    - idp_revoke_session
+    - edr_isolate_host
+    - firewall_block_ioc
+  coordinator: []
+do_not_touch:
+  users: []
+  accounts: []
+  ips: []
+  asns: []
+  tenants: []
+  effect: deny

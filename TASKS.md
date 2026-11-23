@@ -341,7 +341,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - e2e phase 1 was not re-run. `verify.sh full` was not run. Status stays `review` until a second model reads the diff and phase 1 is green.
 
 ### T-021 — Graylog alert source
-- status: todo
+- status: review
 - milestone: M2
 - area: collector
 - model tier: B
@@ -358,7 +358,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-022 — Graylog search tool and detection heartbeat
-- status: todo
+- status: review
 - milestone: M2
 - area: gateway
 - model tier: B · review: A
@@ -375,7 +375,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-023 — Cloudflare firewall events and audit log source
-- status: todo
+- status: review
 - milestone: M2
 - area: collector
 - model tier: B
@@ -393,7 +393,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-024 — Config-driven field mapping and OCSF extension prefix
-- status: todo
+- status: review
 - milestone: M2
 - area: collector
 - model tier: B
@@ -520,7 +520,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-033 — Outputs: Slack, Jira, generic webhook, PagerDuty Events v2
-- status: todo
+- status: review
 - milestone: M3
 - area: platform
 - model tier: A · review: A (second model)
@@ -537,7 +537,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-034 — Policy from file, with a do-not-touch list
-- status: todo
+- status: review
 - milestone: M3
 - area: policy
 - model tier: A · review: A (second model)
@@ -618,7 +618,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - Commit `ecb7158` on `feat/t041-tf`. `tflint` is not installed on this machine, so that half of the second criterion is not proven. `.tflint.hcl` is in the tree and `make tf-validate` runs tflint when the binary exists.
 
 ### T-042 — Single-organization deployment guide
-- status: todo
+- status: review
 - milestone: M4
 - area: docs
 - model tier: C
@@ -731,7 +731,7 @@ checked by code before it can be used for training.
 **Evidence:**
 
 ### T-053 — Commerce scenario pack for the load generator
-- status: todo
+- status: review
 - milestone: MD
 - area: tools
 - model tier: B
