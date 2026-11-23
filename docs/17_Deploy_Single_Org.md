@@ -3,6 +3,18 @@
 Prerequisites, the private overlay, configuration, a shadow rollout, go-live
 gates, and rollback. Organization-specific values stay in the overlay.
 
+## Local live context
+
+`make dev-up-live` starts three services and turns the collector flags on:
+
+| Service | What it is | Where |
+| --- | --- | --- |
+| Keycloak 26.4, realm `example` | Identity provider | http://localhost:8180 (admin / admin). Client `attest-workbench`, secret `e2e-client-secret`. |
+| Graylog 6.1 | SIEM | http://localhost:9000 (`admin` / `dev-only-graylog-admin`). Search URL `http://graylog:9000` inside Compose. |
+| `edge-logpush` | Live edge and SIEM sender | Posts one firewall event and one Graylog-shaped alert to the collector with the ingest HMAC. |
+
+Point the workbench at the identity provider with `ATTEST_OIDC_ISSUER=http://localhost:8180/realms/example`, `ATTEST_OIDC_CLIENT_ID=attest-workbench`, and `ATTEST_OIDC_CLIENT_SECRET=e2e-client-secret`. Create a Graylog API token and set `ATTEST_GRAYLOG_TOKEN` before the investigator search will succeed. The default stack does not start these.
+
 ## Prerequisites
 
 - A Kubernetes cluster you already run. This chart does not create one.

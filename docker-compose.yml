@@ -235,6 +235,8 @@ services:
       AWS_ENDPOINT_URL: http://garage:3900
       COLLECTOR_S3_ALLOWED_BUCKETS: attest-cloudtrail
       ATTEST_INGEST_HMAC_SECRET: dev-only-ingest-hmac-secret
+      ATTEST_SOURCE_GRAYLOG: ${ATTEST_SOURCE_GRAYLOG:-off}
+      ATTEST_SOURCE_EDGE: ${ATTEST_SOURCE_EDGE:-off}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-collector
     depends_on:
@@ -411,6 +413,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-mcp-gateway
       ATTEST_SERVICE_AUTH_SECRET: dev-only-service-auth-secret
+      ATTEST_GRAYLOG_URL: ${ATTEST_GRAYLOG_URL:-http://graylog:9000}
     volumes:
       - attestation-log:/data
     depends_on:
@@ -445,6 +448,67 @@ services:
       - redpanda
     profiles:
       - bench
+
+  # Live context. Not started by `make dev-up-all`.
+  # `make dev-up-live` brings up an identity provider, a SIEM, and an edge sender.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    profiles:
+      - live
+
+  graylog-mongo:
+    image: mongo:7.0
+    profiles:
+      - live
+
+  graylog-search:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    profiles:
+      - live
+
+  graylog:
+    image: graylog/graylog:6.1
+    depends_on:
+      - graylog-mongo
+      - graylog-search
+    environment:
+      GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
+      GRAYLOG_PASSWORD_SECRET: dev-only-graylog-secret
+      # sha256 of the dev password dev-only-graylog-admin
+      GRAYLOG_ROOT_PASSWORD_SHA2: 42049320cbeb9e1cfc09bda825e0f2e257db67000a4cbd49b1aa15b03acc0d19
+      GRAYLOG_HTTP_EXTERNAL_URI: http://localhost:9000/
+      GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
+      GRAYLOG_MONGODB_URI: mongodb://graylog-mongo:27017/graylog
+      GRAYLOG_ELASTICSEARCH_HOSTS: http://graylog-search:9200
+    ports:
+      - "9000:9000"
+    profiles:
+      - live
+
+  edge-logpush:
+    image: python:3.12-alpine
+    environment:
+      ATTEST_INGEST_HMAC_SECRET: dev-only-ingest-hmac-secret
+      COLLECTOR_EDGE_URL: http://collector:4000/ingest/edge
+      COLLECTOR_SIEM_URL: http://collector:4000/ingest/graylog
+    volumes:
+      - ./infra/live/push_context.py:/push_context.py:ro
+    command: ["python", "/push_context.py"]
+    profiles:
+      - live
 
 volumes:
   redpanda-data:
