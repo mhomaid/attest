@@ -20,10 +20,11 @@ import {
   ReasoningTraceViewer,
   type HttpTraceStep,
 } from "@/components/workbench/reasoning-trace-viewer";
+import { AnalystLabelForm } from "@/components/workbench/analyst-label-form";
 import { StatusBadge } from "@/components/workbench/status-badge";
 import { analytics } from "@/lib/analytics";
 import type { CaseRecord, Severity } from "@/lib/mock-data";
-import { useCaseStore, selectDisposition } from "@/lib/stores/case-store";
+import { useCaseStore, selectDisposition, selectVerdict } from "@/lib/stores/case-store";
 import { cn } from "@/lib/utils";
 import type { KafkaTraceStep } from "@/hooks/use-case-trace-ws";
 
@@ -183,6 +184,7 @@ export function CaseWorkbench({
 
   const oid = orchestratorCaseId ?? "";
   const disposition = useCaseStore(selectDisposition(oid));
+  const verdict = useCaseStore(selectVerdict(oid));
   const storeSetApproved = useCaseStore((s) => s.setApproved);
   const storeSetOverride = useCaseStore((s) => s.setOverride);
 
@@ -329,6 +331,10 @@ export function CaseWorkbench({
               </div>
             )}
           </section>
+
+          {oid ? (
+            <AnalystLabelForm caseId={oid} envelopeId={verdict?.action_id} />
+          ) : null}
 
           <section className="rounded-lg border border-border bg-card/80">
             <header className="flex items-center gap-2 border-b border-border px-3 py-2">

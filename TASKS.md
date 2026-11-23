@@ -467,7 +467,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 ## M3 Triage, shadow mode, outputs
 
 ### T-030 — Analyst labels in the workbench
-- status: todo
+- status: review
 - milestone: M3
 - area: workbench
 - model tier: B
@@ -475,13 +475,16 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §6.2
 
 **Acceptance criteria**
-- [ ] On each verdict an analyst records agree / disagree, the correct disposition and a reason; stored with user, time and envelope ID
+- [x] On each verdict an analyst records agree / disagree, the correct disposition and a reason; stored with user, time and envelope ID
 - [ ] Labels export to Parquet/CSV for training — test
-- [ ] Only `analyst` and `lead` can label — role tests
+- [x] Only `analyst` and `lead` can label — role tests
 
 **Plan:**
+- The case page shows the form when the session has `label.write`. `POST /api/cases/:caseId/labels` stores the row. `GET /api/labels/export?format=csv` returns `analyst-labels.csv`. A `parquet` request returns 400.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- Commit `643ecaa` on `feat/t030-labels`. `bun test src` in `apps/workbench`: 81 passed. `tsc --noEmit` exited 0.
+- CSV export is covered. Parquet is refused, so the second criterion stays open. The form was not exercised in a signed-in browser. `verify.sh full` was not run, so this stays `review`.
 
 ### T-031 — Configurable features and retraining from labels
 - status: todo

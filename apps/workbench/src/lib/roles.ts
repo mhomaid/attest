@@ -7,13 +7,13 @@
 export const ROLES = ["viewer", "analyst", "lead", "auditor"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const PERMISSIONS = ["case.view", "case.override", "audit.read"] as const;
+export const PERMISSIONS = ["case.view", "case.override", "label.write", "audit.read"] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 const MATRIX: Record<Role, readonly Permission[]> = {
   viewer: ["case.view"],
-  analyst: ["case.view", "case.override"],
-  lead: ["case.view", "case.override", "audit.read"],
+  analyst: ["case.view", "case.override", "label.write"],
+  lead: ["case.view", "case.override", "label.write", "audit.read"],
   auditor: ["case.view", "audit.read"],
 };
 
