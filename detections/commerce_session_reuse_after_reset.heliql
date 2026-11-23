@@ -1,0 +1,11 @@
+detection: commerce_session_reuse_after_reset
+description: "Detects session reuse for a shopper who had a different authentication operation within 10 minutes, such as a password reset."
+applies_to: ocsf.authentication
+where:
+  - event.api_operation = "session_reuse"
+entity: identity.user
+condition:
+  - unique(event.api_operation, window: 10m) >= 2
+severity: high
+mitre: [T1078]
+runtime: stream

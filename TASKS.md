@@ -741,15 +741,19 @@ checked by code before it can be used for training.
 **Why:** No public dataset covers security events on a multi-tenant commerce platform. A labelled, parameterised generator is the missing piece and is useful to every deployer.
 
 **Acceptance criteria**
-- [ ] `tools/load-gen` gains a `commerce` profile: tenants (stores), storefront sessions, logins, checkout and payment callbacks, edge events, emitted as OCSF with ground-truth labels
-- [ ] Normal behaviour is driven by distribution parameters in config (session length, view-to-cart ratio, login frequency), not by copied data
-- [ ] Attack scenarios, each switchable and labelled: session reuse after password reset, OTP request bursts, card testing, injected storefront script, catalogue scraping, edge-rule bypass probes, blocked payment callbacks
-- [ ] Deterministic with a seed — test: same seed, same output hash
-- [ ] Each scenario has a matching detection fixture in `detections/` (positive and negative)
+- [x] `tools/load-gen` gains a `commerce` profile: tenants (stores), storefront sessions, logins, checkout and payment callbacks, edge events, emitted as OCSF with ground-truth labels
+- [x] Normal behaviour is driven by distribution parameters in config (session length, view-to-cart ratio, login frequency), not by copied data
+- [x] Attack scenarios, each switchable and labelled: session reuse after password reset, OTP request bursts, card testing, injected storefront script, catalogue scraping, edge-rule bypass probes, blocked payment callbacks
+- [x] Deterministic with a seed — test: same seed, same output hash
+- [x] Each scenario has a matching detection fixture in `detections/` (positive and negative)
 
 **Plan:**
+- `--scenario commerce` selects `CommerceConfig`. Defaults are tenant-a, store 1001, and `203.0.113.10`. Each labelled attack has a positive and a negative HELIQL fixture.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- Commit `49ecbb9` on `feat/t053-commerce`. `cargo test -p attest-load-gen`: 9 passed, including `same_seed_same_output_hash`, `session_length_view_to_cart_and_login_follow_config`, and `attacks_are_switchable_and_labelled`.
+- `every_shipped_rule_has_a_passing_positive_and_negative_fixture` passed. `cargo fmt` and `cargo clippy -D warnings` passed for `attest-load-gen`.
+- `verify.sh full` was not run, so this stays `review`.
 
 ### T-054 — Investigator evaluation with public SOC exercises
 - status: review

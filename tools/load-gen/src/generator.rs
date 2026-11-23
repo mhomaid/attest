@@ -21,6 +21,7 @@ use std::{
 };
 use tracing::{debug, info, warn};
 
+use crate::commerce::{CommerceConfig, CommerceStream};
 use crate::scenarios;
 
 const N_PRODUCERS: usize = 8;
@@ -52,6 +53,9 @@ pub struct RunConfig {
     /// 5 = 5% sampled → gives real triage p95 without overwhelming the orchestrator.
     #[serde(default)]
     pub sampled_triage_pct: u8,
+    /// Parameters for [`Scenario::Commerce`]. Ignored by the other scenarios.
+    #[serde(default)]
+    pub commerce: CommerceConfig,
 }
 
 impl Default for RunConfig {
@@ -63,7 +67,18 @@ impl Default for RunConfig {
             tenants: 3,
             seed_baselines: true,
             sampled_triage_pct: 0,
+            commerce: CommerceConfig::default(),
         }
+    }
+}
+
+/// Map the CLI / API scenario name onto [`Scenario`].
+pub fn parse_scenario(name: &str) -> Scenario {
+    match name {
+        "attack" => Scenario::Attack,
+        "benign" => Scenario::Benign,
+        "commerce" => Scenario::Commerce,
+        _ => Scenario::Mixed,
     }
 }
 
@@ -197,6 +212,8 @@ pub async fn start_run(
         let triage_samples = triage_samples.clone();
         let triage_pct = cfg.sampled_triage_pct;
         let orch_url = orchestrator_url.clone();
+        let mut commerce_cfg = cfg.commerce.clone();
+        commerce_cfg.seed = commerce_cfg.seed.wrapping_add(producer_id as u64);
 
         tokio::spawn(async move {
             if let Err(e) = produce_loop(
@@ -213,6 +230,7 @@ pub async fn start_run(
                 orch_url,
                 triage_hist,
                 triage_samples,
+                commerce_cfg,
             )
             .await
             {
@@ -258,6 +276,7 @@ async fn produce_loop(
     orch_url: Option<String>,
     triage_hist: Arc<Mutex<Histogram<u64>>>,
     triage_samples: Arc<AtomicU64>,
+    commerce_cfg: CommerceConfig,
 ) -> Result<()> {
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", &brokers)
@@ -279,6 +298,7 @@ async fn produce_loop(
     let n = tenants.len().max(1);
     let mut idx = id % n;
     let mut seq: u64 = 0;
+    let mut commerce = CommerceStream::new(commerce_cfg);
 
     loop {
         if !running.load(Ordering::Relaxed) {
@@ -297,11 +317,7 @@ async fn produce_loop(
             Scenario::Attack => scenarios::geo_anomaly(tenant_id, user_name),
             Scenario::Benign => scenarios::benign_login(tenant_id, user_name),
             Scenario::Commerce => {
-                let packed = match idx % 3 {
-                    0 => crate::commerce::card_testing(tenant_id),
-                    1 => crate::commerce::otp_burst(tenant_id),
-                    _ => crate::commerce::edge_block(tenant_id, "/hooks/callback"),
-                };
+                let packed = commerce.next_event();
                 tracing::debug!(label = ?packed.label, "commerce scenario");
                 packed.event
             }
@@ -413,4 +429,33 @@ async fn seed_baselines(brokers: &str, tenants: &[(String, String)]) {
     info!("load-gen: seeded {count} baseline events — waiting 5s for RisingWave convergence");
     tokio::time::sleep(Duration::from_secs(5)).await;
     info!("load-gen: baseline warm-up complete");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commerce_scenario_name_selects_the_commerce_profile() {
+        assert!(matches!(parse_scenario("commerce"), Scenario::Commerce));
+        assert!(matches!(parse_scenario("attack"), Scenario::Attack));
+        assert!(matches!(parse_scenario("benign"), Scenario::Benign));
+        assert!(matches!(parse_scenario("mixed"), Scenario::Mixed));
+        assert!(matches!(parse_scenario("other"), Scenario::Mixed));
+    }
+
+    #[test]
+    fn run_config_without_commerce_keeps_the_default_profile() {
+        let cfg: RunConfig = serde_json::from_str(
+            r#"{"rate":1,"duration_secs":1,"scenario":"commerce","tenants":1,"seed_baselines":false}"#,
+        )
+        .expect("run config");
+        assert!(matches!(cfg.scenario, Scenario::Commerce));
+        assert_eq!(cfg.commerce.tenant_id, "tenant-a");
+        assert_eq!(cfg.commerce.store_id, "1001");
+        assert_eq!(cfg.commerce.src_ip, "203.0.113.10");
+        assert!(cfg.commerce.attacks.card_testing);
+        assert!(cfg.commerce.attacks.blocked_payment_callback);
+        assert_eq!(cfg.sampled_triage_pct, 0);
+    }
 }

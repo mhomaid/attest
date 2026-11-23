@@ -1,0 +1,9 @@
+detection: commerce_injected_storefront_script
+description: "Detects an injected script served on a storefront page."
+applies_to: ocsf.http_activity
+where:
+  - event.api_operation = "injected_storefront_script"
+entity: identity.user
+severity: high
+mitre: [T1059]
+runtime: stream

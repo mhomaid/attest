@@ -1,0 +1,8 @@
+[
+  {
+    "time": "2026-01-01T00:00:00Z",
+    "actor_user_name": "shopper-1001",
+    "api_operation": "product_view",
+    "http_path": "/stores/1001/products/1"
+  }
+]
