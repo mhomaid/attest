@@ -1,0 +1,11 @@
+detection: commerce_catalogue_scraping
+description: "Detects 8 or more catalogue scrapes for one shopper within 10 minutes."
+applies_to: ocsf.http_activity
+where:
+  - event.api_operation = "catalogue_scrape"
+entity: identity.user
+condition:
+  - count(window: 10m) >= 8
+severity: medium
+mitre: [T1595]
+runtime: stream

@@ -1,0 +1,10 @@
+detection: commerce_blocked_payment_callback
+description: "Detects a payment callback blocked at the edge."
+applies_to: ocsf.http_activity
+where:
+  - event.api_operation = "payment_callback"
+  - disposition = "Blocked"
+entity: identity.user
+severity: high
+mitre: [T1190]
+runtime: stream

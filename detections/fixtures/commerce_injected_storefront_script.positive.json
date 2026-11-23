@@ -1,0 +1,8 @@
+[
+  {
+    "time": "2026-01-01T00:00:00Z",
+    "actor_user_name": "shopper-1001",
+    "api_operation": "injected_storefront_script",
+    "http_path": "/stores/1001/pages/home"
+  }
+]

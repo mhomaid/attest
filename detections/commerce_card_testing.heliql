@@ -1,0 +1,12 @@
+detection: commerce_card_testing
+description: "Detects 5 or more card-testing checkout declines for one shopper within 10 minutes."
+applies_to: ocsf.http_activity
+where:
+  - event.api_operation = "card_testing"
+  - http_status = "402"
+entity: identity.user
+condition:
+  - count(window: 10m) >= 5
+severity: high
+mitre: [T1110]
+runtime: stream

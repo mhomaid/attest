@@ -1,0 +1,14 @@
+[
+  {
+    "time": "2026-01-01T00:00:00Z",
+    "actor_user_name": "shopper-1001",
+    "api_operation": "password_reset",
+    "auth_status": "Success"
+  },
+  {
+    "time": "2026-01-01T00:01:00Z",
+    "actor_user_name": "shopper-1001",
+    "api_operation": "session_reuse",
+    "auth_status": "Success"
+  }
+]

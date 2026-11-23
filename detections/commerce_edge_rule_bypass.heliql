@@ -1,0 +1,11 @@
+detection: commerce_edge_rule_bypass
+description: "Detects 3 or more edge-rule bypass probes for one shopper within 10 minutes."
+applies_to: ocsf.http_activity
+where:
+  - event.api_operation = "edge_rule_bypass"
+entity: identity.user
+condition:
+  - count(window: 10m) >= 3
+severity: high
+mitre: [T1190]
+runtime: stream

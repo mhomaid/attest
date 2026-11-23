@@ -1,0 +1,12 @@
+detection: commerce_otp_request_burst
+description: "Detects 5 or more failed one-time-password requests for one shopper within 10 minutes."
+applies_to: ocsf.authentication
+where:
+  - event.api_operation = "otp_request"
+  - event.auth_status = "Failure"
+entity: identity.user
+condition:
+  - count(window: 10m) >= 5
+severity: high
+mitre: [T1110]
+runtime: stream

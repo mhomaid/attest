@@ -18,7 +18,8 @@ mod control;
 mod generator;
 mod scenarios;
 
-use generator::{RunConfig, Scenario};
+use commerce::CommerceConfig;
+use generator::{parse_scenario, RunConfig};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -69,11 +70,7 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Run mode ──────────────────────────────────────────────────────────────
     if let Some(rate) = cli.rate {
-        let scenario = match cli.scenario.as_str() {
-            "attack" => Scenario::Attack,
-            "benign" => Scenario::Benign,
-            _ => Scenario::Mixed,
-        };
+        let scenario = parse_scenario(&cli.scenario);
         let cfg = RunConfig {
             rate,
             duration_secs: cli.duration,
@@ -81,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
             tenants: cli.tenants,
             seed_baselines: cli.seed_baselines,
             sampled_triage_pct: cli.triage_pct,
+            commerce: CommerceConfig::default(),
         };
 
         tracing::info!(
