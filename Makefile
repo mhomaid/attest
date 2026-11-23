@@ -26,6 +26,11 @@ dev-up-all: ## ⭐ Start everything in order: infra → init → all services (c
 	docker compose up -d redpanda redpanda-console postgres garage clickhouse risingwave
 	docker compose --profile platform up -d --build
 
+dev-up-live: ## Identity provider (Keycloak), SIEM (Graylog), and the edge sender
+	ATTEST_SOURCE_GRAYLOG=on ATTEST_SOURCE_EDGE=on \
+	  docker compose --profile platform --profile live up -d --force-recreate \
+	    collector mcp-gateway keycloak graylog graylog-mongo graylog-search edge-logpush
+
 e2e-phase1: ## Run Phase 1 E2E test — event appears in RisingWave within 5s (requires ATTEST_E2E=1 + platform)
 	ATTEST_E2E=1 cargo test --test phase1_streaming -- --nocapture
 
