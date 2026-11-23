@@ -237,3 +237,8 @@ env:
   RISINGWAVE_HOST: risingwave
   RISINGWAVE_PORT: "4566"
   ICEBERG_WAREHOUSE: s3://attest-warm
+  # Enrichment files are mounted by the private overlay. Leave ATTEST_DEMO_MODE unset.
+  # ATTEST_ASN_DB: /var/lib/attest/asn.json
+  # ATTEST_THREAT_INTEL_FEED: /var/lib/attest/threat-intel.json
+  # ATTEST_USER_BASELINES: /var/lib/attest/baselines.json
+  # ATTEST_ENTITY_QUERIES: /var/lib/attest/entity-queries.yaml

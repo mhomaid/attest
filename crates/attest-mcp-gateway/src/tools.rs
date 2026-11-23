@@ -21,8 +21,10 @@ pub async fn dispatch(
         "query_hot_tier" => query_hot_tier(args).await,
         "query_warm_tier" => query_warm_tier(args, warm_limiter).await,
         "lookup_threat_intel" => lookup_threat_intel(args).await,
+        "ip_asn_lookup" => ip_asn_lookup(args).await,
         "get_asset_context" => get_asset_context(args).await,
         "get_user_baseline" => get_user_baseline(args).await,
+        "entity_lookup" => entity_lookup(args).await,
         "analyze_code_snippet" => analyze_code_snippet(args).await,
         "sandbox_detonate" => sandbox_detonate(args).await,
         "propose_detection_pr" => propose_detection_pr(args).await,
@@ -155,14 +157,29 @@ async fn query_warm_tier(args: &Value, warm_limiter: &WarmTierLimiter) -> Result
 }
 
 async fn lookup_threat_intel(args: &Value) -> Result<Value> {
-    let indicator = args["indicator"].as_str().unwrap_or("(unknown)");
-    Ok(json!({
-        "indicator": indicator,
-        "malicious": false,
-        "confidence": 0.0,
-        "source": "threat_intel_stub",
-        "tags": []
-    }))
+    let indicator = args
+        .get("indicator")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("lookup_threat_intel requires string 'indicator'"))?;
+    let indicator_type = args.get("indicator_type").and_then(|v| v.as_str());
+    let path = env_path("ATTEST_THREAT_INTEL_FEED");
+    crate::threat_intel::respond(
+        indicator,
+        indicator_type,
+        path.as_deref(),
+        crate::demo::enabled(),
+    )
+    .map_err(|e| anyhow::anyhow!(e))
+}
+
+async fn ip_asn_lookup(args: &Value) -> Result<Value> {
+    let ip = args
+        .get("ip")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("ip_asn_lookup requires string 'ip'"))?;
+    let path = env_path("ATTEST_ASN_DB");
+    crate::asn_lookup::respond(ip, path.as_deref(), crate::demo::enabled())
+        .map_err(|e| anyhow::anyhow!(e))
 }
 
 async fn get_asset_context(args: &Value) -> Result<Value> {
@@ -180,15 +197,65 @@ async fn get_asset_context(args: &Value) -> Result<Value> {
 }
 
 async fn get_user_baseline(args: &Value) -> Result<Value> {
-    let principal = args["principal"].as_str().unwrap_or("(unknown)");
-    Ok(json!({
-        "principal": principal,
-        "avg_daily_logins": 3.2,
-        "typical_geo_countries": ["US"],
-        "typical_login_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-        "anomaly_score": 0.0,
-        "source": "risingwave_baseline_stub"
-    }))
+    let principal = args
+        .get("principal")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("get_user_baseline requires string 'principal'"))?;
+    let path = env_path("ATTEST_USER_BASELINES");
+    crate::user_baseline::respond(principal, path.as_deref(), crate::demo::enabled())
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+async fn entity_lookup(args: &Value) -> Result<Value> {
+    if args.get("sql").is_some() || args.get("statement").is_some() {
+        anyhow::bail!("entity_lookup does not accept free-form sql");
+    }
+    let Some(path) = env_path("ATTEST_ENTITY_QUERIES") else {
+        if crate::demo::enabled() {
+            return Ok(json!({"rows": [], "row_count": 0, "source": "entity_lookup_stub"}));
+        }
+        anyhow::bail!("entity queries are not configured");
+    };
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("entity queries unreadable: {e}"))?;
+    let catalog = crate::entity_lookup::Catalog::parse(&text).map_err(|e| anyhow::anyhow!(e))?;
+    let Some(url) = std::env::var("ATTEST_ENTITY_DATABASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    else {
+        if crate::demo::enabled() {
+            return Ok(json!({"rows": [], "row_count": 0, "source": "entity_lookup_stub"}));
+        }
+        anyhow::bail!("entity database is not configured");
+    };
+    match catalog.dialect() {
+        crate::entity_lookup::Dialect::Postgres => {
+            crate::entity_lookup::execute(&catalog, args, |bound| {
+                crate::entity_lookup::query_postgres(url.clone(), bound)
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
+        }
+        crate::entity_lookup::Dialect::Mysql => {
+            let bound = catalog.bind(args).map_err(|e| anyhow::anyhow!(e))?;
+            let name = bound.name.clone();
+            let columns = bound.columns.clone();
+            let row_cap = bound.row_cap;
+            match crate::entity_lookup::query_mysql(url, bound).await {
+                Ok(rows) => Ok(crate::entity_lookup::project(
+                    &name, &columns, row_cap, rows,
+                )),
+                Err(e) => Err(anyhow::anyhow!(e)),
+            }
+        }
+    }
+}
+
+fn env_path(key: &str) -> Option<std::path::PathBuf> {
+    std::env::var(key)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(std::path::PathBuf::from)
 }
 
 async fn analyze_code_snippet(args: &Value) -> Result<Value> {
@@ -240,4 +307,110 @@ async fn planned_action(tool_id: &str, args: &Value) -> Result<Value> {
         "args": args,
         "source": "responder_action_stub"
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    static ENV_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+    fn assert_not_stub(value: &Value) {
+        let source = value["source"].as_str().expect("source");
+        assert!(
+            !crate::demo::is_stub_source(source),
+            "source {source} ends with _stub"
+        );
+    }
+
+    #[tokio::test]
+    async fn production_mode_enrichment_sources_are_not_stubs() {
+        let _guard = ENV_LOCK.lock().await;
+        let _clear = ClearEnrichEnv;
+        let dir = std::env::temp_dir().join(format!("attest-enrich-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let asn = dir.join("asn.json");
+        let feed = dir.join("feed.json");
+        let baselines = dir.join("baselines.json");
+        std::fs::write(
+            &asn,
+            r#"{"networks":[{"cidr":"203.0.113.0/24","asn":64500,"organization":"Example Net"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &feed,
+            r#"{"synced_at":"2026-01-15T00:00:00Z","threatfox":{"data":[{"ioc":"203.0.113.10","ioc_type":"ip","malware":"synthetic-loader","confidence_level":50}]}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &baselines,
+            r#"[{"principal":"user-1001","country":"DE","hour":22,"logins":3}]"#,
+        )
+        .unwrap();
+        std::env::remove_var("ATTEST_DEMO_MODE");
+        std::env::set_var("ATTEST_ASN_DB", &asn);
+        std::env::set_var("ATTEST_THREAT_INTEL_FEED", &feed);
+        std::env::set_var("ATTEST_USER_BASELINES", &baselines);
+        std::env::remove_var("ATTEST_ENTITY_QUERIES");
+        std::env::remove_var("ATTEST_ENTITY_DATABASE_URL");
+
+        let limiter = crate::warm_limit::WarmTierLimiter::from_env();
+        let asn_hit = dispatch(
+            "ip_asn_lookup",
+            &json!({"ip": "203.0.113.10", "path": "/etc/passwd"}),
+            &limiter,
+        )
+        .await
+        .unwrap();
+        assert_eq!(asn_hit["asn"], 64500);
+        assert_eq!(asn_hit["organization"], "Example Net");
+        assert_not_stub(&asn_hit);
+
+        let intel = dispatch(
+            "lookup_threat_intel",
+            &json!({"indicator": "203.0.113.10", "indicator_type": "ip"}),
+            &limiter,
+        )
+        .await
+        .unwrap();
+        assert_eq!(intel["last_sync"], "2026-01-15T00:00:00Z");
+        assert_eq!(intel["malicious"], true);
+        assert_not_stub(&intel);
+
+        let baseline = dispatch(
+            "get_user_baseline",
+            &json!({"principal": "user-1001", "typical_geo_countries": ["US"]}),
+            &limiter,
+        )
+        .await
+        .unwrap();
+        assert_eq!(baseline["typical_geo_countries"], json!(["DE"]));
+        assert_eq!(baseline["typical_login_hours"], json!([22]));
+        assert_not_stub(&baseline);
+
+        let missing = dispatch("entity_lookup", &json!({"query": "store_owner"}), &limiter)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(!missing.contains("_stub"), "{missing}");
+    }
+
+    struct ClearEnrichEnv;
+
+    impl Drop for ClearEnrichEnv {
+        fn drop(&mut self) {
+            for key in [
+                "ATTEST_DEMO_MODE",
+                "ATTEST_ASN_DB",
+                "ATTEST_THREAT_INTEL_FEED",
+                "ATTEST_USER_BASELINES",
+                "ATTEST_ENTITY_QUERIES",
+                "ATTEST_ENTITY_DATABASE_URL",
+            ] {
+                std::env::remove_var(key);
+            }
+        }
+    }
 }

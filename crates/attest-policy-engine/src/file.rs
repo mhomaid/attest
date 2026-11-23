@@ -160,12 +160,22 @@ mod tests {
         let yaml = include_str!("../../../examples/overlay/policy.yaml");
         let file = PolicyFile::parse(yaml).expect("overlay policy");
         assert!(file.allows(&AgentRole::Investigator, "graylog_search"));
+        assert!(file.allows(&AgentRole::Investigator, "ip_asn_lookup"));
+        assert!(file.allows(&AgentRole::Investigator, "entity_lookup"));
         let ctx = PolicyContext {
             user: "user-1001".into(),
             ..PolicyContext::default()
         };
         assert!(
             !crate::authorize_with(&file, &AgentRole::Responder, "firewall_block_ioc", &ctx)
+                .is_allowed()
+        );
+        assert!(
+            !crate::authorize_with(&file, &AgentRole::Investigator, "ip_asn_lookup", &ctx)
+                .is_allowed()
+        );
+        assert!(
+            !crate::authorize_with(&file, &AgentRole::Investigator, "entity_lookup", &ctx)
                 .is_allowed()
         );
     }
