@@ -25,11 +25,12 @@ count() { # count <pattern> <text>
 }
 
 assert_has() { # assert_has <label> <pattern> <text>
-  printf '%s\n' "$3" | grep -q -- "$2" || fail "$1: missing '$2'"
+  # grep -q closes the pipe early. Under pipefail that looks like a miss.
+  if ! grep -q -- "$2" <<< "$3"; then fail "$1: missing '$2'"; fi
 }
 
 assert_lacks() { # assert_lacks <label> <pattern> <text>
-  if printf '%s\n' "$3" | grep -q -- "$2"; then fail "$1: unexpected '$2'"; fi
+  if grep -q -- "$2" <<< "$3"; then fail "$1: unexpected '$2'"; fi
 }
 
 # ── default render ────────────────────────────────────────────────────────

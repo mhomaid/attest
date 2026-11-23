@@ -1,0 +1,36 @@
+# Copy of the default Attest policy, plus placeholder do-not-touch entries.
+# Replace the placeholders in the private overlay. Do not put production
+# identifiers in the public repo.
+read_only:
+  - query_hot_tier
+  - query_warm_tier
+  - get_user_baseline
+  - get_asset_context
+  - lookup_threat_intel
+  - analyze_code_snippet
+  - sandbox_detonate
+  - graylog_search
+roles:
+  triager:
+    - triager_auto_close
+  investigator:
+    - propose_escalation
+    - request_human_review
+  detection_engineer:
+    - propose_detection_pr
+    - deploy_detection
+  hunter:
+    - propose_detection_pr
+    - request_human_review
+  responder:
+    - idp_revoke_session
+    - edr_isolate_host
+    - firewall_block_ioc
+  coordinator: []
+do_not_touch:
+  users: ["user-1001"]
+  accounts: ["1001"]
+  ips: ["203.0.113.10"]
+  asns: ["AS64500"]
+  tenants: ["tenant-a"]
+  effect: deny

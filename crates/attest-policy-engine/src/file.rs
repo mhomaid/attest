@@ -156,6 +156,21 @@ mod tests {
     }
 
     #[test]
+    fn example_overlay_policy_loads() {
+        let yaml = include_str!("../../../examples/overlay/policy.yaml");
+        let file = PolicyFile::parse(yaml).expect("overlay policy");
+        assert!(file.allows(&AgentRole::Investigator, "graylog_search"));
+        let ctx = PolicyContext {
+            user: "user-1001".into(),
+            ..PolicyContext::default()
+        };
+        assert!(
+            !crate::authorize_with(&file, &AgentRole::Responder, "firewall_block_ioc", &ctx)
+                .is_allowed()
+        );
+    }
+
+    #[test]
     fn install_records_the_file_hash_for_envelopes() {
         let file = PolicyFile::install_builtin();
         assert_eq!(
