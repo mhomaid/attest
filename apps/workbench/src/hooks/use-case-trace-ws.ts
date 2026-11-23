@@ -54,6 +54,7 @@ export function useCaseTraceWs(caseId: string | null) {
     void (async () => {
       // Fetch a short-lived JWT for this case.
       let token: string;
+      let serviceToken: string;
       try {
         const res = await fetch("/api/auth/ws-token", {
           method: "POST",
@@ -71,6 +72,15 @@ export function useCaseTraceWs(caseId: string | null) {
         const json = (await res.json()) as { token?: string };
         if (!json.token) { setWsStatus("disconnected"); return; }
         token = json.token;
+        const serviceRes = await fetch("/api/auth/service-token?audience=ws-gateway");
+        const serviceJson = serviceRes.ok
+          ? ((await serviceRes.json()) as { token?: string })
+          : null;
+        if (!serviceJson?.token) {
+          setWsStatus("disconnected");
+          return;
+        }
+        serviceToken = serviceJson.token;
       } catch {
         setWsStatus("disconnected");
         retryTimer.current = setTimeout(() => {
@@ -80,7 +90,7 @@ export function useCaseTraceWs(caseId: string | null) {
         return;
       }
 
-      const url = `${wsBase().replace(/\/$/, "")}/ws/cases/${encodeURIComponent(caseId)}/trace?token=${encodeURIComponent(token)}`;
+      const url = `${wsBase().replace(/\/$/, "")}/ws/cases/${encodeURIComponent(caseId)}/trace?token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(serviceToken)}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 

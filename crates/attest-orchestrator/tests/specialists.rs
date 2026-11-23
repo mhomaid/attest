@@ -1,6 +1,6 @@
 //! Coordinator / hunter / responder unit tests (no live LLM).
 
-use attest_attestation::{Signer, Verdict};
+use attest_attestation::{LocalKey, Verdict};
 use attest_orchestrator::coordinator::{route, CoordinateRequest};
 use attest_orchestrator::mcp_client::McpClient;
 use attest_orchestrator::shadow_check::ShadowChecker;
@@ -26,7 +26,7 @@ fn coordinator_routes_confident_tp_to_responder() {
 async fn hunter_fallback_signs_envelope_without_llm() {
     let dir = tempfile::tempdir().unwrap();
     let log = attest_attestation::AttestationLog::new(dir.path().join("hunt.ndjson"));
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let mcp = McpClient::new("http://127.0.0.1:9");
 
     let out = run_hunt(
@@ -59,7 +59,7 @@ async fn hunter_fallback_signs_envelope_without_llm() {
 async fn responder_blocks_protected_principal() {
     let dir = tempfile::tempdir().unwrap();
     let log = attest_attestation::AttestationLog::new(dir.path().join("resp.ndjson"));
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let mcp = McpClient::new("http://127.0.0.1:9");
     let shadow = ShadowChecker::new(["ceo@corp.com".into()].into(), 0.90, true, HashSet::new());
 
@@ -94,7 +94,7 @@ async fn responder_blocks_protected_principal() {
 async fn responder_allows_high_confidence_revoke_as_planned() {
     let dir = tempfile::tempdir().unwrap();
     let log = attest_attestation::AttestationLog::new(dir.path().join("resp2.ndjson"));
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     let mcp = McpClient::new("http://127.0.0.1:9");
     let shadow = ShadowChecker::new(HashSet::new(), 0.90, true, HashSet::new());
 

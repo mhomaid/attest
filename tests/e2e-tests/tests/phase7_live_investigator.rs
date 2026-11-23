@@ -81,17 +81,19 @@ async fn wait_healthz(client: &Client, url: &str, path: &str, label: &str) {
 }
 
 async fn post_triage(client: &Client, orch: &str, case_id: Uuid, alert: Value) -> Value {
-    client
-        .post(format!("{orch}/triage"))
-        .json(&json!({ "case_id": case_id.to_string(), "alert": alert }))
-        .send()
-        .await
-        .expect("triage POST failed")
-        .error_for_status()
-        .expect("triage HTTP error")
-        .json::<Value>()
-        .await
-        .expect("triage JSON parse failed")
+    e2e_tests::authed(
+        client.post(format!("{orch}/triage")),
+        e2e_tests::AUDIENCE_ORCHESTRATOR,
+    )
+    .json(&json!({ "case_id": case_id.to_string(), "alert": alert }))
+    .send()
+    .await
+    .expect("triage POST failed")
+    .error_for_status()
+    .expect("triage HTTP error")
+    .json::<Value>()
+    .await
+    .expect("triage JSON parse failed")
 }
 
 async fn get_trace(client: &Client, wb: &str, case_id: Uuid) -> Value {

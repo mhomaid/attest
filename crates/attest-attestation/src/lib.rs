@@ -9,21 +9,27 @@
 //! newline-delimited JSON to `ATTEST_LOG_PATH` (default `./attestations.ndjson`) and,
 //! when `ATTEST_LOG_S3_BUCKET` is set, a durable object-store replica.
 
+pub mod anchor;
 pub mod envelope;
+#[cfg(feature = "aws-kms")]
+pub mod kms;
 pub mod log;
 pub mod pin;
 pub mod signer;
 pub mod trace_step;
 pub mod verify;
 
+pub use anchor::{check_anchor, sign_anchor, AnchorSchedule, ChainAnchor};
 pub use envelope::{
-    AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence, CrossReviewBlock,
-    EscalationReason, EvidenceBlock, ExecutionPathKind, HybridEvidence, IntermediateBelief,
-    LlmEvidence, OverrideEvidence, ShadowCheckDecision, TimingBlock, ToolCallRecord, Verdict,
-    GENESIS_HASH,
+    default_alg, AttestationEnvelope, AutoCloseEvidence, CaseState, ClassifierEvidence,
+    CrossReviewBlock, EscalationReason, EvidenceBlock, ExecutionPathKind, HybridEvidence,
+    IntermediateBelief, LlmEvidence, OverrideEvidence, ShadowCheckDecision, TimingBlock,
+    ToolCallRecord, Verdict, GENESIS_HASH,
 };
 pub use log::AttestationLog;
 pub use pin::{check_pin, AgentPin};
-pub use signer::Signer;
+// `Signer` stays the concrete local key callers already construct
+// (`Signer::generate`). The pluggable trait is `signer::Signer`.
+pub use signer::{verify_with, LocalKey, PublicKey, SignatureAlg, Signer};
 pub use trace_step::{execution_path_snake, TraceStep, TRACE_STEPS_TOPIC};
-pub use verify::{verify_log, LineResult, VerifyReport};
+pub use verify::{verify_log, verify_log_with_keyring, Keyring, LineResult, VerifyReport};

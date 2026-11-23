@@ -19,6 +19,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 | M2 Sources and context | Real alerts in, real context for agents | T-020 – T-027 |
 | M3 Triage, shadow mode, outputs | Analysts can run it in shadow and give labels | T-030 – T-035 |
 | M4 Packaging | One-org production deploy on Kubernetes | T-040 – T-043 |
+| MD Data and model bootstrap | Licensed public data and commerce scenarios train the first real models | T-050 – T-057 |
 
 ---
 
@@ -155,7 +156,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 ## M1 Trust hardening
 
 ### T-010 — Service-to-service authentication
-- status: todo
+- status: review
 - milestone: M1
 - area: platform
 - model tier: A · review: A (second model)
@@ -165,15 +166,28 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** Today control-plane, orchestrator, mcp-gateway and ws-gateway accept any caller, and collector ingest is open.
 
 **Acceptance criteria**
-- [ ] Every non-health route on those services requires a signed service token (short-lived JWT, audience per service) or mTLS; ADR records the choice
-- [ ] One test per service: request without a token → 401; wrong audience → 401; valid → 200
-- [ ] Collector HTTP ingest requires an HMAC signature over the body with a timestamp; replay older than 5 minutes → 401 — tests: `ingest_rejects_unsigned`, `ingest_rejects_replay`
-- [ ] `/healthz` stays open; no secret appears in logs (test with a log capture)
+- [x] Every non-health route on those services requires a signed service token (short-lived JWT, audience per service) or mTLS; ADR records the choice
+- [x] One test per service: request without a token → 401; wrong audience → 401; valid → 200
+- [x] Collector HTTP ingest requires an HMAC signature over the body with a timestamp; replay older than 5 minutes → 401 — tests: `ingest_rejects_unsigned`, `ingest_rejects_replay`
+- [x] `/healthz` stays open; no secret appears in logs (test with a log capture)
 - [ ] All e2e phases still pass with auth enabled
 
 **Plan:**
+- ADR `docs/19_Service_Auth.md`: HS256 service JWT (audience per service, 2 minute lifetime), not mTLS.
+- `attest-service-auth` middleware. `/healthz` stays open. Collector ingest uses HMAC-SHA256 over `timestamp.body`, 5 minute window.
+- Compose sets a dev secret. Helm does not embed one. Workbench server routes and the alerts websocket attach a token minted from that secret.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `attest_service_auth::control_plane_requires_its_own_audience`, `orchestrator_requires_its_own_audience`, `mcp_gateway_requires_its_own_audience`, `ws_gateway_requires_its_own_audience`: missing token 401, wrong audience 401, valid token 200, `/healthz` open.
+- `ingest_rejects_unsigned`, `ingest_rejects_replay`, `ingest_accepts_a_fresh_signature`.
+- `rejection_log_does_not_contain_the_secret_or_token`.
+- `expired_token_is_rejected`.
+- Workbench `service auth > production without a secret does not invent a token` and `a configured secret produces an HS256 token for that audience`.
+- ADR: `docs/19_Service_Auth.md`. Helm `serviceAuth.existingSecret` is empty, so the chart does not embed a secret.
+- Rebuilt collector, control-plane, orchestrator, mcp-gateway, and ws-gateway. Unsigned calls returned 401; `/healthz` returned 200.
+- E2E with auth enabled: `phase1_streaming` 3/3, `phase2_iceberg` 1/1, `phase6_auto_close` 3/3. `phase4a_triager` 2/3 (`triager_classifier_p99_latency_under_200ms` escalated the benign alert; the HTTP call was authorized). `phase3_detection` 0/2: ingest returned event ids, and the detection runtime emitted the StopLogging alert after the test's 10s poll. Phases 4b, 5, 7-live, and 8 were not run; they need a live LLM or `ATTEST_PHASE8_LIVE`. CI job `Integration (docker-compose smoke)` does not run these phase tests.
+- `VERIFY PASS mode=full checks=14/14 skipped=0 commit=86f010d at=2026-11-22T02:37Z`
+- Status is `review` because this task asks for a second-model review before `done`, and the live e2e criterion is still open.
 
 ### T-011 — Generic OIDC sign-in and roles in the workbench
 - status: todo
@@ -194,7 +208,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-012 — Pluggable signer with a cloud KMS backend
-- status: todo
+- status: review
 - milestone: M1
 - area: attestation
 - model tier: A · review: A (second model)
@@ -204,16 +218,21 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Why:** `ATTEST_SIGNING_KEY` in an env var lets anyone holding it re-sign a chain.
 
 **Acceptance criteria**
-- [ ] `Signer` trait with `LocalKey` (current behaviour) and `AwsKms` implementations; KMS behind a cargo feature
-- [ ] Envelope records `alg` and `key_id`; `attest verify` accepts a keyring (several public keys) and rejects an unknown `key_id` — tests
-- [ ] Key rotation: envelopes signed before and after a rotation both verify — test
-- [ ] Old envelopes without `key_id` still verify (backwards compatibility test)
-- [ ] Check which signature algorithms the KMS supports; if Ed25519 is not available, use the supported algorithm and record it in `alg` (ADR)
-- [ ] KMS path tested against LocalStack or a recorded mock
+- [x] `Signer` trait with `LocalKey` (current behaviour) and `AwsKms` implementations; KMS behind a cargo feature
+- [x] Envelope records `alg` and `key_id`; `attest verify` accepts a keyring (several public keys) and rejects an unknown `key_id` — tests
+- [x] Key rotation: envelopes signed before and after a rotation both verify — test
+- [x] Old envelopes without `key_id` still verify (backwards compatibility test)
+- [x] Check which signature algorithms the KMS supports; if Ed25519 is not available, use the supported algorithm and record it in `alg` (ADR)
+- [x] KMS path tested against LocalStack or a recorded mock
 
 **Plan:**
+- `LocalKey` keeps Ed25519. `AwsKms` is behind `aws-kms` and talks to a `KmsApi` trait. Tests use `RecordedKmsClient`.
+- `attest verify --keyring` reads JSON. ADR: `docs/20_Signer_KMS.md`. KMS Ed25519 (`ED25519_SHA_512`) matches the local signature, so `alg` stays `ed25519`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `keyring_verifies_known_keys_and_rejects_unknown_key_id`, `keyring_rotation_old_and_new_both_verify`, legacy unkeyed envelope test, `aws_kms_signs_ed25519_and_verifies_in_keyring`, `rotation_from_local_to_kms_both_verify`.
+- `cargo test -p attest-attestation -p attest-cli -p attest-orchestrator --features attest-attestation/aws-kms` passed. Clippy `-D warnings` clean.
+- Commit `02c10bd` on `feat/t012-signer`. Status stays `review` until a second model reads the diff and `verify.sh full` passes. T-013 can start from this commit.
 
 ### T-013 — Anchor the chain tip so tail truncation is detected
 - status: todo
@@ -438,10 +457,11 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - milestone: M3
 - area: ml
 - model tier: B
-- depends: T-030, T-024
+- depends: T-030, T-024, T-051
 - plan ref: §6.2
 
 **Acceptance criteria**
+- [ ] Retraining uses feature set v2 from T-051 and does not define a second feature set — test: `test_retrain_uses_feature_set_v2`
 - [ ] Feature set defined in config, versioned, and its column-order hash stored in the envelope (extends `column_order_hash`)
 - [ ] `make train-classifier LABELS=<file>` trains, calibrates per detection, writes ONNX and its hash
 - [ ] The P99 < 5 ms budget test still passes with the new feature count
@@ -542,7 +562,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-041 — Terraform module for a security account
-- status: todo
+- status: review
 - milestone: M4
 - area: infra
 - model tier: B
@@ -550,12 +570,15 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §7
 
 **Acceptance criteria**
-- [ ] AWS module creates KMS key, warm and anchor buckets with Object Lock, IAM roles for service accounts
+- [x] AWS module creates KMS key, warm and anchor buckets with Object Lock, IAM roles for service accounts
 - [ ] `make tf-validate` and `tflint` pass
 
 **Plan:**
+- `infra/terraform/aws`: customer-managed KMS key, warm bucket on that key, anchor bucket with Object Lock in COMPLIANCE mode, IRSA roles for the anchor writer and the verifier.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `make tf-validate` passed (aws, gcp, azure, eks-release, k8s-release).
+- Commit `ecb7158` on `feat/t041-tf`. `tflint` is not installed on this machine, so that half of the second criterion is not proven. `.tflint.hcl` is in the tree and `make tf-validate` runs tflint when the binary exists.
 
 ### T-042 — Single-organization deployment guide
 - status: todo
@@ -584,6 +607,172 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Acceptance criteria**
 - [ ] Railway config, waitlist and marketing pages are isolated behind a `demo` build profile or a separate app, and are not in the production image — test: production image contains no waitlist route
 - [ ] README status table updated
+
+**Plan:**
+
+**Evidence:**
+
+---
+
+## MD Data and model bootstrap
+
+Runs in parallel with M1 and M2. Goal: replace the 200 synthetic training cases with models trained
+on licensed public data and a synthetic commerce scenario pack, with every dataset's license
+checked by code before it can be used for training.
+
+### T-050 — Dataset registry and license gate
+- status: todo
+- milestone: MD
+- area: ml
+- model tier: C
+- depends: T-005
+- plan ref: docs/16_Production_Readiness_Plan.md §6.2
+
+**Why:** Public datasets come with different licenses. Some allow commercial training, some only research. The code, not memory, must enforce which is which.
+
+**Acceptance criteria**
+- [ ] `ml/datasets/registry.yaml` lists each dataset: id, source URL, license, `allowed_use` (`train`, `eval`, `fixtures`), expected checksum, citation
+- [ ] `make dataset-fetch ID=<id>` downloads to a gitignored cache and verifies the checksum; nothing under `ml/datasets/cache/` is ever committed (test: `.gitignore` check)
+- [ ] The training entry point refuses any dataset whose `allowed_use` lacks `train` — test: `test_train_refuses_eval_only_dataset`
+- [ ] Each dataset has a short data card in `ml/datasets/cards/<id>.md` (source, license, size, labels, known biases)
+- [ ] Every trained model records the dataset IDs and checksums it used
+
+**Plan:**
+
+**Evidence:**
+
+### T-051 — Feature set v2 and a v0 triage model trained on GUIDE
+- status: todo
+- milestone: MD
+- area: ml
+- model tier: B
+- depends: T-050
+- plan ref: §6.2
+
+**Why:** Microsoft GUIDE (CDLA-Permissive-2.0) has about 1M incidents labelled true positive, benign positive or false positive by analysts: the same task as the triager.
+
+**Acceptance criteria**
+- [ ] Loader maps GUIDE rows to a versioned feature set v2 (detector, category, MITRE technique, entity types, evidence counts, time features); the mapping is config, not code
+- [ ] Split by organization and by time, never randomly, so the same incident or org never appears in both train and test — test on the split function
+- [ ] v0 model reports macro-F1 and per-class recall on the held-out split, and expected calibration error after calibration
+- [ ] The exported ONNX model still meets the P99 < 5 ms budget (`classifier_integration` release test)
+- [ ] The column-order hash and model hash are recorded and pinned; the old 200-case model stays available as `demo`
+- [ ] T-031 builds on this feature set instead of defining its own
+
+**Plan:**
+
+**Evidence:**
+
+### T-052 — Login-risk model from the RBA dataset
+- status: todo
+- milestone: MD
+- area: ml
+- model tier: B
+- depends: T-050, T-055
+- plan ref: §6.2
+
+**Why:** The RBA login dataset (CC BY 4.0, about 33M logins) labels attack IPs and account takeovers: the account-takeover pattern most commerce platforms face.
+
+**Acceptance criteria**
+- [ ] Per-user history features (new device, new ASN, new country, time since last login, failed-attempt counts) computed with a streaming-safe window, documented
+- [ ] Time-based split; recall at a fixed false-positive rate reported for the takeover label
+- [ ] Exported as a separate ONNX model for the `auth` detection family, pinned, within the latency budget
+- [ ] Attribution added to `NOTICE`
+
+**Plan:**
+
+**Evidence:**
+
+### T-053 — Commerce scenario pack for the load generator
+- status: todo
+- milestone: MD
+- area: tools
+- model tier: B
+- depends: T-020
+- plan ref: §6.1
+
+**Why:** No public dataset covers security events on a multi-tenant commerce platform. A labelled, parameterised generator is the missing piece and is useful to every deployer.
+
+**Acceptance criteria**
+- [ ] `tools/load-gen` gains a `commerce` profile: tenants (stores), storefront sessions, logins, checkout and payment callbacks, edge events, emitted as OCSF with ground-truth labels
+- [ ] Normal behaviour is driven by distribution parameters in config (session length, view-to-cart ratio, login frequency), not by copied data
+- [ ] Attack scenarios, each switchable and labelled: session reuse after password reset, OTP request bursts, card testing, injected storefront script, catalogue scraping, edge-rule bypass probes, blocked payment callbacks
+- [ ] Deterministic with a seed — test: same seed, same output hash
+- [ ] Each scenario has a matching detection fixture in `detections/` (positive and negative)
+
+**Plan:**
+
+**Evidence:**
+
+### T-054 — Investigator evaluation with public SOC exercises
+- status: todo
+- milestone: MD
+- area: eval
+- model tier: B
+- depends: T-050
+- plan ref: §6.5
+
+**Why:** Splunk Boss of the SOC datasets (CC0) come with questions and answers, which gives ground truth for the LLM investigator.
+
+**Acceptance criteria**
+- [ ] A harness loads a BOTS export (JSON/CSV) into the warm tier and asks the investigator the published questions through the normal MCP tools
+- [ ] Scores exact-match and cited-evidence correctness per question; result stored as a CI artifact
+- [ ] Runs with a recorded or scripted model in CI; a live model run is a manual `make eval-investigator`
+- [ ] No answer key is ever placed in the model context — test
+
+**Plan:**
+
+**Evidence:**
+
+### T-055 — Several pinned models, one per detection family
+- status: todo
+- milestone: MD
+- area: onnx-runtime
+- model tier: A
+- depends: T-051
+- plan ref: §6.6
+
+**Why:** One general model cannot cover every detection family. Each family needs its own pinned model, and a swapped file must be rejected before it can sign a verdict.
+
+**Acceptance criteria**
+- [ ] The runtime loads a model registry (family → model path, hash, feature set version); each model hash is pinned
+- [ ] Routing picks the model by detection family; unknown family falls back to the general triage model — tests
+- [ ] A swapped or unpinned model is rejected at load — test per family
+- [ ] Each model has its own P99 budget test
+- [ ] The envelope records which model and feature set version produced the verdict
+
+**Plan:**
+
+**Evidence:**
+
+### T-056 — Model and data cards generated at training time
+- status: todo
+- milestone: MD
+- area: ml
+- model tier: C
+- depends: T-051
+- plan ref: §6.6
+
+**Acceptance criteria**
+- [ ] Training writes `model_card.md` next to the ONNX file: datasets with checksums and licenses, feature set version, metrics, calibration, known limits, model hash
+- [ ] CI fails if a pinned model has no card
+
+**Plan:**
+
+**Evidence:**
+
+### T-057 — Web-attack fixtures from CSIC 2010
+- status: todo
+- milestone: MD
+- area: heliql
+- model tier: C
+- depends: T-004, T-050
+- plan ref: §6.1
+
+**Acceptance criteria**
+- [ ] Registry entry with `allowed_use: fixtures, eval` only
+- [ ] A converter turns a sample of labelled requests into HTTP Activity fixtures for edge-attack rules; the fixture files are generated at test time, not committed
+- [ ] Edge-attack rules are evaluated against them, with precision and recall reported
 
 **Plan:**
 

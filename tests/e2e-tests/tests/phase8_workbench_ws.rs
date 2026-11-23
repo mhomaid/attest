@@ -93,11 +93,13 @@ async fn phase8_workbench_ws_trace_and_heartbeat() {
 
     let case_id = Uuid::new_v4();
     let token = mint_jwt(case_id);
+    let service_token = e2e_tests::service_access_token(e2e_tests::AUDIENCE_WS_GATEWAY);
     let ws_url = format!(
-        "{}/ws/cases/{}/trace?token={}",
+        "{}/ws/cases/{}/trace?token={}&access_token={}",
         ws_gateway_ws_url().trim_end_matches('/'),
         case_id,
-        token
+        token,
+        service_token
     );
 
     let (ws_stream, _) = connect_async(ws_url.as_str())
@@ -123,15 +125,17 @@ async fn phase8_workbench_ws_trace_and_heartbeat() {
     let orch_post = orch.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(150)).await;
-        let _ = Client::new()
-            .post(format!("{orch_post}/triage"))
-            .json(&json!({
-                "case_id": case_id.to_string(),
-                "tenant_id": "default",
-                "alert": alert
-            }))
-            .send()
-            .await;
+        let _ = e2e_tests::authed(
+            Client::new().post(format!("{orch_post}/triage")),
+            e2e_tests::AUDIENCE_ORCHESTRATOR,
+        )
+        .json(&json!({
+            "case_id": case_id.to_string(),
+            "tenant_id": "default",
+            "alert": alert
+        }))
+        .send()
+        .await;
     });
 
     let deadline = Instant::now() + Duration::from_secs(45);

@@ -76,14 +76,16 @@ async fn post_cloudtrail(
         }]
     });
 
-    client
-        .post(format!("{}/ingest", collector_url()))
-        .json(&payload)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false)
+    e2e_tests::signed_ingest(
+        client
+            .post(format!("{}/ingest", collector_url()))
+            .timeout(Duration::from_secs(10)),
+        &payload,
+    )
+    .send()
+    .await
+    .map(|r| r.status().is_success())
+    .unwrap_or(false)
 }
 
 /// Seed `count` simple CloudTrail events to populate the Arroyo ETL pipeline.
@@ -109,13 +111,15 @@ async fn count_arroyo_parquet(prefix: &str) -> Option<u64> {
         "SELECT count(*) FROM s3('http://garage:3900/attest-warm/{prefix}/*.parquet', \
          'GK0123456789abcdef0123456789abcdef', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'Parquet')"
     );
-    let res = client
-        .post(format!("{}/v1/warm/query", control_plane_url()))
-        .json(&serde_json::json!({ "sql": sql }))
-        .timeout(Duration::from_secs(15))
-        .send()
-        .await
-        .ok()?;
+    let res = e2e_tests::authed(
+        client.post(format!("{}/v1/warm/query", control_plane_url())),
+        e2e_tests::AUDIENCE_CONTROL_PLANE,
+    )
+    .json(&serde_json::json!({ "sql": sql }))
+    .timeout(Duration::from_secs(15))
+    .send()
+    .await
+    .ok()?;
 
     if !res.status().is_success() {
         return None;

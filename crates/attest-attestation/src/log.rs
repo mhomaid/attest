@@ -101,16 +101,19 @@ impl AttestationLog {
     }
 
     /// Set `prev_hash`, sign, and append under one lock.
+    ///
+    /// Accepts any [`Signer`] (local Ed25519 key, AWS KMS, …) so the log is not
+    /// tied to a single signing backend.
     pub async fn sign_and_append(
         &self,
-        signer: &Signer,
+        signer: &dyn Signer,
         envelope: &mut AttestationEnvelope,
     ) -> Result<()> {
         let _g = self.lock.lock().await;
         self.hydrate_unlocked().await?;
         let (tip, seq) = self.tip_unlocked().await?;
         envelope.prev_hash = tip;
-        signer.sign(envelope);
+        signer.sign_envelope(envelope)?;
         self.write_line(envelope, seq).await
     }
 
@@ -355,12 +358,13 @@ async fn read_ndjson(path: &Path) -> Result<Vec<AttestationEnvelope>> {
 mod tests {
     use super::*;
     use crate::envelope::*;
+    use crate::signer::LocalKey;
     use chrono::Utc;
     use object_store::memory::InMemory;
     use std::collections::HashMap;
     use uuid::Uuid;
 
-    fn dummy(signer: &Signer, prev: &str) -> AttestationEnvelope {
+    fn dummy(signer: &LocalKey, prev: &str) -> AttestationEnvelope {
         let now = Utc::now();
         let mut env = AttestationEnvelope {
             envelope_version: "1.1".into(),
@@ -386,6 +390,8 @@ mod tests {
             },
             prev_hash: prev.to_string(),
             signature: String::new(),
+            alg: String::new(),
+            key_id: String::new(),
             signed_at: now,
         };
         signer.sign(&mut env);
@@ -399,7 +405,7 @@ mod tests {
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
         let prefix = format!("attestations-{}", Uuid::new_v4());
         let log = AttestationLog::with_object_store(&path, store.clone(), prefix);
-        let signer = Signer::generate();
+        let signer = LocalKey::generate();
 
         let mut a = dummy(&signer, GENESIS_HASH);
         log.sign_and_append(&signer, &mut a).await.unwrap();
@@ -418,7 +424,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("attest-log-{}", Uuid::new_v4()));
         let path = dir.join("attestations.ndjson");
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let signer = Signer::generate();
+        let signer = LocalKey::generate();
 
         let prefix = format!("attestations-{}", Uuid::new_v4());
         let before = AttestationLog::with_object_store(&path, store.clone(), &prefix);

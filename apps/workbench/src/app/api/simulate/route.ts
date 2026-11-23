@@ -1,3 +1,4 @@
+import { AUDIENCE, withIngestHmac, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getScenario } from "@/lib/scenarios";
 import type { ScenarioParams } from "@/lib/scenarios";
@@ -62,12 +63,12 @@ export async function POST(req: NextRequest) {
   let collectorRes: StageResult;
   let event_ids: string[] = [];
   try {
-    const r = await fetch(`${COLLECTOR_URL}/ingest`, {
+    const ingestBody = JSON.stringify(scenario.buildCloudTrail(params));
+    const r = await fetch(`${COLLECTOR_URL}/ingest`, withIngestHmac(ingestBody, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Tenant-Id": "default" },
-      body: JSON.stringify(scenario.buildCloudTrail(params)),
       signal: AbortSignal.timeout(8_000),
-    });
+    }));
     const data = await r.json() as { event_ids?: string[]; error?: string };
     if (!r.ok || data.error) throw new Error(data.error ?? `HTTP ${r.status}`);
     event_ids = data.event_ids ?? [];
@@ -94,12 +95,12 @@ export async function POST(req: NextRequest) {
   let triageData: Record<string, unknown> | null = null;
 
   try {
-    const r = await fetch(`${ORCHESTRATOR_URL}/triage`, {
+    const r = await fetch(`${ORCHESTRATOR_URL}/triage`, withServiceAuth(AUDIENCE.orchestrator, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alert: scenario.buildAlert(params) }),
       signal: AbortSignal.timeout(10_000),
-    });
+    }));
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     triageData = await r.json() as Record<string, unknown>;
 

@@ -49,13 +49,15 @@ async fn post_login(
         }]
     });
 
-    let res = client
-        .post(format!("{}/ingest", collector_url()))
-        .json(&payload)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-        .ok()?;
+    let res = e2e_tests::signed_ingest(
+        client
+            .post(format!("{}/ingest", collector_url()))
+            .timeout(Duration::from_secs(10)),
+        &payload,
+    )
+    .send()
+    .await
+    .ok()?;
 
     if !res.status().is_success() {
         return None;
@@ -210,12 +212,11 @@ async fn cloudtrail_logging_disabled_fires_critical_alert() {
         }]
     });
 
-    let res = client
-        .post(format!("{}/ingest", collector_url()))
-        .json(&payload)
-        .send()
-        .await
-        .expect("post failed");
+    let res =
+        e2e_tests::signed_ingest(client.post(format!("{}/ingest", collector_url())), &payload)
+            .send()
+            .await
+            .expect("post failed");
 
     let body: serde_json::Value = res.json().await.unwrap();
     let event_id = body["event_ids"]

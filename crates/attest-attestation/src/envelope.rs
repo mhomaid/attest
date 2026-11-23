@@ -218,9 +218,26 @@ pub struct AttestationEnvelope {
     /// Empty means a pre-chain log row — `attest verify` skips the chain then.
     #[serde(default)]
     pub prev_hash: String,
-    /// Hex-encoded Ed25519 signature over the canonical envelope body.
+    /// Hex-encoded signature over the canonical envelope body.
     pub signature: String,
+    /// Signature algorithm that produced `signature` (for example `ed25519`).
+    /// Defaults to `ed25519` on envelopes written before this field existed, so
+    /// older logs keep verifying.
+    #[serde(default = "default_alg")]
+    pub alg: String,
+    /// Identifier of the key that produced `signature`. Empty on envelopes
+    /// written before key ids existed; a keyring then falls back to a legacy key.
+    /// `alg` and `key_id` are deliberately excluded from `canonical_bytes`: the
+    /// signature already binds the body to a specific private key, so these are
+    /// non-forgeable hints used only to select the verifying key.
+    #[serde(default)]
+    pub key_id: String,
     pub signed_at: DateTime<Utc>,
+}
+
+/// Default `alg` for envelopes deserialized without the field (pre-`key_id` logs).
+pub fn default_alg() -> String {
+    "ed25519".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

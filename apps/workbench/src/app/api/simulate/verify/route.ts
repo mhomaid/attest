@@ -1,3 +1,4 @@
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest, NextResponse } from "next/server";
 import type { StageResult } from "../route";
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     timed(async () => {
       const r = await fetch(
         `${CONTROL_PLANE_URL}/v1/baselines/user/${encodeURIComponent(username)}`,
-        { signal: AbortSignal.timeout(3_000) },
+        withServiceAuth(AUDIENCE.controlPlane, { signal: AbortSignal.timeout(3_000) }),
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return await r.json() as { regions_seen_30d?: string[]; logins_24h?: number };
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
     timed(async () => {
       const r = await fetch(
         `${CONTROL_PLANE_URL}/v1/detections/fired`,
-        { signal: AbortSignal.timeout(3_000) },
+        withServiceAuth(AUDIENCE.controlPlane, { signal: AbortSignal.timeout(3_000) }),
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const all = await r.json() as Array<{ event_id?: string; detection_id?: string; fired_at?: string }>;
@@ -62,14 +63,14 @@ export async function GET(req: NextRequest) {
 
     // Iceberg / object store: warm tier query for this event_id.
     timed(async () => {
-      const r = await fetch(`${CONTROL_PLANE_URL}/v1/warm/query`, {
+      const r = await fetch(`${CONTROL_PLANE_URL}/v1/warm/query`, withServiceAuth(AUDIENCE.controlPlane, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sql: `SELECT event_id, time FROM cloudtrail WHERE event_id = '${eventId}' LIMIT 1`,
         }),
         signal: AbortSignal.timeout(3_000),
-      });
+      }));
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json() as { rows?: unknown[] };
       return { rowCount: data.rows?.length ?? 0 };
@@ -77,9 +78,9 @@ export async function GET(req: NextRequest) {
 
     // MCP Gateway: list available tools (proves it's running with policy engine + registry).
     timed(async () => {
-      const r = await fetch(`${MCP_GATEWAY_URL}/tools`, {
+      const r = await fetch(`${MCP_GATEWAY_URL}/tools`, withServiceAuth(AUDIENCE.mcpGateway, {
         signal: AbortSignal.timeout(2_000),
-      });
+      }));
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const tools = await r.json() as { tools?: Array<{ id?: string }> } | unknown[];
       const count = Array.isArray(tools) ? tools.length : (tools.tools?.length ?? 0);

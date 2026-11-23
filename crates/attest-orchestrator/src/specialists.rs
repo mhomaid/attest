@@ -11,7 +11,7 @@ use crate::shadow_check::ShadowChecker;
 use anyhow::Result;
 use attest_attestation::{
     AttestationEnvelope, AttestationLog, EvidenceBlock, ExecutionPathKind, IntermediateBelief,
-    LlmEvidence, ShadowCheckDecision, Signer, TimingBlock, Verdict,
+    LlmEvidence, LocalKey, ShadowCheckDecision, TimingBlock, Verdict,
 };
 use attest_inference_router::{ChatClient, ToolDef};
 use chrono::Utc;
@@ -164,7 +164,7 @@ pub async fn run_hunt(
     req: HuntRequest,
     llm: Option<&dyn ChatClient>,
     mcp: &McpClient,
-    signer: &Signer,
+    signer: &LocalKey,
     log: &AttestationLog,
     system_prompt: &str,
     system_prompt_hash: &str,
@@ -235,6 +235,8 @@ pub async fn run_hunt(
         },
         prev_hash: String::new(),
         signature: String::new(),
+        alg: String::new(),
+        key_id: String::new(),
         signed_at: finished_at,
     };
     log.sign_and_append(signer, &mut envelope).await?;
@@ -282,7 +284,7 @@ pub async fn run_respond(
     req: RespondRequest,
     llm: Option<&dyn ChatClient>,
     mcp: &McpClient,
-    signer: &Signer,
+    signer: &LocalKey,
     log: &AttestationLog,
     shadow: &ShadowChecker,
     system_prompt: &str,
@@ -409,6 +411,8 @@ pub async fn run_respond(
         },
         prev_hash: String::new(),
         signature: String::new(),
+        alg: String::new(),
+        key_id: String::new(),
         signed_at: finished_at,
     };
     log.sign_and_append(signer, &mut envelope).await?;

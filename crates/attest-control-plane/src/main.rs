@@ -166,6 +166,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(Any);
 
     // ── Router ───────────────────────────────────────────────────────────────
+    let secret = std::env::var(attest_service_auth::SERVICE_AUTH_ENV).unwrap_or_default();
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/events/recent", get(get_recent_event))
@@ -176,9 +177,11 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state)
         .route("/v1/warm/query", post(post_warm_query))
         .with_state(warm_client)
-        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
-        .layer(cors)
-        .layer(from_fn(attest_telemetry::axum_trace_propagation));
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()));
+    let app =
+        attest_service_auth::protect(app, secret, attest_service_auth::AUDIENCE_CONTROL_PLANE)
+            .layer(cors)
+            .layer(from_fn(attest_telemetry::axum_trace_propagation));
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("attest-control-plane listening on {addr}");

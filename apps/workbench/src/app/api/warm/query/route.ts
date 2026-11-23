@@ -1,3 +1,4 @@
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const CP_URL = process.env.CONTROL_PLANE_URL ?? "http://localhost:8080";
@@ -11,12 +12,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const res = await fetch(`${CP_URL}/v1/warm/query`, {
+    const res = await fetch(`${CP_URL}/v1/warm/query`, withServiceAuth(AUDIENCE.controlPlane, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       next: { revalidate: 0 },
-    });
+    }));
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (err) {

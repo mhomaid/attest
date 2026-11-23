@@ -15,7 +15,7 @@ provider "aws" {
   default_tags {
     tags = {
       Product   = "attest"
-      Component = "warm-tier"
+      Component = "security-account"
     }
   }
 }

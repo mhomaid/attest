@@ -51,15 +51,16 @@ sequenceDiagram
   participant Log as attestation log
   participant CLI as attest verify
 
-  CT->>Col: JSON (POST /ingest or S3)
+  CT->>Col: POST /ingest, HMAC of timestamp and body
   Col->>Bus: OCSF 1.3 event
   Bus->>Det: stream
   Det->>Orch: fired alert
   Orch->>ONNX: 8 features, in-process
   alt structurally novel
-    Orch->>MCP: investigator tools (policy-checked)
+    Orch->>MCP: tools, service token, policy check
   end
   Orch->>Log: Ed25519 envelope + prev_hash
+  Note over Log: NDJSON on disk, and Garage or S3 when configured
   CLI->>Log: recompute hash, check signature, walk chain
 ```
 
@@ -94,6 +95,7 @@ flowchart TB
   end
   subgraph Storage["04 Storage — open formats you own"]
     IB[Iceberg / Parquet]
+    GR[Garage locally, S3 in prod]
     CH[ClickHouse s3]
   end
   subgraph Streaming["05 Streaming — logs in, OCSF on a bus"]
@@ -106,37 +108,40 @@ flowchart TB
     IaC[Compose · Helm · Terraform]
   end
 
-  Col --> RP --> RW
-  RP --> IB
+  Col -->|HMAC| RP --> RW
+  RP --> IB --> GR
   RW --> CP
-  IB --> CH --> CP
+  GR --> CH --> CP
   HQ --> Orch
-  CP --> Orch
+  CP -->|service token| Orch
   Orch --> ONNX
-  Orch --> MCP
+  Orch -->|service token| MCP
   Orch --> Att
+  Att --> GR
   CP --> WB
   Orch --> WB
 ```
 
 ```mermaid
 flowchart LR
-  CT[CloudTrail] --> Col[attest-collector]
+  CT[CloudTrail] -->|HMAC| Col[attest-collector]
   Col --> RP[(Redpanda)]
   RP --> RW[RisingWave hot tier]
-  RP --> PQ[Iceberg on object storage]
+  RP --> PQ[Iceberg on Garage / S3]
   RP --> Det[HELIQL detections]
   PQ --> CH[ClickHouse warm query]
   RW --> CP[control-plane]
   CH --> CP
   Det --> Orch[orchestrator]
-  CP --> Orch
+  CP -->|service token| Orch
   Orch --> ONNX[ONNX classifier]
-  Orch --> MCP[MCP gateway]
-  Orch --> Log[(NDJSON + optional S3)]
+  Orch -->|service token| MCP[MCP gateway]
+  Orch --> Log[(NDJSON + Garage or S3)]
   CP --> WB[workbench]
   Orch --> WB
 ```
+
+Calls between the control plane, orchestrator, MCP gateway, and websocket gateway carry a two-minute service token. The workbench server attaches that token. The browser receives only a short-lived token after sign-in, and `/healthz` stays open. Collector ingest is the exception: it uses an HMAC over the body and a timestamp, and rejects anything older than five minutes. See [docs/19_Service_Auth.md](docs/19_Service_Auth.md).
 
 Object storage is **S3-compatible**. Local Compose uses Garage; a hosted
 deployment should point at S3 or R2. The application talks the S3 API, not a vendor SDK.
@@ -180,8 +185,8 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 
 | Component | Status | Notes |
 |---|---|---|
-| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` (tenant from `X-Tenant-Id`, else `TENANT_ID`). `POST /ingest/s3` or an S3 object-created notification fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. No ingest auth yet: keep the collector on a private network. |
-| RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1 |
+| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` requires an HMAC (`X-Attest-Timestamp`, `X-Attest-Signature`) and rejects replays older than 5 minutes. Tenant from `X-Tenant-Id`, else `TENANT_ID`. `POST /ingest/s3` fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. |
+| RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1. Control-plane, orchestrator, MCP gateway, and ws-gateway require a short-lived service token on every route except `/healthz`. |
 | Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet under `s3://attest-warm/attest/cloudtrail/data/` on Garage. Snapshot commits via iceberg-rust. Phase 2 seeds 10k events and reads them back through ClickHouse `s3()`. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
 | HELIQL detections | Working | 10 rules in `detections/`, each with a positive and a negative fixture. `okta_brute_force` fires at 5 failed Okta logins for one user within 10 minutes. |
@@ -225,20 +230,25 @@ orchestrator. If either is down, the section says the demo is paused and points 
 verify example instead.
 
 ```sh
-# Health
+# Health stays open. Other routes do not.
 curl -s localhost:4000/healthz
 curl -s localhost:8080/healthz
 
-# Inject a CloudTrail login (then watch the queue)
-curl -s -X POST localhost:4000/ingest -H 'Content-Type: application/json' \
-  -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
-    "awsRegion":"ap-southeast-1","recipientAccountId":"111111111111",
-    "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
-    "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+# Inject a CloudTrail login. The signature covers the exact body bytes.
+TS=$(date +%s)
+BODY='{"Records":[{"eventName":"ConsoleLogin","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","awsRegion":"ap-southeast-1","recipientAccountId":"111111111111","userIdentity":{"type":"IAMUser","userName":"alice@example.com","arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+SIG=$(printf '%s' "${TS}.${BODY}" | openssl dgst -sha256 -hmac "${ATTEST_INGEST_HMAC_SECRET:-dev-only-ingest-hmac-secret}" | awk '{print $NF}')
+curl -s -X POST localhost:4000/ingest \
+  -H 'Content-Type: application/json' \
+  -H "X-Attest-Timestamp: $TS" \
+  -H "X-Attest-Signature: $SIG" \
+  --data-binary "$BODY"
 
-# Or ~30s of mixed benign + attack traffic
+# Or ~30s of mixed benign + attack traffic, written straight to Kafka
 make seed-data
 ```
+
+Compose sets `ATTEST_INGEST_HMAC_SECRET` and `ATTEST_SERVICE_AUTH_SECRET` to the dev values in `env.example`. A timestamp older than five minutes is rejected. Control-plane, orchestrator, MCP gateway, and ws-gateway require `Authorization: Bearer` with a two-minute token for that service. `/healthz` is the only open route. Details: [docs/19_Service_Auth.md](docs/19_Service_Auth.md).
 
 Classifier artifacts (`ml/triager/artifacts/`) are committed, so you do not need to train to
 triage. To retrain: `make train-classifier`.
@@ -323,6 +333,8 @@ the present tense — the [status table](#status) is the source of truth for tod
 | [10 Build order](docs/10_Build_Order.md) | Phase sequence |
 | [12 Workbench](docs/12_Workbench.md) | Analyst UX |
 | [15 Streaming ADR](docs/15_Streaming_Engine_Decision.md) | Arroyo vs Flink vs RisingWave |
+| [18 Object store](docs/18_Object_Store.md) | Garage locally, the cloud's object store in production |
+| [19 Service auth](docs/19_Service_Auth.md) | HS256 service tokens and the ingest HMAC |
 | [phases.md](docs/phases.md) | What actually shipped, phase by phase |
 | [attest CLI](crates/attest-cli/README.md) | `verify` / `replay` flags and exit codes |
 
@@ -360,7 +372,7 @@ Make a clone something you would leave running, not just demo.
 
 | Item | Outcome | Today |
 |---|---|---|
-| Authenticated ingest | Per-tenant tokens on the collector | Private-network only; no ingest auth |
+| Authenticated ingest | Per-tenant tokens on the collector | HMAC plus a 5-minute replay window. One shared dev secret, not yet a token per tenant. |
 | Iceberg REST catalog | Restart-safe catalog that is not `MemoryCatalog` + `version-hint.text` | Snapshot reload works; catalog is local |
 | Pinned service images | Compose / Helm tags that do not float | Compose infra images are pinned. App images are still built from source. |
 | S3-native object store path | Garage locally, S3 or R2 when hosted | Local default is Garage. See `docs/18_Object_Store.md`. |

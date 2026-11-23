@@ -53,6 +53,12 @@ enum Command {
         log: PathBuf,
         #[command(flatten)]
         verifying_key: VerifyingKey,
+        /// JSON keyring: `{ "keys": [{ "key_id", "alg", "public_key" }], "legacy": { ... } }`.
+        #[arg(long, value_name = "PATH")]
+        keyring: Option<PathBuf>,
+        /// Signed chain-tip anchor JSON. A shorter log fails with `truncated after seq N`.
+        #[arg(long, value_name = "PATH")]
+        anchors: Option<PathBuf>,
         /// Fail envelopes whose classifier `model_artifact_hash` differs from this SHA-256.
         #[arg(long, value_name = "SHA256")]
         pin_model: Option<String>,
@@ -92,23 +98,45 @@ fn run() -> Result<ExitCode> {
         Command::Verify {
             log,
             verifying_key,
+            keyring,
+            anchors,
             pin_model,
             pin_prompt,
         } => {
-            let key = attest_cli::resolve_verifying_key(
-                verifying_key.key,
-                verifying_key.key_file.as_deref(),
-            )?;
             let envelopes = attest_cli::read_log(&log)?;
             if envelopes.is_empty() {
                 anyhow::bail!("{} contains no envelopes", log.display());
             }
-            let mut report = attest_cli::verify_log(&envelopes, &key);
+            let mut report = if let Some(path) = keyring {
+                let mut ring = attest_cli::resolve_keyring(&path)?;
+                if let Ok(key) = attest_cli::resolve_verifying_key(
+                    verifying_key.key.clone(),
+                    verifying_key.key_file.as_deref(),
+                ) {
+                    ring.with_legacy_ed25519_hex(key);
+                }
+                attest_attestation::verify_log_with_keyring(&envelopes, &ring)
+            } else {
+                let key = attest_cli::resolve_verifying_key(
+                    verifying_key.key,
+                    verifying_key.key_file.as_deref(),
+                )?;
+                attest_cli::verify_log(&envelopes, &key)
+            };
             let pins = attest_cli::Pins {
                 model_artifact_hash: pin_model,
                 system_prompt_hash: pin_prompt,
             };
             attest_cli::apply_pins(&mut report, &envelopes, &pins);
+            if let Some(path) = anchors {
+                let raw = std::fs::read_to_string(&path)
+                    .with_context(|| format!("failed to read anchors {}", path.display()))?;
+                let anchor: attest_attestation::ChainAnchor = serde_json::from_str(&raw)
+                    .with_context(|| format!("{}: invalid anchor JSON", path.display()))?;
+                if let Err(detail) = attest_attestation::check_anchor(&envelopes, &anchor) {
+                    anyhow::bail!(detail);
+                }
+            }
             attest_cli::write_report_verify(&report);
             report.all_ok()
         }

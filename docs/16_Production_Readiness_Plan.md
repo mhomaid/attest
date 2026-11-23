@@ -137,13 +137,24 @@ Threat model summary:
 
 - **6.1 Detection pack.** Generic rules shipped here with positive and negative fixtures (T-004):
   brute force, anomalous login geography, OTP request bursts, card-testing patterns, edge bypass
-  spikes, path-evasion probes, security-tool config changes, stalled detections. Deployer-specific
-  thresholds and lists stay in the overlay.
-- **6.2 Labels and retraining** (T-030, T-031). Analysts record agree/disagree. Retraining is
-  weekly; the new model's hash is pinned.
+  spikes, path-evasion probes, security-tool config changes, stalled detections. A parameterised
+  commerce scenario generator emits labelled OCSF events for those patterns (T-053). Public
+  web-attack corpora may feed fixtures and evaluation only, never production weights (T-057).
+  Deployer-specific thresholds and lists stay in the overlay.
+- **6.2 Labels and retraining** (T-030, T-031, T-050 – T-052, T-056). Analysts record
+  agree/disagree. Retraining is weekly; the new model's hash is pinned. Before deployer labels
+  exist, a dataset registry records each public dataset's license and allowed use (`train`,
+  `eval`, `fixtures`). Training refuses any dataset not marked `train`. A v0 triage model and a
+  separate login-risk model are trained only on datasets whose licenses allow commercial use.
+  Training writes a model card (datasets, checksums, licenses, metrics, calibration, hash).
 - **6.3 Shadow mode** (T-032). Everything is signed, nothing is applied. Agreement metrics per detection.
 - **6.4 Outputs** (T-033). Chat with signed approval buttons, tickets, paging, generic webhook.
-- **6.5 Evaluation** (T-035). Golden-set evaluation in CI; any missed true positive fails the build.
+- **6.5 Evaluation** (T-035, T-054). Golden-set evaluation in CI; any missed true positive fails the build.
+  A separate harness scores the investigator on public SOC exercises whose answer keys stay out of the model context.
+- **6.6 Pinned models per detection family** (T-055, T-056). The runtime loads a registry of
+  family, model path, hash and feature-set version. An unknown family uses the general triage
+  model. A swapped or unpinned model is rejected at load, and the envelope records which model
+  produced the verdict. Deployer-trained weights stay in the private overlay.
 
 ## 7. Packaging — T-040 to T-043
 

@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -28,7 +29,7 @@ export async function POST(
   try {
     const res = await fetch(
       `${ORCHESTRATOR_URL.replace(/\/$/, "")}/v1/cases/${encodeURIComponent(caseId)}/override`,
-      {
+      withServiceAuth(AUDIENCE.orchestrator, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -36,7 +37,7 @@ export async function POST(
           "X-Actor-Email": email,
         },
         body: JSON.stringify(body),
-      },
+      }),
     );
 
     const data = await res.json().catch(() => ({

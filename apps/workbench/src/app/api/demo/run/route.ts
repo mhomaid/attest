@@ -1,3 +1,4 @@
+import { AUDIENCE, withIngestHmac, withServiceAuth } from "@/lib/service-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getScenario } from "@/lib/scenarios";
 
@@ -111,15 +112,15 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const r = await fetch(`${COLLECTOR_URL}/ingest`, {
+    const ingestBody = JSON.stringify(scenario.buildCloudTrail(params));
+    const r = await fetch(`${COLLECTOR_URL}/ingest`, withIngestHmac(ingestBody, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Tenant-Id": DEMO_TENANT,
       },
-      body: JSON.stringify(scenario.buildCloudTrail(params)),
       signal: AbortSignal.timeout(8_000),
-    });
+    }));
     const data = (await r.json()) as { event_ids?: string[]; error?: string };
     if (!r.ok || data.error) throw new Error(data.error ?? `HTTP ${r.status}`);
     out.event_ids = data.event_ids ?? [];
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const r = await fetch(`${ORCHESTRATOR_URL}/triage`, {
+    const r = await fetch(`${ORCHESTRATOR_URL}/triage`, withServiceAuth(AUDIENCE.orchestrator, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -137,7 +138,7 @@ export async function POST(req: NextRequest) {
         alert: scenario.buildAlert(params),
       }),
       signal: AbortSignal.timeout(12_000),
-    });
+    }));
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const triage = (await r.json()) as {
       action_id?: string;
@@ -157,12 +158,12 @@ export async function POST(req: NextRequest) {
   if (out.action_id) {
     try {
       const [envRes, verifyRes] = await Promise.all([
-        fetch(`${ORCHESTRATOR_URL}/v1/attestations/${out.action_id}`, {
+        fetch(`${ORCHESTRATOR_URL}/v1/attestations/${out.action_id}`, withServiceAuth(AUDIENCE.orchestrator, {
           signal: AbortSignal.timeout(5_000),
-        }),
-        fetch(`${ORCHESTRATOR_URL}/v1/attestations/verify`, {
+        })),
+        fetch(`${ORCHESTRATOR_URL}/v1/attestations/verify`, withServiceAuth(AUDIENCE.orchestrator, {
           signal: AbortSignal.timeout(5_000),
-        }),
+        })),
       ]);
       if (envRes.ok) {
         const env = (await envRes.json()) as DemoRunResponse["envelope"] & {
