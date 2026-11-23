@@ -20,7 +20,7 @@ setup("seed analyst and sign in", async ({ page, request }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("analyst@attest.local");
   await page.getByLabel("Password").fill("analyst-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/workbench\//, { timeout: 30_000 });
   await page.context().storageState({ path: authFile });
 });

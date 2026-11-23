@@ -20,6 +20,7 @@
     "BETTER_AUTH_URL": "https://attest.homaid.dev",
     "NEXT_PUBLIC_CP_WS_URL": "wss://control-plane-production-b6e3.up.railway.app",
     "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
-    "ALLOW_AUTH_SEED": "0"
+    "ALLOW_AUTH_SEED": "0",
+    "ATTEST_BUILD_PROFILE": "demo"
   }
 }

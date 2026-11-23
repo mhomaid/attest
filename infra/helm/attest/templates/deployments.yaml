@@ -132,6 +132,13 @@ spec:
             - name: ATTEST_SECRETS_DIR
               value: {{ $.Values.toolCredentials.mountPath | quote }}
             {{- end }}
+            {{- if and (eq $name "workbench") $.Values.auth.oidc.existingSecret }}
+            - name: ATTEST_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.auth.oidc.existingSecret }}
+                  key: client-secret
+            {{- end }}
           resources:
             {{- toYaml (default $.Values.resources $svc.resources) | nindent 12 }}
           {{- if and $svc.port $svc.healthPath }}

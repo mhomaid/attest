@@ -25,3 +25,15 @@ data:
   S3_BUCKET: {{ .Values.objectStore.bucket | quote }}
   S3_REGION: {{ .Values.objectStore.region | quote }}
   TABLE_PREFIX: cloudtrail
+  ATTEST_AUTH_PASSWORD: {{ .Values.auth.password | quote }}
+  {{- with .Values.auth.oidc }}
+  {{- if .issuer }}
+  ATTEST_OIDC_ISSUER: {{ .issuer | quote }}
+  {{- end }}
+  {{- if .clientId }}
+  ATTEST_OIDC_CLIENT_ID: {{ .clientId | quote }}
+  {{- end }}
+  ATTEST_OIDC_ROLE_CLAIM: {{ .roleClaim | quote }}
+  ATTEST_OIDC_DEFAULT_ROLE: {{ .defaultRole | quote }}
+  ATTEST_OIDC_LABEL: {{ .label | quote }}
+  {{- end }}

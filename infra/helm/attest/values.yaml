@@ -180,6 +180,23 @@ toolCredentials:
   existingSecret: ""
   mountPath: /var/run/attest/secrets
 
+# Workbench sign-in. Nothing here is a secret; the client secret is read from an existing
+# Kubernetes Secret (key: client-secret) that the chart does not create.
+auth:
+  # "off" disables email/password sign-in and sign-up and the waitlist (SSO only).
+  # Set to "on" only for a local or demo install without an identity provider.
+  password: "off"
+  oidc:
+    # Enabled when issuer, clientId and existingSecret are all set.
+    issuer: ""            # e.g. https://idp.example.com/realms/example
+    clientId: ""          # e.g. attest-workbench
+    existingSecret: ""    # Secret with key: client-secret
+    # Claim that carries viewer | analyst | lead | auditor. Dotted paths work.
+    roleClaim: role
+    # Role for users whose claim has no recognised value.
+    defaultRole: viewer
+    label: Single sign-on
+
 # Optional per service: resources, podSecurityContext (merged over the global one).
 services:
   collector:
