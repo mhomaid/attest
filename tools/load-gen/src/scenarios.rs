@@ -34,6 +34,11 @@ pub fn benign_login(tenant_id: &str, user_name: &str) -> FlatEvent {
         api_operation: Some("ConsoleLogin".into()),
         api_service: Some("signin.amazonaws.com".into()),
         raw: None,
+        http_path: None,
+        http_status: None,
+        src_ip: None,
+        asn: None,
+        disposition: None,
     }
 }
 
@@ -54,6 +59,11 @@ pub fn geo_anomaly(tenant_id: &str, user_name: &str) -> FlatEvent {
         api_operation: Some("ConsoleLogin".into()),
         api_service: Some("signin.amazonaws.com".into()),
         raw: None,
+        http_path: None,
+        http_status: None,
+        src_ip: None,
+        asn: None,
+        disposition: None,
     }
 }
 
@@ -73,6 +83,11 @@ pub fn brute_force(tenant_id: &str, user_name: &str) -> FlatEvent {
         api_operation: Some("ConsoleLogin".into()),
         api_service: Some("signin.amazonaws.com".into()),
         raw: None,
+        http_path: None,
+        http_status: None,
+        src_ip: None,
+        asn: None,
+        disposition: None,
     }
 }
 
@@ -92,6 +107,11 @@ pub fn root_account(tenant_id: &str) -> FlatEvent {
         api_operation: Some("CreateAccessKey".into()),
         api_service: Some("iam.amazonaws.com".into()),
         raw: None,
+        http_path: None,
+        http_status: None,
+        src_ip: None,
+        asn: None,
+        disposition: None,
     }
 }
 
@@ -111,6 +131,11 @@ pub fn s3_exfil(tenant_id: &str, user_name: &str) -> FlatEvent {
         api_operation: Some("GetObject".into()),
         api_service: Some("s3.amazonaws.com".into()),
         raw: None,
+        http_path: None,
+        http_status: None,
+        src_ip: None,
+        asn: None,
+        disposition: None,
     }
 }
 
@@ -130,6 +155,11 @@ pub fn mfa_bypass(tenant_id: &str, user_name: &str) -> FlatEvent {
         api_operation: Some("ConsoleLogin".into()),
         api_service: Some("signin.amazonaws.com".into()),
         raw: None,
+        http_path: None,
+        http_status: None,
+        src_ip: None,
+        asn: None,
+        disposition: None,
     }
 }
 

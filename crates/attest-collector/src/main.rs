@@ -9,6 +9,7 @@ mod http;
 mod normalizer;
 mod producer;
 mod s3;
+mod source;
 
 use std::sync::Arc;
 

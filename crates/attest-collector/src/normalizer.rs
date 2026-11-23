@@ -12,6 +12,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::error::CollectorError;
+use crate::source::{unmapped_extras, CloudTrailSource, NormalizeCtx, Source};
 
 /// Raw CloudTrail record shape.  Only the fields we consume are listed; the
 /// full record is preserved in `raw` for attribution.
@@ -64,16 +65,17 @@ pub fn normalize_cloudtrail(
     raw_json: &serde_json::Value,
     tenant_id: &str,
 ) -> Result<Vec<OcsfEvent>, CollectorError> {
-    // Accept both a bare record and the `{"Records": [...]}` envelope.
-    let records: Vec<serde_json::Value> = if let Some(arr) = raw_json.get("Records") {
-        serde_json::from_value(arr.clone())?
-    } else {
-        vec![raw_json.clone()]
+    let source = CloudTrailSource;
+    let bytes = serde_json::to_vec(raw_json)?;
+    let records = source.decode(&bytes, Some("application/json"))?;
+    let ctx = NormalizeCtx {
+        tenant_id: tenant_id.to_string(),
+        extension_prefix: "aws".into(),
     };
 
     let mut events = Vec::with_capacity(records.len());
     for record_val in records {
-        match normalize_record(&record_val, tenant_id) {
+        match source.normalize(&record_val, &ctx) {
             Ok(ev) => events.push(ev),
             Err(e) => {
                 tracing::warn!("skipping malformed CloudTrail record: {e}");
@@ -83,8 +85,12 @@ pub fn normalize_cloudtrail(
     Ok(events)
 }
 
-fn normalize_record(val: &serde_json::Value, tenant_id: &str) -> Result<OcsfEvent, CollectorError> {
+pub(crate) fn normalize_record(
+    val: &serde_json::Value,
+    ctx: &NormalizeCtx,
+) -> Result<OcsfEvent, CollectorError> {
     let rec: CloudTrailRecord = serde_json::from_value(val.clone())?;
+    let unmapped = unmapped_extras(val, &ctx.extension_prefix);
 
     let event_id = Uuid::new_v4();
     let time = parse_time(rec.event_time.as_deref())?;
@@ -125,12 +131,13 @@ fn normalize_record(val: &serde_json::Value, tenant_id: &str) -> Result<OcsfEven
         OcsfEvent::Authentication(AuthenticationEvent {
             event_id,
             time,
-            tenant_id: tenant_id.to_string(),
+            tenant_id: ctx.tenant_id.clone(),
             actor,
             cloud,
             severity: Severity::Informational,
             status,
             raw: Some(val.clone()),
+            unmapped,
         })
     } else {
         let service = rec.event_source.clone().unwrap_or_else(|| "aws".into());
@@ -147,7 +154,7 @@ fn normalize_record(val: &serde_json::Value, tenant_id: &str) -> Result<OcsfEven
         OcsfEvent::CloudActivity(CloudActivityEvent {
             event_id,
             time,
-            tenant_id: tenant_id.to_string(),
+            tenant_id: ctx.tenant_id.clone(),
             actor,
             cloud,
             api: ApiInfo {
@@ -157,6 +164,7 @@ fn normalize_record(val: &serde_json::Value, tenant_id: &str) -> Result<OcsfEven
             severity: Severity::Informational,
             resources,
             raw: Some(val.clone()),
+            unmapped,
         })
     };
 

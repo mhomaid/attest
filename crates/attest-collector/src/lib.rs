@@ -3,3 +3,4 @@ pub mod http;
 pub mod normalizer;
 pub mod producer;
 pub mod s3;
+pub mod source;
