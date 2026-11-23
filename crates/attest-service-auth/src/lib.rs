@@ -367,7 +367,10 @@ mod tests {
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
-    #[tokio::test]
+    // The tracing default subscriber is thread-local. A multi-thread runtime can
+    // emit the rejection on a worker that does not see this subscriber, so the
+    // captured log is empty and the assertion fails at random.
+    #[tokio::test(flavor = "current_thread")]
     async fn rejection_log_does_not_contain_the_secret_or_token() {
         let secret = "s3cr3t-do-not-log";
         let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
