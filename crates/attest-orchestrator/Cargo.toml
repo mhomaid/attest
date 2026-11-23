@@ -38,3 +38,4 @@ utoipa-scalar = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 wiremock = "0.6"
+attest-mcp-gateway = { path = "../attest-mcp-gateway" }
