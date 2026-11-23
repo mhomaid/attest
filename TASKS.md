@@ -815,7 +815,7 @@ checked by code before it can be used for training.
 **Evidence:**
 
 ### T-057 — Web-attack fixtures from CSIC 2010
-- status: todo
+- status: review
 - milestone: MD
 - area: heliql
 - model tier: C
@@ -823,10 +823,13 @@ checked by code before it can be used for training.
 - plan ref: §6.1
 
 **Acceptance criteria**
-- [ ] Registry entry with `allowed_use: fixtures, eval` only
-- [ ] A converter turns a sample of labelled requests into HTTP Activity fixtures for edge-attack rules; the fixture files are generated at test time, not committed
-- [ ] Edge-attack rules are evaluated against them, with precision and recall reported
+- [x] Registry entry with `allowed_use: fixtures, eval` only
+- [x] A converter turns a sample of labelled requests into HTTP Activity fixtures for edge-attack rules; the fixture files are generated at test time, not committed
+- [x] Edge-attack rules are evaluated against them, with precision and recall reported
 
 **Plan:**
+- `ml/datasets/csic.py` parses synthetic CSIC-shaped requests into HTTP Activity fixtures. `write_fixtures` refuses a path inside the repo. A signature rule scores SQL injection, XSS, path traversal, and CRLF.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- Commit `531236d` on `feat/t057-csic`. `pytest datasets/ triager/ test_smoke.py`: 21 passed, including `test_csic_registry_stays_fixtures_and_eval_only`, `test_converter_scores_edge_attacks_on_test_time_fixtures`, and `test_fixture_dumps_are_not_written_into_the_repo`.
+- Eight synthetic requests scored precision 1.000 and recall 1.000. The requests are CSIC-shaped, not the published corpus. `verify.sh full` was not run, so this stays `review`.
