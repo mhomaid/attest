@@ -231,6 +231,33 @@ pub async fn ingest_graylog(
     }
 }
 
+/// GuardDuty finding, or an EventBridge envelope with `detail`.
+/// Off unless `ATTEST_SOURCE_GUARDDUTY=on`.
+pub async fn ingest_guardduty(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !source_flag_on(std::env::var("ATTEST_SOURCE_GUARDDUTY").ok().as_deref()) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "guardduty source is off"})),
+        );
+    }
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let ctx = NormalizeCtx {
+        tenant_id: tenant_from_headers(&headers, &state.tenant_id),
+        extension_prefix: state.mapping.prefix.clone(),
+    };
+    match decode_and_produce(&state, &ctx, &crate::guardduty::GuardDutySource, &bytes).await {
+        Ok(resp) => (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
 /// Edge firewall JSON, or an audit object when `kind` is `audit`.
 /// Off unless `ATTEST_SOURCE_EDGE=on`.
 pub async fn ingest_edge(

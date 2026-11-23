@@ -13,6 +13,14 @@ use attest_attestation::ShadowCheckDecision;
 use attest_policy_engine::{authorize, AgentRole, PolicyContext, PolicyDecision};
 use std::collections::HashSet;
 
+/// `ATTEST_MODE=shadow` records what would have run and does not apply it.
+pub fn mode_is_shadow(value: Option<&str>) -> bool {
+    matches!(
+        value.map(|s| s.trim().to_ascii_lowercase()).as_deref(),
+        Some("shadow")
+    )
+}
+
 /// Runtime shadow-checker loaded once at orchestrator startup.
 #[derive(Debug, Clone)]
 pub struct ShadowChecker {
@@ -210,6 +218,14 @@ impl ShadowChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_shadow_mode_suppresses_actions() {
+        assert!(mode_is_shadow(Some("shadow")));
+        assert!(mode_is_shadow(Some(" Shadow ")));
+        assert!(!mode_is_shadow(Some("live")));
+        assert!(!mode_is_shadow(None));
+    }
 
     fn checker() -> ShadowChecker {
         ShadowChecker::new(
