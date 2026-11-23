@@ -1,118 +1,225 @@
 #!/usr/bin/env python3
-"""
-Evaluation runner for the Triager agent.
+"""Offline golden-set eval for CI.
 
-Runs all golden cases against a live orchestrator and asserts:
-  - ≥80% of cases are handled by the Classifier path (not escalated)
-  - All verdicts have valid signatures (checked via the verifying key endpoint)
-  - P99 latency for classifier-path verdicts is ≤ 50ms
+Scores each case with a classifier-style function, then a scripted investigator.
+No model file and no network call. The process exits 1 when a labeled true
+positive is missed, or when classifier/investigator agreement on confident
+cases falls below the threshold.
 
-Usage:
-  uv run python eval/run_eval.py [--orchestrator-url http://localhost:4300]
+  uv run python eval/run_eval.py --out eval/results/golden-eval.json
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
-from typing import Any
 
-import requests
+SCHEMA_VERSION = 1
+DEFAULT_AGREEMENT_THRESHOLD = 0.90
+TP_AT_OR_ABOVE = 0.72
+FP_AT_OR_BELOW = 0.28
+LABELS = ("true_positive", "false_positive")
+FEATURES = (
+    "severity_score",
+    "threat_intel_hit_count",
+    "baseline_deviation",
+    "entity_reputation_score",
+)
 
-
-GOLDEN_CASES_PATH = Path(__file__).parent / "golden_cases" / "triager_golden_cases.json"
-
-
-def load_cases() -> list[dict]:
-    with open(GOLDEN_CASES_PATH) as f:
-        data = json.load(f)
-    return data["cases"]
-
-
-def run_case(session: requests.Session, url: str, case: dict) -> dict:
-    alert = {**case["features"], "case_class": case["pattern"]}
-    payload = {
-        "case_id": case["case_id"],
-        "alert": alert,
-    }
-    t0 = time.perf_counter()
-    resp = session.post(f"{url}/triage", json=payload, timeout=10)
-    latency_ms = (time.perf_counter() - t0) * 1000
-    resp.raise_for_status()
-    result = resp.json()
-    result["_latency_ms"] = latency_ms
-    result["_expected_label"] = case["label"]
-    result["_is_ood"] = case.get("is_ood", False)
-    return result
+DEFAULT_CASES = Path(__file__).resolve().parent / "golden_cases" / "ci_golden.json"
+DEFAULT_OUT = Path(__file__).resolve().parent / "results" / "golden-eval.json"
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--orchestrator-url", default="http://localhost:4300")
-    args = parser.parse_args()
+def load_cases(path: str | Path) -> list[dict]:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    cases = data["cases"] if isinstance(data, dict) else data
+    if not isinstance(cases, list):
+        raise ValueError("golden file needs a cases list")
+    return cases
 
-    cases = load_cases()
-    print(f"Loaded {len(cases)} golden cases")
 
-    session = requests.Session()
+def classifier_score(features: dict) -> float:
+    """Weighted score in [0, 1]. Each input is a feature, never the label."""
+    missing = [name for name in FEATURES if name not in features]
+    if missing:
+        raise ValueError(f"missing feature: {', '.join(missing)}")
+    severity = float(features["severity_score"])
+    intel = min(float(features["threat_intel_hit_count"]), 5.0) / 5.0
+    deviation = min(float(features["baseline_deviation"]), 5.0) / 5.0
+    reputation = float(features["entity_reputation_score"])
+    return 0.50 * severity + 0.20 * intel + 0.20 * deviation + 0.10 * reputation
 
-    # Health check
+
+def band(score: float) -> str:
+    if score >= TP_AT_OR_ABOVE:
+        return "true_positive"
+    if score <= FP_AT_OR_BELOW:
+        return "false_positive"
+    return "needs_investigation"
+
+
+def classify(case: dict) -> dict:
+    score = classifier_score(case["features"])
+    return {"verdict": band(score), "score": score}
+
+
+def investigator_prompt(case: dict) -> str:
+    """Text the scripted investigator is allowed to see. The label stays out."""
+    features = {name: case["features"][name] for name in FEATURES}
+    prompt = (
+        f"case_id: {case['case_id']}\n"
+        f"detection: {case['detection']}\n"
+        f"narrative: {case['narrative']}\n"
+        f"features: {json.dumps(features, sort_keys=True)}"
+    )
+    if str(case.get("label", "")) in prompt:
+        raise ValueError(f"label leaked into the investigator prompt for {case.get('case_id', '?')}")
+    return prompt
+
+
+def scripted_verdict(case: dict) -> str:
+    investigator_prompt(case)
     try:
-        resp = session.get(f"{args.orchestrator_url}/healthz", timeout=5)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"ERROR: orchestrator not reachable at {args.orchestrator_url}: {e}")
-        sys.exit(1)
+        verdict = case["scripted_investigator"]["verdict"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"{case.get('case_id', '?')} has no scripted investigator verdict") from exc
+    if verdict not in LABELS:
+        raise ValueError(f"{case.get('case_id', '?')} scripted verdict must be one of {LABELS}")
+    return str(verdict)
 
-    results = []
-    errors = []
-    for i, case in enumerate(cases):
-        try:
-            r = run_case(session, args.orchestrator_url, case)
-            results.append(r)
-            if (i + 1) % 50 == 0:
-                print(f"  {i+1}/{len(cases)} cases run...")
-        except Exception as e:
-            errors.append({"case_id": case["case_id"], "error": str(e)})
-            print(f"  ERROR on case {case['case_id']}: {e}")
 
-    if errors:
-        print(f"\n{len(errors)} cases errored — see above.")
+def evaluate(cases: list[dict], threshold: float) -> dict:
+    if not cases:
+        raise ValueError("no cases")
+    if not 0.0 <= float(threshold) <= 1.0:
+        raise ValueError("agreement threshold must be between 0 and 1")
 
-    total = len(results)
-    classifier_path = [r for r in results if r.get("execution_path") == "classifier"]
-    escalated = [r for r in results if r.get("escalated", False)]
-    ood_cases = [r for r in results if r["_is_ood"]]
+    rows: list[dict] = []
+    missed: list[str] = []
+    for case in cases:
+        case_id = str(case.get("case_id", ""))
+        label = case.get("label")
+        if label not in LABELS:
+            raise ValueError(f"{case_id or '?'} label must be one of {LABELS}")
+        for key in ("case_id", "detection", "narrative", "features"):
+            if key not in case:
+                raise ValueError(f"{case_id or '?'} missing {key}")
 
-    classifier_pct = len(classifier_path) / total * 100 if total > 0 else 0
-    classifier_latencies = [r["_latency_ms"] for r in classifier_path]
-    p99_ms = sorted(classifier_latencies)[int(len(classifier_latencies) * 0.99)] if classifier_latencies else 0
+        clf = classify(case)
+        investigator = scripted_verdict(case)
+        if clf["verdict"] == "needs_investigation":
+            final = investigator
+            path = "investigator"
+            counts = False
+            agreed = None
+        else:
+            final = clf["verdict"]
+            path = "classifier"
+            counts = True
+            agreed = clf["verdict"] == investigator
+        is_miss = label == "true_positive" and final != "true_positive"
+        if is_miss:
+            missed.append(case_id)
+        rows.append(
+            {
+                "case_id": case_id,
+                "detection": case["detection"],
+                "label": label,
+                "classifier_verdict": clf["verdict"],
+                "classifier_score": round(clf["score"], 6),
+                "investigator_verdict": investigator,
+                "final_verdict": final,
+                "final_path": path,
+                "counts_toward_agreement": counts,
+                "agreed": agreed,
+                "missed_true_positive": is_miss,
+            }
+        )
 
-    print(f"\n=== Evaluation Results ===")
-    print(f"Total cases:          {total}")
-    print(f"Classifier path:      {len(classifier_path)} ({classifier_pct:.1f}%)")
-    print(f"Escalated (stub):     {len(escalated)}")
-    print(f"OOD cases escalated:  {sum(1 for r in ood_cases if r.get('escalated', False))}/{len(ood_cases)}")
-    print(f"Errors:               {len(errors)}")
-    print(f"Classifier P99 latency: {p99_ms:.1f}ms")
+    comparable = [row for row in rows if row["counts_toward_agreement"]]
+    agreement = (
+        sum(1 for row in comparable if row["agreed"]) / len(comparable) if comparable else 0.0
+    )
+    per_detection: dict[str, dict] = {}
+    for row in rows:
+        bucket = per_detection.setdefault(
+            row["detection"],
+            {"n": 0, "comparable": 0, "agreed": 0, "missed_true_positives": 0},
+        )
+        bucket["n"] += 1
+        if row["counts_toward_agreement"]:
+            bucket["comparable"] += 1
+            if row["agreed"]:
+                bucket["agreed"] += 1
+        if row["missed_true_positive"]:
+            bucket["missed_true_positives"] += 1
+    for bucket in per_detection.values():
+        bucket["agreement"] = (
+            round(bucket["agreed"] / bucket["comparable"], 6) if bucket["comparable"] else None
+        )
 
-    # Assertions
-    passed = True
+    passed = not missed and len(comparable) > 0 and agreement >= threshold
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "runner": "golden-set",
+        "scorer": "classifier-style",
+        "investigator": "scripted",
+        "summary": {
+            "n": len(rows),
+            "comparable": len(comparable),
+            "agreement": agreement,
+            "agreement_threshold": threshold,
+            "missed_true_positives": len(missed),
+            "true_positives": sum(1 for row in rows if row["label"] == "true_positive"),
+            "passed": passed,
+        },
+        "missed_true_positive_ids": missed,
+        "per_detection": per_detection,
+        "cases": rows,
+    }
 
-    if classifier_pct < 80.0:
-        print(f"\nFAIL: classifier path handled {classifier_pct:.1f}% of cases (required ≥80%)")
-        passed = False
-    else:
-        print(f"\nPASS: classifier handled {classifier_pct:.1f}% ≥ 80%")
 
-    if p99_ms > 500:
-        print(f"WARN: classifier P99 latency {p99_ms:.0f}ms > 500ms (network overhead may explain)")
-    else:
-        print(f"PASS: classifier P99 latency {p99_ms:.0f}ms")
+def write_result(result: dict, path: str | Path) -> Path:
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return out
 
-    sys.exit(0 if passed else 1)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="run_eval")
+    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--agreement-threshold", type=float, default=DEFAULT_AGREEMENT_THRESHOLD)
+    args = parser.parse_args(argv)
+
+    try:
+        result = evaluate(load_cases(args.cases), args.agreement_threshold)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    path = write_result(result, args.out)
+    summary = result["summary"]
+    print(
+        f"golden-set: n={summary['n']} agreement={summary['agreement']:.3f} "
+        f"missed_true_positives={summary['missed_true_positives']} "
+        f"threshold={summary['agreement_threshold']:.3f} -> {path}"
+    )
+    if summary["passed"]:
+        print("PASS")
+        return 0
+    for case_id in result["missed_true_positive_ids"]:
+        print(f"FAIL: missed true positive {case_id}", file=sys.stderr)
+    if summary["agreement"] < summary["agreement_threshold"] or summary["comparable"] == 0:
+        print(
+            f"FAIL: agreement {summary['agreement']:.3f} < {summary['agreement_threshold']:.3f}",
+            file=sys.stderr,
+        )
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,0 +1,134 @@
+{
+  "version": "1",
+  "description": "Small synthetic golden set for the offline CI eval. Labels stand in for an analyst. Narratives use documentation addresses only.",
+  "cases": [
+    {
+      "case_id": "tp-brute-force",
+      "detection": "brute_force",
+      "label": "true_positive",
+      "narrative": "User 1001 at tenant-a failed login 40 times in ten minutes from 203.0.113.10. No later success from that address.",
+      "features": {
+        "severity_score": 0.92,
+        "threat_intel_hit_count": 4,
+        "baseline_deviation": 4.2,
+        "entity_reputation_score": 0.7
+      },
+      "scripted_investigator": {
+        "verdict": "true_positive",
+        "rationale": "The failure burst has no later successful sign-in from that documentation address."
+      }
+    },
+    {
+      "case_id": "tp-data-exfil",
+      "detection": "data_exfil",
+      "label": "true_positive",
+      "narrative": "Host host-1001 at tenant-a uploaded 2 GB to 203.0.113.20 outside the usual transfer window.",
+      "features": {
+        "severity_score": 0.88,
+        "threat_intel_hit_count": 5,
+        "baseline_deviation": 4.8,
+        "entity_reputation_score": 0.8
+      },
+      "scripted_investigator": {
+        "verdict": "true_positive",
+        "rationale": "The upload size and destination are far outside this host's usual pattern."
+      }
+    },
+    {
+      "case_id": "tp-config-change",
+      "detection": "config_change",
+      "label": "true_positive",
+      "narrative": "User 1001 disabled audit logging on tenant-a for project example-app from 203.0.113.30.",
+      "features": {
+        "severity_score": 0.96,
+        "threat_intel_hit_count": 2,
+        "baseline_deviation": 3.5,
+        "entity_reputation_score": 0.55
+      },
+      "scripted_investigator": {
+        "verdict": "true_positive",
+        "rationale": "Audit logging was turned off from an address this user has not used before."
+      }
+    },
+    {
+      "case_id": "tp-otp-burst",
+      "detection": "otp_burst",
+      "label": "true_positive",
+      "narrative": "Account 1001 at tenant-a requested 25 one-time codes in three minutes from 198.51.100.10, then none were used.",
+      "features": {
+        "severity_score": 0.48,
+        "threat_intel_hit_count": 1,
+        "baseline_deviation": 2.2,
+        "entity_reputation_score": 0.3
+      },
+      "scripted_investigator": {
+        "verdict": "true_positive",
+        "rationale": "The code requests were unused and came from a new network for this account."
+      }
+    },
+    {
+      "case_id": "fp-scheduled-job",
+      "detection": "scheduled_job",
+      "label": "false_positive",
+      "narrative": "The tenant-a backup job ran at 07:00 from 192.0.2.10, matching its daily schedule.",
+      "features": {
+        "severity_score": 0.08,
+        "threat_intel_hit_count": 0,
+        "baseline_deviation": 0.2,
+        "entity_reputation_score": 0.0
+      },
+      "scripted_investigator": {
+        "verdict": "false_positive",
+        "rationale": "This is the documented daily backup from its usual address."
+      }
+    },
+    {
+      "case_id": "fp-benign-login",
+      "detection": "benign_login",
+      "label": "false_positive",
+      "narrative": "User 1001 signed in to example.com from 192.0.2.20 during business hours on a known device.",
+      "features": {
+        "severity_score": 0.12,
+        "threat_intel_hit_count": 0,
+        "baseline_deviation": 0.4,
+        "entity_reputation_score": 0.05
+      },
+      "scripted_investigator": {
+        "verdict": "false_positive",
+        "rationale": "Known device, usual hour, and a documentation address."
+      }
+    },
+    {
+      "case_id": "fp-admin-window",
+      "detection": "admin_task",
+      "label": "false_positive",
+      "narrative": "User 1001 changed a firewall rule on tenant-a during the published Tuesday change window.",
+      "features": {
+        "severity_score": 0.42,
+        "threat_intel_hit_count": 1,
+        "baseline_deviation": 1.5,
+        "entity_reputation_score": 0.2
+      },
+      "scripted_investigator": {
+        "verdict": "false_positive",
+        "rationale": "The change matches the published window and the operator's usual admin work."
+      }
+    },
+    {
+      "case_id": "fp-routine-api",
+      "detection": "routine_api",
+      "label": "false_positive",
+      "narrative": "Service account svc-reader called the tenant-a inventory API from 192.0.2.30 at the usual minute.",
+      "features": {
+        "severity_score": 0.18,
+        "threat_intel_hit_count": 0,
+        "baseline_deviation": 0.3,
+        "entity_reputation_score": 0.02
+      },
+      "scripted_investigator": {
+        "verdict": "false_positive",
+        "rationale": "The caller, path, and schedule match the usual inventory sync."
+      }
+    }
+  ]
+}
