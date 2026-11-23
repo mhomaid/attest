@@ -7,16 +7,21 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
+    edge::{EdgeAuditSource, EdgeFirewallSource},
     error::CollectorError,
+    graylog::{heartbeat_missed, DefinitionHeartbeat, GraylogSource},
+    mapping::FieldMapping,
     normalizer::normalize_cloudtrail,
     producer::EventProducer,
     s3::{decode_cloudtrail_bytes, get_object, is_s3_notification, pointers_from_notification},
+    source::{NormalizeCtx, Source},
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub producer: Arc<EventProducer>,
     pub tenant_id: String,
+    pub mapping: FieldMapping,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -164,6 +169,126 @@ async fn produce_cloudtrail(
     }
 
     tracing::info!(count = ids.len(), tenant = tenant_id, "ingested events");
+    Ok(IngestResponse { event_ids: ids })
+}
+
+pub fn source_flag_on(value: Option<&str>) -> bool {
+    matches!(value, Some("on") | Some("1") | Some("true"))
+}
+
+/// Graylog HTTP notification. Off unless `ATTEST_SOURCE_GRAYLOG=on`.
+pub async fn ingest_graylog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !source_flag_on(std::env::var("ATTEST_SOURCE_GRAYLOG").ok().as_deref()) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "graylog source is off"})),
+        );
+    }
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let ctx = NormalizeCtx {
+        tenant_id: tenant_from_headers(&headers, &state.tenant_id),
+        extension_prefix: state.mapping.prefix.clone(),
+    };
+    let records = match GraylogSource.decode(&bytes, Some("application/json")) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
+    };
+    if let Some(beats) = body.get("heartbeats").and_then(|v| v.as_array()) {
+        let now = chrono::Utc::now().timestamp();
+        for beat in beats {
+            let def = DefinitionHeartbeat {
+                id: beat
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                interval_secs: beat
+                    .get("interval_secs")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(300),
+                last_run_unix: beat.get("last_run_unix").and_then(|v| v.as_i64()),
+            };
+            if heartbeat_missed(&def, now) {
+                tracing::warn!(id = %def.id, "graylog definition heartbeat missed");
+            }
+        }
+    }
+    match produce_source(&state, &ctx, &GraylogSource, &records).await {
+        Ok(resp) => (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// Edge firewall JSON, or an audit object when `kind` is `audit`.
+/// Off unless `ATTEST_SOURCE_EDGE=on`.
+pub async fn ingest_edge(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !source_flag_on(std::env::var("ATTEST_SOURCE_EDGE").ok().as_deref()) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "edge source is off"})),
+        );
+    }
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let ctx = NormalizeCtx {
+        tenant_id: tenant_from_headers(&headers, &state.tenant_id),
+        extension_prefix: state.mapping.prefix.clone(),
+    };
+    let audit = body.get("kind").and_then(|v| v.as_str()) == Some("audit");
+    let produced = if audit {
+        decode_and_produce(&state, &ctx, &EdgeAuditSource, &bytes).await
+    } else {
+        decode_and_produce(&state, &ctx, &EdgeFirewallSource, &bytes).await
+    };
+    match produced {
+        Ok(resp) => (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+async fn decode_and_produce(
+    state: &AppState,
+    ctx: &NormalizeCtx,
+    source: &impl Source,
+    bytes: &[u8],
+) -> Result<IngestResponse, CollectorError> {
+    let records = source.decode(bytes, Some("application/json"))?;
+    produce_source(state, ctx, source, &records).await
+}
+
+async fn produce_source(
+    state: &AppState,
+    ctx: &NormalizeCtx,
+    source: &impl Source,
+    records: &[serde_json::Value],
+) -> Result<IngestResponse, CollectorError> {
+    let mut ids = Vec::new();
+    for record in records {
+        let event = source.normalize(record, ctx)?;
+        state
+            .producer
+            .produce_source(&event, source.id(), source.is_alert())
+            .await?;
+        ids.push(event.event_id());
+    }
     Ok(IngestResponse { event_ids: ids })
 }
 

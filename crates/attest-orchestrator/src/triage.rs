@@ -383,6 +383,7 @@ impl TriageEngine {
             signature: String::new(),
             alg: String::new(),
             key_id: String::new(),
+            policy_hash: String::new(),
             signed_at: finished_at,
         };
         if let Err(e) = self
@@ -536,6 +537,7 @@ impl TriageEngine {
                             signature: String::new(),
                             alg: String::new(),
                             key_id: String::new(),
+                            policy_hash: String::new(),
                             signed_at: inv_finished,
                         };
                         if let Err(e) = self
@@ -761,6 +763,7 @@ impl TriageEngine {
             signature: String::new(),
             alg: String::new(),
             key_id: String::new(),
+            policy_hash: String::new(),
             signed_at: started_at,
         };
         let finished_at = Utc::now();

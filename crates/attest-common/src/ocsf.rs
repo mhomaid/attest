@@ -19,6 +19,14 @@ pub enum OcsfEvent {
     /// Class 6003 — Cloud API activity
     #[serde(rename = "6003")]
     CloudActivity(CloudActivityEvent),
+
+    /// Class 2004 — Detection Finding (SIEM alerts, cloud findings).
+    #[serde(rename = "2004")]
+    DetectionFinding(DetectionFinding),
+
+    /// Class 4002 — HTTP activity (edge and WAF).
+    #[serde(rename = "4002")]
+    HttpActivity(HttpActivity),
 }
 
 impl OcsfEvent {
@@ -26,6 +34,8 @@ impl OcsfEvent {
         match self {
             OcsfEvent::Authentication(e) => e.event_id,
             OcsfEvent::CloudActivity(e) => e.event_id,
+            OcsfEvent::DetectionFinding(e) => e.event_id,
+            OcsfEvent::HttpActivity(e) => e.event_id,
         }
     }
 
@@ -33,6 +43,8 @@ impl OcsfEvent {
         match self {
             OcsfEvent::Authentication(e) => &e.tenant_id,
             OcsfEvent::CloudActivity(e) => &e.tenant_id,
+            OcsfEvent::DetectionFinding(e) => &e.tenant_id,
+            OcsfEvent::HttpActivity(e) => &e.tenant_id,
         }
     }
 
@@ -40,6 +52,8 @@ impl OcsfEvent {
         match self {
             OcsfEvent::Authentication(e) => e.time,
             OcsfEvent::CloudActivity(e) => e.time,
+            OcsfEvent::DetectionFinding(e) => e.time,
+            OcsfEvent::HttpActivity(e) => e.time,
         }
     }
 }
@@ -90,6 +104,44 @@ pub struct CloudActivityEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
     /// Fields this source did not map, under `unmapped.<prefix>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmapped: Option<serde_json::Value>,
+}
+
+/// OCSF 1.3 Detection Finding (class 2004). SIEM alerts land here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectionFinding {
+    pub event_id: Uuid,
+    pub time: DateTime<Utc>,
+    pub tenant_id: String,
+    pub severity: Severity,
+    pub title: String,
+    /// Vendor event or definition id.
+    pub finding_uid: String,
+    pub priority: Option<i64>,
+    pub actor: Actor,
+    pub cloud: Cloud,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmapped: Option<serde_json::Value>,
+}
+
+/// OCSF 1.3 HTTP Activity (class 4002). Edge and WAF events land here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpActivity {
+    pub event_id: Uuid,
+    pub time: DateTime<Utc>,
+    pub tenant_id: String,
+    pub severity: Severity,
+    pub actor: Actor,
+    pub cloud: Cloud,
+    pub http_path: String,
+    pub http_status: Option<String>,
+    pub src_ip: Option<String>,
+    pub disposition: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unmapped: Option<serde_json::Value>,
 }

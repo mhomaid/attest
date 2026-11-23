@@ -391,7 +391,7 @@ Only after the log and the self-host path are something we can defend.
 
 | Item | Outcome | Today |
 |---|---|---|
-| More sources | Okta, Entra, EDR on the same OCSF collector | CloudTrail is the first `Source`. Other vendors are not wired. |
+| More sources | Okta, Entra, EDR on the same OCSF collector | Graylog alerts and edge firewall/audit JSON are implemented and off until `ATTEST_SOURCE_GRAYLOG=on` or `ATTEST_SOURCE_EDGE=on`. CloudTrail remains the default ingest. |
 | Live Hunter / Responder | Hunt and planned-containment exercised against a real model in CI | Endpoints exist; fallback is a signed envelope without an LLM |
 | Responder connectors | Recorded actions can be executed against a real IdP / EDR, still shadow-checked | Planned only; nothing is sent to a vendor API |
 | Eval harness (`eval/`) | Golden cases gate classifier + investigator quality in CI | Scripted investigator scoring runs in CI. It does not yet fail the build when the shipped classifier misses a labeled case. |

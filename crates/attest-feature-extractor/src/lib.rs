@@ -121,6 +121,8 @@ impl FeatureExtractor {
         let (severity_score, source_class_id) = match event {
             OcsfEvent::Authentication(e) => (severity_to_score(&e.severity), 3002.0),
             OcsfEvent::CloudActivity(e) => (severity_to_score(&e.severity), 6003.0),
+            OcsfEvent::DetectionFinding(e) => (severity_to_score(&e.severity), 2004.0),
+            OcsfEvent::HttpActivity(e) => (severity_to_score(&e.severity), 4002.0),
         };
 
         AlertFeatures {

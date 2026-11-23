@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_subscriber::{fmt, EnvFilter};
 
+mod commerce;
 mod control;
 mod generator;
 mod scenarios;

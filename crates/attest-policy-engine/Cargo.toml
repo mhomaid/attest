@@ -6,8 +6,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+attest-attestation = { path = "../attest-attestation" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 

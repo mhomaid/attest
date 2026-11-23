@@ -120,6 +120,7 @@ impl ShadowChecker {
             recent_actions_last_hour: 0,
             blast_radius: 1,
             tenant_allows_automation: self.tenant_allows_automation,
+            ..PolicyContext::default()
         };
 
         match authorize(&AgentRole::Triager, "triager_auto_close", &ctx) {
@@ -180,6 +181,7 @@ impl ShadowChecker {
             recent_actions_last_hour: 0,
             blast_radius,
             tenant_allows_automation: self.tenant_allows_automation,
+            ..PolicyContext::default()
         };
         match authorize(&AgentRole::Responder, tool_id, &ctx) {
             PolicyDecision::Allow => ShadowCheckDecision {

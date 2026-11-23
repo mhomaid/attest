@@ -209,6 +209,7 @@ fn seal_envelope(evidence: HybridEvidence, verdict: Verdict) -> (AttestationEnve
         signed_at: now,
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
     };
     let signer = LocalKey::generate();
     signer.sign(&mut env);

@@ -30,8 +30,57 @@ pub async fn dispatch(
         "idp_revoke_session" => planned_action("idp_revoke_session", args).await,
         "edr_isolate_host" => planned_action("edr_isolate_host", args).await,
         "firewall_block_ioc" => planned_action("firewall_block_ioc", args).await,
+        "graylog_search" => graylog_search(args).await,
         other => anyhow::bail!("unknown tool: {other}"),
     }
+}
+
+async fn graylog_search(args: &Value) -> Result<Value> {
+    let query = crate::graylog_search::SearchQuery {
+        query: args["query"].as_str().unwrap_or("").to_string(),
+        from_unix: args["from"].as_i64().unwrap_or(0),
+        to_unix: args["to"].as_i64().unwrap_or(0),
+        limit: args["limit"].as_u64().unwrap_or(20),
+    };
+    crate::graylog_search::validate(&query).map_err(|e| anyhow::anyhow!(e))?;
+    let url = std::env::var("ATTEST_GRAYLOG_URL")
+        .map_err(|_| anyhow::anyhow!("graylog search is not configured"))?;
+    let token = std::env::var("ATTEST_GRAYLOG_TOKEN").unwrap_or_default();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| anyhow::anyhow!(e))?;
+    let response = client
+        .get(format!(
+            "{url}/api/search/universal/absolute?query={}&limit={}",
+            urlencoding_query(&query.query),
+            query.limit
+        ))
+        .header("X-Requested-By", "attest")
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("graylog search failed: {e}"))?;
+    let status = response.status().as_u16();
+    let body = response.text().await.unwrap_or_default();
+    crate::graylog_search::search(
+        &query,
+        crate::graylog_search::UpstreamReply { status, body },
+    )
+    .map_err(|e| anyhow::anyhow!(e))
+}
+
+fn urlencoding_query(query: &str) -> String {
+    let mut out = String::new();
+    for b in query.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b':' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 async fn query_hot_tier(args: &Value) -> Result<Value> {

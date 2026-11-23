@@ -14,6 +14,17 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "4242".into())
         .parse()?;
 
+    let policy = match std::env::var("ATTEST_POLICY_FILE") {
+        Ok(path) => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| anyhow::anyhow!("invalid policy file: {path}: {e}"))?;
+            attest_policy_engine::file::PolicyFile::parse(&text).map_err(|e| anyhow::anyhow!(e))?
+        }
+        Err(_) => attest_policy_engine::file::PolicyFile::builtin(),
+    };
+    policy.install();
+    tracing::info!(hash = %policy.hash(), "policy file loaded");
+
     let registry = default_registry();
     let secret = std::env::var(attest_service_auth::SERVICE_AUTH_ENV).unwrap_or_default();
     let router = attest_service_auth::protect(

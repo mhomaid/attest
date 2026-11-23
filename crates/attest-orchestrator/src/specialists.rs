@@ -237,6 +237,7 @@ pub async fn run_hunt(
         signature: String::new(),
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
         signed_at: finished_at,
     };
     log.sign_and_append(signer, &mut envelope).await?;
@@ -413,6 +414,7 @@ pub async fn run_respond(
         signature: String::new(),
         alg: String::new(),
         key_id: String::new(),
+        policy_hash: String::new(),
         signed_at: finished_at,
     };
     log.sign_and_append(signer, &mut envelope).await?;

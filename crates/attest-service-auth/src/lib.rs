@@ -216,7 +216,7 @@ pub fn protect_ingest(router: Router, secret: impl Into<String>) -> Router {
 
 async fn check_ingest(secret: String, req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
-    if path != "/ingest" && path != "/ingest/s3" {
+    if !ingest_path_requires_hmac(&path) {
         return next.run(req).await;
     }
     let (parts, body) = req.into_parts();
@@ -247,6 +247,11 @@ async fn check_ingest(secret: String, req: Request, next: Next) -> Response {
     }
     let req = Request::from_parts(parts, Body::from(bytes));
     next.run(req).await
+}
+
+/// `/ingest` and every path under it require the body HMAC. `/healthz` does not.
+pub fn ingest_path_requires_hmac(path: &str) -> bool {
+    path == "/ingest" || path.starts_with("/ingest/")
 }
 
 fn unix_now() -> i64 {
@@ -423,9 +428,35 @@ mod tests {
 
     fn ingest_app(secret: &str) -> Router {
         protect_ingest(
-            Router::new().route("/ingest", post(|| async { StatusCode::OK })),
+            Router::new()
+                .route("/ingest", post(|| async { StatusCode::OK }))
+                .route("/ingest/graylog", post(|| async { StatusCode::OK }))
+                .route("/healthz", get(|| async { StatusCode::OK })),
             secret,
         )
+    }
+
+    #[tokio::test]
+    async fn graylog_ingest_without_hmac_is_rejected() {
+        let status = status_of(
+            ingest_app(SECRET),
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/ingest/graylog")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let health = status_of(
+            ingest_app(SECRET),
+            axum::http::Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(health, StatusCode::OK);
     }
 
     #[tokio::test]

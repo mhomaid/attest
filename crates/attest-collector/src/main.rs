@@ -4,8 +4,11 @@
 //!   attest-collector serve          # Start HTTP ingest server on PORT (default 4000)
 //!   attest-collector ingest-file <path>   # One-shot file ingest
 
+mod edge;
 mod error;
+mod graylog;
 mod http;
+mod mapping;
 mod normalizer;
 mod producer;
 mod s3;
@@ -95,15 +98,20 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn serve(producer: Arc<EventProducer>, tenant_id: &str, port: u16) -> anyhow::Result<()> {
+    let mapping = crate::mapping::FieldMapping::load_from_env();
+    tracing::info!(prefix = %mapping.prefix, "field mapping loaded");
     let state = AppState {
         producer,
         tenant_id: tenant_id.to_string(),
+        mapping,
     };
 
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/ingest", post(ingest))
         .route("/ingest/s3", post(ingest_s3))
+        .route("/ingest/graylog", post(crate::http::ingest_graylog))
+        .route("/ingest/edge", post(crate::http::ingest_edge))
         .with_state(state);
 
     let secret = std::env::var(attest_service_auth::INGEST_HMAC_ENV).unwrap_or_default();
@@ -139,6 +147,7 @@ async fn ingest_file(
     let dummy_state = crate::http::AppState {
         producer,
         tenant_id: tenant_id.to_string(),
+        mapping: crate::mapping::FieldMapping::builtin(),
     };
 
     let events = normalize_cloudtrail(&raw, tenant_id)?;

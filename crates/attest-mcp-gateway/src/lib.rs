@@ -6,6 +6,7 @@
 //! - Dispatch to internal Attest tools
 //! - Rate-limit per agent/tenant
 
+pub mod graylog_search;
 pub mod registry;
 pub mod server;
 pub mod tools;
