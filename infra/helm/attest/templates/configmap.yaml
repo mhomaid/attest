@@ -6,8 +6,16 @@ metadata:
     {{- include "attest.labels" . | nindent 4 }}
 data:
   TENANT_ID: {{ .Values.env.TENANT_ID | quote }}
-  KAFKA_BROKERS: {{ .Values.env.KAFKA_BROKERS | quote }}
-  CLICKHOUSE_URL: {{ .Values.env.CLICKHOUSE_URL | quote }}
+  KAFKA_BROKERS: {{ include "attest.kafkaBrokers" . | quote }}
+  KAFKA_SECURITY_PROTOCOL: {{ .Values.kafka.securityProtocol | quote }}
+  {{- if .Values.kafka.saslMechanism }}
+  KAFKA_SASL_MECHANISM: {{ .Values.kafka.saslMechanism | quote }}
+  {{- end }}
+  {{- if .Values.kafka.awsRegion }}
+  KAFKA_AWS_REGION: {{ .Values.kafka.awsRegion | quote }}
+  {{- end }}
+  ATTEST_TOPIC_PREFIX: {{ .Values.env.ATTEST_TOPIC_PREFIX | default "attest" | quote }}
+  CLICKHOUSE_URL: {{ include "attest.clickhouseUrl" . | quote }}
   RISINGWAVE_HOST: {{ .Values.env.RISINGWAVE_HOST | quote }}
   RISINGWAVE_PORT: {{ .Values.env.RISINGWAVE_PORT | quote }}
   ICEBERG_WAREHOUSE: {{ .Values.env.ICEBERG_WAREHOUSE | quote }}
@@ -17,3 +25,15 @@ data:
   S3_BUCKET: {{ .Values.objectStore.bucket | quote }}
   S3_REGION: {{ .Values.objectStore.region | quote }}
   TABLE_PREFIX: cloudtrail
+  ATTEST_AUTH_PASSWORD: {{ .Values.auth.password | quote }}
+  {{- with .Values.auth.oidc }}
+  {{- if .issuer }}
+  ATTEST_OIDC_ISSUER: {{ .issuer | quote }}
+  {{- end }}
+  {{- if .clientId }}
+  ATTEST_OIDC_CLIENT_ID: {{ .clientId | quote }}
+  {{- end }}
+  ATTEST_OIDC_ROLE_CLAIM: {{ .roleClaim | quote }}
+  ATTEST_OIDC_DEFAULT_ROLE: {{ .defaultRole | quote }}
+  ATTEST_OIDC_LABEL: {{ .label | quote }}
+  {{- end }}

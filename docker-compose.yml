@@ -234,6 +234,7 @@ services:
       AWS_REGION: custom
       AWS_ENDPOINT_URL: http://garage:3900
       COLLECTOR_S3_ALLOWED_BUCKETS: attest-cloudtrail
+      ATTEST_INGEST_HMAC_SECRET: dev-only-ingest-hmac-secret
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-collector
     depends_on:
@@ -260,6 +261,7 @@ services:
       ORCHESTRATOR_URL: http://orchestrator:4300
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-control-plane
+      ATTEST_SERVICE_AUTH_SECRET: dev-only-service-auth-secret
     depends_on:
       - risingwave
       - redpanda
@@ -356,6 +358,7 @@ services:
       INVESTIGATOR_PROMPT_PATH: /agents/investigator/system_prompt_v1.md
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-orchestrator
+      ATTEST_SERVICE_AUTH_SECRET: dev-only-service-auth-secret
       KAFKA_BROKERS: redpanda:9092
       # Must override `.env` (which uses 127.0.0.1 for native runs). Unsloth runs on the host.
       ATTEST_LLM_BASE_URL: ${ATTEST_LLM_DOCKER_BASE_URL:-http://host.docker.internal:8888/v1}
@@ -386,6 +389,7 @@ services:
       KAFKA_BROKERS: redpanda:9092
       DATABASE_URL: postgres://attest:attest@postgres:5432/attest
       ATTEST_WS_JWT_SECRET: ${ATTEST_WS_JWT_SECRET:-dev-ws-jwt-secret-change-me}
+      ATTEST_SERVICE_AUTH_SECRET: dev-only-service-auth-secret
       ATTEST_TRACE_WRITER_GROUP_ID: ${ATTEST_TRACE_WRITER_GROUP_ID:-attest-trace-writer}
       ATTEST_TRACE_WRITER_OFFSET_RESET: ${ATTEST_TRACE_WRITER_OFFSET_RESET:-latest}
     depends_on:
@@ -406,6 +410,7 @@ services:
       ATTEST_LOG_PATH: /data/attestations.ndjson
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-mcp-gateway
+      ATTEST_SERVICE_AUTH_SECRET: dev-only-service-auth-secret
     volumes:
       - attestation-log:/data
     depends_on:
@@ -435,6 +440,7 @@ services:
       KAFKA_BROKERS: redpanda:9092
       LOAD_GEN_PORT: "9100"
       RUST_LOG: info
+      ATTEST_SERVICE_AUTH_SECRET: dev-only-service-auth-secret
     depends_on:
       - redpanda
     profiles:

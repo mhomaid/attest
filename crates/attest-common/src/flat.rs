@@ -22,6 +22,21 @@ pub struct FlatEvent {
     pub api_operation: Option<String>,
     pub api_service: Option<String>,
     pub raw: Option<serde_json::Value>,
+    /// HTTP path (OCSF http_request.url.path). Absent on CloudTrail rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_path: Option<String>,
+    /// HTTP status code, as text so the RisingWave VARCHAR column can ingest it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<String>,
+    /// Source IP, when the event carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub src_ip: Option<String>,
+    /// Autonomous system number, as text (`AS15169`) once enrichment fills it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asn: Option<String>,
+    /// OCSF disposition id or name (for example `Blocked`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<String>,
 }
 
 impl FlatEvent {
@@ -51,6 +66,11 @@ impl FlatEvent {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 raw: e.raw.clone(),
+                http_path: None,
+                http_status: None,
+                src_ip: source_ip(e.raw.as_ref()),
+                asn: None,
+                disposition: None,
             },
             OcsfEvent::CloudActivity(e) => Self {
                 event_id: e.event_id.to_string(),
@@ -66,7 +86,42 @@ impl FlatEvent {
                 api_operation: Some(e.api.operation.clone()),
                 api_service: Some(e.api.service.clone()),
                 raw: e.raw.clone(),
+                http_path: None,
+                http_status: None,
+                src_ip: source_ip(e.raw.as_ref()),
+                asn: None,
+                disposition: None,
             },
         }
+    }
+}
+
+fn source_ip(raw: Option<&serde_json::Value>) -> Option<String> {
+    raw.and_then(|r| r.get("sourceIPAddress"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_flat_json_without_http_fields_still_parses() {
+        let old = r#"{
+            "event_id": "1",
+            "class_uid": "3002",
+            "time": "2024-01-15T10:30:00Z",
+            "tenant_id": "tenant-a",
+            "actor_user_name": "alice@example.com",
+            "actor_user_uid": "arn:aws:iam::123456789012:user/alice",
+            "cloud_region": "us-east-1",
+            "cloud_account_uid": "123456789012",
+            "severity": "informational"
+        }"#;
+        let event: FlatEvent = serde_json::from_str(old).unwrap();
+        assert!(event.http_path.is_none());
+        assert!(event.src_ip.is_none());
+        assert!(event.disposition.is_none());
     }
 }

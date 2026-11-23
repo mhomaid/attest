@@ -1,4 +1,4 @@
-.PHONY: help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
+.PHONY: dataset-fetch eval-investigator eval-investigator-ci help dev-up-infra dev-up-services dev-up-all dev-down-infra dev-down-all smoke seed-data fmt test lint check-hygiene train-classifier run-calibration run-mcp-gateway run-control-plane run-workbench-api run-orchestrator run-orchestrator-local run-orchestrator-cloud railway-login railway-setup railway-domain railway-status railway-logs railway-stop railway-infra-stop railway-infra railway-infra-config railway-infra-deploy railway-app-start railway-full-deploy prod pause resume down helm-template helm-kubeconform tf-validate e2e-phase1 e2e-phase2 e2e-phase3 e2e-phase4a e2e-phase4b e2e-phase5 e2e-phase6 e2e-phase7 e2e-phase7-live e2e-run-phase e2e-all-offline e2e-all-platform arroyo-ui redpanda-ui arroyo-deploy e2e-arroyo load-gen-up load-test load-test-burst load-status load-stop load-cli-smoke load-cli-burst load-cli-attack
 .DEFAULT_GOAL := help
 
 # Source repo-root `.env` in native `make run-*` / E2E recipes below.
@@ -47,6 +47,7 @@ run-mcp-gateway: ## Run MCP gateway natively (port 4242) — set CONTROL_PLANE_U
 	$(DOTENV_SH) \
 	CONTROL_PLANE_URL=$${CONTROL_PLANE_URL:-http://localhost:8080} \
 	  MCP_GATEWAY_PORT=4242 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-mcp-gateway
 
 run-control-plane: ## Run control-plane API natively (port 8080) — requires RisingWave, ClickHouse, Kafka reachable via env
@@ -56,6 +57,7 @@ run-control-plane: ## Run control-plane API natively (port 8080) — requires Ri
 	  CLICKHOUSE_URL=$${CLICKHOUSE_URL:-http://localhost:8123} \
 	  KAFKA_BROKERS=$${KAFKA_BROKERS:-localhost:19092} \
 	  PORT=8080 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-control-plane
 
 run-workbench-api: ## Run workbench trace API (port 4400) — reads ATTEST_LOG_PATH (default ./attestations.ndjson)
@@ -77,6 +79,7 @@ run-orchestrator: ## Run orchestrator natively (local Unsloth LLM path — requi
 	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
 	  ATTEST_LLM_API_KEY=$${ATTEST_LLM_API_KEY} \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-orchestrator
 
 run-orchestrator-local: run-orchestrator ## Alias for run-orchestrator (local Unsloth LLM path)
@@ -93,6 +96,7 @@ run-orchestrator-cloud: ## Run orchestrator natively (Anthropic Sonnet LLM path 
 	  ATTEST_LLM_PROVIDER=anthropic \
 	  ATTEST_LLM_MODEL=claude-sonnet-4-5 \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -p attest-orchestrator
 
 e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans up
@@ -107,6 +111,7 @@ e2e-phase4a: ## Run Phase 4a E2E tests — starts services, runs tests, cleans u
 	  ORCHESTRATOR_PORT=4300 \
 	  CALIBRATION_URL=http://localhost:5001 \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -141,6 +146,7 @@ e2e-phase4b: ## Run Phase 4b E2E tests — hybrid LLM escalation (requires ATTES
 	  ATTEST_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF \
 	  MCP_GATEWAY_URL=http://localhost:4242 \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -183,6 +189,7 @@ e2e-phase5: ## Run Phase 5 E2E tests — hallucination guardrails (ATTEST_GUARDR
 	  GUARDRAIL_MAX_RETRIES=2 \
 	  CROSS_REVIEW_SEVERITY_THRESHOLD=0.85 \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations-p5.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator-p5.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -225,6 +232,7 @@ e2e-phase6: ## Run Phase 6 E2E tests — shadow check + triager auto-close
 	  AUTO_CLOSE_ACTION_CLASSES=login,api_call,file_access \
 	  ATTEST_GUARDRAILS=on \
 	  ATTEST_LOG_PATH=/tmp/attest-test-attestations-p6.ndjson \
+	  ATTEST_SERVICE_AUTH_SECRET=$${ATTEST_SERVICE_AUTH_SECRET:-dev-only-service-auth-secret} \
 	  cargo run -q -p attest-orchestrator > /tmp/attest-orchestrator-p6.log 2>&1 &
 	@echo "==> Waiting for orchestrator to be ready (up to 60s)..."
 	@for i in $$(seq 1 60); do \
@@ -286,7 +294,20 @@ dev-up-ml: ## Start core services + Python ML sidecar
 smoke: ## Quick sanity check: cargo test + bun test + pytest
 	cargo test --workspace
 	bun run test
-	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
+	cd ml && env -u VIRTUAL_ENV uv run pytest datasets/ triager/ test_smoke.py -q
+
+eval-investigator-ci: ## Scripted BOTS-shaped investigator eval (no live model, no network)
+	cd eval && uv run --with pytest python -m pytest bots_eval/test_harness.py -q
+	cd eval && uv run --with pytest python -m bots_eval --out results/investigator-bots.json
+
+eval-investigator: ## Live investigator eval. Needs ATTEST_EVAL_LIVE=1 plus LLM, ClickHouse and MCP URLs.
+	cd eval && uv run --with pytest python -m bots_eval --live --out results/investigator-bots.json
+
+dataset-fetch: ## Download one registered dataset into the gitignored cache and verify its checksum
+	@test -n "$(ID)" || (echo "usage: make dataset-fetch ID=<id>" >&2; exit 1)
+	cd ml && env -u VIRTUAL_ENV uv run python -m datasets.fetch --id "$(ID)" \
+		--registry "$(abspath $(if $(REGISTRY),$(REGISTRY),$(CURDIR)/ml/datasets/registry.yaml))" \
+		--cache "$(abspath $(if $(CACHE),$(CACHE),$(CURDIR)/ml/datasets/cache))"
 
 seed-data: ## Seed ~30k synthetic CloudTrail events (benign + attack scenarios) into the running stack
 	cargo run --release -p attest-load-gen -- --brokers localhost:19092 --rate 1000 --duration 30 --scenario mixed --tenants 3 --seed-baselines
@@ -297,7 +318,7 @@ fmt: ## Format all Rust code
 test: ## Run all tests: Rust workspace + JS + Python
 	cargo test --workspace
 	bun run test
-	cd ml && env -u VIRTUAL_ENV uv run pytest triager/ test_smoke.py -q
+	cd ml && env -u VIRTUAL_ENV uv run pytest datasets/ triager/ test_smoke.py -q
 
 lint: ## Lint all code: clippy + bun lint
 	cargo clippy --workspace --all-targets -- -D warnings
@@ -514,10 +535,38 @@ helm-template: ## Render and lint the reference Helm chart
 	  --set objectStore.useIrsa=true \
 	  --set signingKey=00 \
 	  --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::123:role/attest >/dev/null
-	@echo "✔ helm lint + template (static keys and IRSA)"
+	@# Production profile: every secret is referenced from an existing Kubernetes Secret.
+	@# The render must create no Secret object and carry no secret material.
+	@out=$$(helm template attest infra/helm/attest -n attest \
+	  --set objectStore.useIrsa=true \
+	  --set objectStore.existingSecret=attest-objstore \
+	  --set signing.existingSecret=attest-signing \
+	  --set serviceAuth.existingSecret=attest-service-auth \
+	  --set toolCredentials.existingSecret=attest-tool-credentials) || exit 1; \
+	if echo "$$out" | grep -q '^kind: Secret$$'; then echo "prod profile renders a Secret object"; exit 1; fi; \
+	echo "$$out" | grep -q 'secretName: attest-tool-credentials' || { echo "tool credentials secret not mounted"; exit 1; }; \
+	echo "$$out" | grep -q 'name: ATTEST_SECRETS_DIR' || { echo "ATTEST_SECRETS_DIR missing"; exit 1; }
+	@helm lint infra/helm/attest -f infra/helm/attest/values-production.example.yaml
+	@./scripts/tests/helm_hardening_test.sh
+	@echo "✔ helm lint + template (static keys, IRSA, secrets by reference, hardening)"
+
+helm-kubeconform: ## Validate rendered chart manifests against Kubernetes schemas (needs kubeconform)
+	@command -v kubeconform >/dev/null || { echo "kubeconform not installed: https://github.com/yannh/kubeconform#installation"; exit 1; }
+	@for v in ci-values.yaml values-production.example.yaml; do \
+	  echo "kubeconform: $$v"; \
+	  helm template attest infra/helm/attest -n attest -f infra/helm/attest/$$v \
+	    --set devDependencies.postgres.enabled=true \
+	    --set devDependencies.clickhouse.enabled=true \
+	    --set devDependencies.redpanda.enabled=true \
+	  | kubeconform -strict -summary -kubernetes-version 1.31.0 || exit 1; \
+	done
 
 tf-validate: ## terraform fmt + validate aws/gcp/azure store modules (no cloud credentials)
 	terraform fmt -check -recursive infra/terraform
+	@if command -v tflint >/dev/null 2>&1; then \
+	  echo "── tflint terraform/aws ──"; \
+	  (cd infra/terraform/aws && tflint --config ../.tflint.hcl --init >/dev/null && tflint --config ../.tflint.hcl) || exit 1; \
+	else echo "tflint not installed; skipping (config: infra/terraform/.tflint.hcl)"; fi
 	@for root in aws gcp azure; do \
 	  echo "── terraform/$$root ──"; \
 	  (cd infra/terraform/$$root && terraform init -backend=false -input=false >/dev/null && terraform validate) || exit 1; \

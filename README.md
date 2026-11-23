@@ -51,15 +51,16 @@ sequenceDiagram
   participant Log as attestation log
   participant CLI as attest verify
 
-  CT->>Col: JSON (POST /ingest or S3)
+  CT->>Col: POST /ingest, HMAC of timestamp and body
   Col->>Bus: OCSF 1.3 event
   Bus->>Det: stream
   Det->>Orch: fired alert
   Orch->>ONNX: 8 features, in-process
   alt structurally novel
-    Orch->>MCP: investigator tools (policy-checked)
+    Orch->>MCP: tools, service token, policy check
   end
   Orch->>Log: Ed25519 envelope + prev_hash
+  Note over Log: NDJSON on disk, and Garage or S3 when configured
   CLI->>Log: recompute hash, check signature, walk chain
 ```
 
@@ -94,6 +95,7 @@ flowchart TB
   end
   subgraph Storage["04 Storage — open formats you own"]
     IB[Iceberg / Parquet]
+    GR[Garage locally, S3 in prod]
     CH[ClickHouse s3]
   end
   subgraph Streaming["05 Streaming — logs in, OCSF on a bus"]
@@ -106,37 +108,40 @@ flowchart TB
     IaC[Compose · Helm · Terraform]
   end
 
-  Col --> RP --> RW
-  RP --> IB
+  Col -->|HMAC| RP --> RW
+  RP --> IB --> GR
   RW --> CP
-  IB --> CH --> CP
+  GR --> CH --> CP
   HQ --> Orch
-  CP --> Orch
+  CP -->|service token| Orch
   Orch --> ONNX
-  Orch --> MCP
+  Orch -->|service token| MCP
   Orch --> Att
+  Att --> GR
   CP --> WB
   Orch --> WB
 ```
 
 ```mermaid
 flowchart LR
-  CT[CloudTrail] --> Col[attest-collector]
+  CT[CloudTrail] -->|HMAC| Col[attest-collector]
   Col --> RP[(Redpanda)]
   RP --> RW[RisingWave hot tier]
-  RP --> PQ[Iceberg on object storage]
+  RP --> PQ[Iceberg on Garage / S3]
   RP --> Det[HELIQL detections]
   PQ --> CH[ClickHouse warm query]
   RW --> CP[control-plane]
   CH --> CP
   Det --> Orch[orchestrator]
-  CP --> Orch
+  CP -->|service token| Orch
   Orch --> ONNX[ONNX classifier]
-  Orch --> MCP[MCP gateway]
-  Orch --> Log[(NDJSON + optional S3)]
+  Orch -->|service token| MCP[MCP gateway]
+  Orch --> Log[(NDJSON + Garage or S3)]
   CP --> WB[workbench]
   Orch --> WB
 ```
+
+Calls between the control plane, orchestrator, MCP gateway, and websocket gateway carry a two-minute service token. The workbench server attaches that token. The browser receives only a short-lived token after sign-in, and `/healthz` stays open. Collector ingest is the exception: it uses an HMAC over the body and a timestamp, and rejects anything older than five minutes. See [docs/19_Service_Auth.md](docs/19_Service_Auth.md).
 
 Object storage is **S3-compatible**. Local Compose uses Garage; a hosted
 deployment should point at S3 or R2. The application talks the S3 API, not a vendor SDK.
@@ -180,8 +185,8 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 
 | Component | Status | Notes |
 |---|---|---|
-| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` (tenant from `X-Tenant-Id`, else `TENANT_ID`). `POST /ingest/s3` or an S3 object-created notification fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. No ingest auth yet: keep the collector on a private network. |
-| RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1 |
+| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` requires an HMAC (`X-Attest-Timestamp`, `X-Attest-Signature`) and rejects replays older than 5 minutes. Tenant from `X-Tenant-Id`, else `TENANT_ID`. `POST /ingest/s3` fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. |
+| RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1. Control-plane, orchestrator, MCP gateway, and ws-gateway require a short-lived service token on every route except `/healthz`. |
 | Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet under `s3://attest-warm/attest/cloudtrail/data/` on Garage. Snapshot commits via iceberg-rust. Phase 2 seeds 10k events and reads them back through ClickHouse `s3()`. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
 | HELIQL detections | Working | 10 rules in `detections/`, each with a positive and a negative fixture. `okta_brute_force` fires at 5 failed Okta logins for one user within 10 minutes. |
@@ -193,7 +198,8 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | Signed attestation envelopes | Working | Ed25519 over SHA-256 of sorted-key canonical JSON |
 | `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
 | Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3 first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
-| Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers. PostHog and Sentry stay off unless `ATTEST_TELEMETRY=on` and that vendor's key is set. |
+| Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers. PostHog and Sentry stay off unless `ATTEST_TELEMETRY=on` and that vendor's key is set. The production image (`apps/workbench/Dockerfile`) defaults to `ATTEST_BUILD_PROFILE=production` and does not include hosted-demo routes. |
+| Hosted demo (marketing, waitlist, Railway) | Working | Opt-in build profile `ATTEST_BUILD_PROFILE=demo` (`infra/railway/workbench.json`). Marketing pages, the waitlist, and Railway config stay out of the production image. |
 | Hunter / responder / coordinator agents | Partial | Coordinator is deterministic routing (`POST /v1/coordinate`), not an LLM planner. Hunter (`POST /v1/hunt`) and Responder (`POST /v1/respond`) are LLM paths with a signed-envelope fallback when no model is configured; not yet exercised against a live model in CI. Responder actions are shadow-checked and only *recorded as planned*: nothing is executed against a real IdP/EDR. |
 | AADF / SIDM / eval harness | Planned | Design docs in `docs/` |
 | Helm / Terraform | Working | Reference chart in `infra/helm/attest`. AWS BYOC module in `infra/terraform/aws` (warm S3 bucket + optional Helm release onto an existing EKS cluster). |
@@ -225,20 +231,25 @@ orchestrator. If either is down, the section says the demo is paused and points 
 verify example instead.
 
 ```sh
-# Health
+# Health stays open. Other routes do not.
 curl -s localhost:4000/healthz
 curl -s localhost:8080/healthz
 
-# Inject a CloudTrail login (then watch the queue)
-curl -s -X POST localhost:4000/ingest -H 'Content-Type: application/json' \
-  -d '{"Records":[{"eventName":"ConsoleLogin","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
-    "awsRegion":"ap-southeast-1","recipientAccountId":"111111111111",
-    "userIdentity":{"type":"IAMUser","userName":"alice@example.com",
-    "arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+# Inject a CloudTrail login. The signature covers the exact body bytes.
+TS=$(date +%s)
+BODY='{"Records":[{"eventName":"ConsoleLogin","eventTime":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","awsRegion":"ap-southeast-1","recipientAccountId":"111111111111","userIdentity":{"type":"IAMUser","userName":"alice@example.com","arn":"arn:aws:iam::111111111111:user/alice","accountId":"111111111111"}}]}'
+SIG=$(printf '%s' "${TS}.${BODY}" | openssl dgst -sha256 -hmac "${ATTEST_INGEST_HMAC_SECRET:-dev-only-ingest-hmac-secret}" | awk '{print $NF}')
+curl -s -X POST localhost:4000/ingest \
+  -H 'Content-Type: application/json' \
+  -H "X-Attest-Timestamp: $TS" \
+  -H "X-Attest-Signature: $SIG" \
+  --data-binary "$BODY"
 
-# Or ~30s of mixed benign + attack traffic
+# Or ~30s of mixed benign + attack traffic, written straight to Kafka
 make seed-data
 ```
+
+Compose sets `ATTEST_INGEST_HMAC_SECRET` and `ATTEST_SERVICE_AUTH_SECRET` to the dev values in `env.example`. A timestamp older than five minutes is rejected. Control-plane, orchestrator, MCP gateway, and ws-gateway require `Authorization: Bearer` with a two-minute token for that service. `/healthz` is the only open route. Details: [docs/19_Service_Auth.md](docs/19_Service_Auth.md).
 
 Classifier artifacts (`ml/triager/artifacts/`) are committed, so you do not need to train to
 triage. To retrain: `make train-classifier`.
@@ -323,6 +334,8 @@ the present tense — the [status table](#status) is the source of truth for tod
 | [10 Build order](docs/10_Build_Order.md) | Phase sequence |
 | [12 Workbench](docs/12_Workbench.md) | Analyst UX |
 | [15 Streaming ADR](docs/15_Streaming_Engine_Decision.md) | Arroyo vs Flink vs RisingWave |
+| [18 Object store](docs/18_Object_Store.md) | Garage locally, the cloud's object store in production |
+| [19 Service auth](docs/19_Service_Auth.md) | HS256 service tokens and the ingest HMAC |
 | [phases.md](docs/phases.md) | What actually shipped, phase by phase |
 | [attest CLI](crates/attest-cli/README.md) | `verify` / `replay` flags and exit codes |
 
@@ -360,7 +373,7 @@ Make a clone something you would leave running, not just demo.
 
 | Item | Outcome | Today |
 |---|---|---|
-| Authenticated ingest | Per-tenant tokens on the collector | Private-network only; no ingest auth |
+| Authenticated ingest | Per-tenant tokens on the collector | HMAC plus a 5-minute replay window. One shared dev secret, not yet a token per tenant. |
 | Iceberg REST catalog | Restart-safe catalog that is not `MemoryCatalog` + `version-hint.text` | Snapshot reload works; catalog is local |
 | Pinned service images | Compose / Helm tags that do not float | Compose infra images are pinned. App images are still built from source. |
 | S3-native object store path | Garage locally, S3 or R2 when hosted | Local default is Garage. See `docs/18_Object_Store.md`. |
@@ -372,7 +385,7 @@ Only after the log and the self-host path are something we can defend.
 
 | Item | Outcome | Today |
 |---|---|---|
-| More sources | Okta, Entra, EDR on the same OCSF collector | CloudTrail is live |
+| More sources | Okta, Entra, EDR on the same OCSF collector | CloudTrail is the first `Source`. Other vendors are not wired. |
 | Live Hunter / Responder | Hunt and planned-containment exercised against a real model in CI | Endpoints exist; fallback is a signed envelope without an LLM |
 | Responder connectors | Recorded actions can be executed against a real IdP / EDR, still shadow-checked | Planned only; nothing is sent to a vendor API |
 | Eval harness (`eval/`) | Golden cases gate classifier + investigator quality in CI | Directory exists; harness is not built |

@@ -15,7 +15,13 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
 
     let registry = default_registry();
-    let router = build_router(registry).layer(from_fn(attest_telemetry::axum_trace_propagation));
+    let secret = std::env::var(attest_service_auth::SERVICE_AUTH_ENV).unwrap_or_default();
+    let router = attest_service_auth::protect(
+        build_router(registry),
+        secret,
+        attest_service_auth::AUDIENCE_MCP_GATEWAY,
+    )
+    .layer(from_fn(attest_telemetry::axum_trace_propagation));
 
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!(port, "MCP gateway listening");

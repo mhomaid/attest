@@ -50,6 +50,11 @@ path = "tests/phase7_live_investigator.rs"
 name = "phase8_workbench_ws"
 path = "tests/phase8_workbench_ws.rs"
 
+[dependencies]
+attest-service-auth = { path = "../../crates/attest-service-auth" }
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = { workspace = true }
+
 [dev-dependencies]
 chrono = { workspace = true }
 futures-util = "0.3"

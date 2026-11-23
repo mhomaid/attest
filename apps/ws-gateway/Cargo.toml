@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 attest-attestation = { path = "../../crates/attest-attestation" }
+attest-service-auth = { path = "../../crates/attest-service-auth" }
 axum = { workspace = true, features = ["ws"] }
 jsonwebtoken = "9"
 rdkafka = { workspace = true }

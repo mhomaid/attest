@@ -117,6 +117,18 @@ async fn main() -> anyhow::Result<()> {
 
             tracing::info!("ensuring Kafka topic 'cloudtrail'");
             ensure_kafka_topic(&kafka_brokers, "cloudtrail").await;
+            let prefix = std::env::var("ATTEST_TOPIC_PREFIX").unwrap_or_else(|_| "attest".into());
+            let prefix = if prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                && !prefix.is_empty()
+            {
+                prefix
+            } else {
+                "attest".into()
+            };
+            ensure_kafka_topic(&kafka_brokers, &format!("{prefix}.raw.cloudtrail")).await;
+            ensure_kafka_topic(&kafka_brokers, &format!("{prefix}.alerts")).await;
 
             if let Err(e) = apply_phase1_ddl(&db, &kafka_brokers).await {
                 tracing::warn!("DDL warning (continuing): {e}");
@@ -166,6 +178,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(Any);
 
     // ── Router ───────────────────────────────────────────────────────────────
+    let secret = std::env::var(attest_service_auth::SERVICE_AUTH_ENV).unwrap_or_default();
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/events/recent", get(get_recent_event))
@@ -176,9 +189,11 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state)
         .route("/v1/warm/query", post(post_warm_query))
         .with_state(warm_client)
-        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
-        .layer(cors)
-        .layer(from_fn(attest_telemetry::axum_trace_propagation));
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()));
+    let app =
+        attest_service_auth::protect(app, secret, attest_service_auth::AUDIENCE_CONTROL_PLANE)
+            .layer(cors)
+            .layer(from_fn(attest_telemetry::axum_trace_propagation));
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("attest-control-plane listening on {addr}");

@@ -3,6 +3,9 @@ builder = "DOCKERFILE"
 # run `railway up` from apps/workbench/ — Railway archives that directory
 # so the Dockerfile path is relative to apps/workbench/
 dockerfilePath = "Dockerfile"
+# Hosted demo. Railway passes this service variable through as a Docker build
+# arg (also recorded in infra/railway/workbench.json). The Dockerfile defaults
+# to production, which omits marketing pages, the waitlist, and this file.
 
 [deploy]
 startCommand = "node server.js"

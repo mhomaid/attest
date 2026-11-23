@@ -1,6 +1,6 @@
 apiVersion: v2
 name: attest
-description: Reference chart for a self-hosted Attest control + data plane. Does not install Kafka, RisingWave, ClickHouse, or object storage.
+description: Reference chart for a self-hosted Attest control + data plane. Points at external Kafka, ClickHouse, Postgres and S3; optional dev-only bundles are off by default.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

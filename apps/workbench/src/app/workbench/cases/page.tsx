@@ -4,6 +4,7 @@ import { StatusBadge } from "@/components/workbench/status-badge";
 import { parseFiredDetections } from "@/lib/detection-to-alert";
 import { enrichAlertsWithPersisted } from "@/lib/server/enrich-alert";
 import type { Alert } from "@/lib/mock-data";
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,10 @@ async function fetchCases(): Promise<{
   status: LiveStatus;
 }> {
   try {
-    const res = await fetch(`${CP_URL}/v1/detections/fired`, {
+    const res = await fetch(`${CP_URL}/v1/detections/fired`, withServiceAuth(AUDIENCE.controlPlane, {
       cache: "no-store",
       signal: AbortSignal.timeout(1500),
-    });
+    }));
     if (!res.ok) return { cases: [], status: "offline" };
     const data = await res.json();
     const parsed = parseFiredDetections(data);

@@ -9,6 +9,7 @@ mod http;
 mod normalizer;
 mod producer;
 mod s3;
+mod source;
 
 use std::sync::Arc;
 
@@ -105,9 +106,11 @@ async fn serve(producer: Arc<EventProducer>, tenant_id: &str, port: u16) -> anyh
         .route("/ingest/s3", post(ingest_s3))
         .with_state(state);
 
+    let secret = std::env::var(attest_service_auth::INGEST_HMAC_ENV).unwrap_or_default();
     let app = Router::new()
         .merge(api)
-        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()));
+    let app = attest_service_auth::protect_ingest(app, secret)
         .layer(from_fn(attest_telemetry::axum_trace_propagation));
 
     let addr = format!("0.0.0.0:{port}");

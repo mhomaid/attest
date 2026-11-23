@@ -83,10 +83,12 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("DATABASE_URL unset; durable trace writer disabled");
     }
 
+    let secret = std::env::var(attest_service_auth::SERVICE_AUTH_ENV).unwrap_or_default();
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/ws/cases/{case_id}/trace", get(ws_trace))
         .with_state(state);
+    let app = attest_service_auth::protect(app, secret, attest_service_auth::AUDIENCE_WS_GATEWAY);
 
     let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;

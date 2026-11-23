@@ -33,19 +33,21 @@ async fn wait_for_orchestrator(client: &Client, url: &str) {
 }
 
 async fn post_triage(client: &Client, url: &str, alert: Value) -> Value {
-    client
-        .post(format!("{url}/triage"))
-        .json(&json!({
-            "case_id": Uuid::new_v4().to_string(),
-            "tenant_id": "e2e-tenant",
-            "alert": alert,
-        }))
-        .send()
-        .await
-        .expect("triage request failed")
-        .json::<Value>()
-        .await
-        .expect("failed to parse triage response")
+    e2e_tests::authed(
+        client.post(format!("{url}/triage")),
+        e2e_tests::AUDIENCE_ORCHESTRATOR,
+    )
+    .json(&json!({
+        "case_id": Uuid::new_v4().to_string(),
+        "tenant_id": "e2e-tenant",
+        "alert": alert,
+    }))
+    .send()
+    .await
+    .expect("triage request failed")
+    .json::<Value>()
+    .await
+    .expect("failed to parse triage response")
 }
 
 // ── Test 1 ────────────────────────────────────────────────────────────────────

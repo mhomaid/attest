@@ -1,5 +1,5 @@
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { requirePermission } from "@/lib/authz";
+import { AUDIENCE, withServiceAuth } from "@/lib/service-auth";
 import { NextResponse } from "next/server";
 
 const ORCHESTRATOR_URL =
@@ -9,11 +9,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ caseId: string }> },
 ) {
-  const hdrs = await headers();
-  const session = await auth.api.getSession({ headers: hdrs });
-  if (!session?.user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authz = await requirePermission("case.override");
+  if (!authz.ok) return authz.response;
 
   const { caseId } = await params;
   let body: unknown;
@@ -23,20 +20,19 @@ export async function POST(
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
 
-  const email = session.user.email ?? "";
-
   try {
     const res = await fetch(
       `${ORCHESTRATOR_URL.replace(/\/$/, "")}/v1/cases/${encodeURIComponent(caseId)}/override`,
-      {
+      withServiceAuth(AUDIENCE.orchestrator, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Actor-Id": session.user.id,
-          "X-Actor-Email": email,
+          "X-Actor-Id": authz.user.id,
+          "X-Actor-Email": authz.user.email,
+          "X-Actor-Role": authz.role,
         },
         body: JSON.stringify(body),
-      },
+      }),
     );
 
     const data = await res.json().catch(() => ({

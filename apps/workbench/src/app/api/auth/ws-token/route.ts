@@ -1,6 +1,5 @@
-import { auth } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz";
 import { SignJWT } from "jose";
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 const DEFAULT_TENANT = "default";
@@ -12,11 +11,8 @@ function getWsSecret(): Uint8Array {
 
 /** POST { case_id: string } — short-lived HS256 JWT for trace WebSocket upgrade. */
 export async function POST(req: Request) {
-  const hdrs = await headers();
-  const session = await auth.api.getSession({ headers: hdrs });
-  if (!session?.user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authz = await requirePermission("case.view");
+  if (!authz.ok) return authz.response;
 
   let body: { case_id?: string };
   try {
@@ -30,10 +26,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "case_id required" }, { status: 400 });
   }
 
-  const email = session.user.email ?? "";
   const token = await new SignJWT({
-    sub: session.user.id,
-    email,
+    sub: authz.user.id,
+    email: authz.user.email,
     tenant_id: DEFAULT_TENANT,
     case_id,
   })

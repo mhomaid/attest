@@ -53,6 +53,18 @@ jobs:
         working-directory: ml
         run: uv sync --frozen && uv run pytest triager/ test_smoke.py -q
 
+      - name: Investigator eval (scripted model)
+        working-directory: eval
+        run: |
+          uv run --with pytest python -m pytest bots_eval/test_harness.py -q
+          uv run --with pytest python -m bots_eval --out results/investigator-bots.json
+
+      - name: Upload investigator eval result
+        uses: actions/upload-artifact@v4
+        with:
+          name: investigator-bots
+          path: eval/results/investigator-bots.json
+
   typescript:
     name: TypeScript (bun · typecheck · lint)
     runs-on: ubuntu-latest
@@ -77,6 +89,30 @@ jobs:
 
       - name: Test
         run: bun run test
+
+  helm:
+    name: Helm (lint · template · kubeconform)
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.6.7
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: helm lint + template + hardening checks
+        run: make helm-template
+
+      - name: kubeconform schema check
+        run: make helm-kubeconform
 
   integration:
     name: Integration (docker-compose smoke)
@@ -147,11 +183,33 @@ jobs:
         working-directory: apps/workbench
         run: bunx playwright install --with-deps chromium firefox webkit
 
+      # Generic realm `example` (infra/keycloak/example-realm.json). Services cannot mount
+      # repo files, so Keycloak runs as a plain container started after checkout.
+      - name: Start Keycloak (realm example)
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "$PWD/infra/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.4 start-dev --import-realm
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:8080/realms/example/.well-known/openid-configuration && exit 0
+            sleep 3
+          done
+          docker logs keycloak
+          exit 1
+
       - name: Run Playwright E2E
         working-directory: apps/workbench
         env:
+          ATTEST_E2E_OIDC: "1"
+          ATTEST_E2E_KEYCLOAK_URL: http://localhost:8080
           DATABASE_URL: postgres://attest:attest@localhost:5432/attest
           ALLOW_AUTH_SEED: "1"
           AUTH_SEED_SECRET: ci-auth-seed-secret
           BETTER_AUTH_SECRET: local-dev-better-auth-secret-min-32-chars!!
         run: bun run e2e
+
+      - name: Keycloak logs on failure
+        if: failure()
+        run: docker logs keycloak --tail 200

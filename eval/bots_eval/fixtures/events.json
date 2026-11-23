@@ -1,0 +1,136 @@
+{
+  "rows": [
+    {
+      "event_id": "evt-0001",
+      "ts": "2024-01-10T09:00:00Z",
+      "sourcetype": "auth",
+      "host": "wks-0007",
+      "user": "jdoe",
+      "src_ip": "192.0.2.10",
+      "dst_ip": "",
+      "action": "login_failed",
+      "message": "bad password"
+    },
+    {
+      "event_id": "evt-0002",
+      "ts": "2024-01-10T09:01:00Z",
+      "sourcetype": "auth",
+      "host": "wks-0007",
+      "user": "jdoe",
+      "src_ip": "192.0.2.10",
+      "dst_ip": "",
+      "action": "login_failed",
+      "message": "bad password"
+    },
+    {
+      "event_id": "evt-0003",
+      "ts": "2024-01-10T09:02:00Z",
+      "sourcetype": "auth",
+      "host": "wks-0007",
+      "user": "jdoe",
+      "src_ip": "192.0.2.10",
+      "dst_ip": "",
+      "action": "login_failed",
+      "message": "bad password"
+    },
+    {
+      "event_id": "evt-0004",
+      "ts": "2024-01-10T09:03:00Z",
+      "sourcetype": "auth",
+      "host": "wks-0007",
+      "user": "jdoe",
+      "src_ip": "192.0.2.10",
+      "dst_ip": "",
+      "action": "login_success",
+      "message": ""
+    },
+    {
+      "event_id": "evt-0005",
+      "ts": "2024-01-10T09:10:00Z",
+      "sourcetype": "netflow",
+      "host": "wks-0007",
+      "user": "jdoe",
+      "src_ip": "192.0.2.10",
+      "dst_ip": "203.0.113.50",
+      "action": "connect",
+      "message": "tcp 443"
+    },
+    {
+      "event_id": "evt-0006",
+      "ts": "2024-01-10T09:20:00Z",
+      "sourcetype": "netflow",
+      "host": "wks-0012",
+      "user": "asmith",
+      "src_ip": "192.0.2.22",
+      "dst_ip": "203.0.113.50",
+      "action": "connect",
+      "message": "tcp 443"
+    },
+    {
+      "event_id": "evt-0007",
+      "ts": "2024-01-10T09:30:00Z",
+      "sourcetype": "auth",
+      "host": "srv-0001",
+      "user": "svc-backup",
+      "src_ip": "198.51.100.23",
+      "dst_ip": "",
+      "action": "login_success",
+      "message": ""
+    },
+    {
+      "event_id": "evt-0008",
+      "ts": "2024-01-10T09:40:00Z",
+      "sourcetype": "dns",
+      "host": "wks-0012",
+      "user": "asmith",
+      "src_ip": "192.0.2.22",
+      "dst_ip": "",
+      "action": "dns_query",
+      "message": "evil.example.net"
+    },
+    {
+      "event_id": "evt-0009",
+      "ts": "2024-01-10T10:00:00Z",
+      "sourcetype": "auth",
+      "host": "wks-0012",
+      "user": "asmith",
+      "src_ip": "192.0.2.22",
+      "dst_ip": "",
+      "action": "login_success",
+      "message": ""
+    },
+    {
+      "event_id": "evt-0010",
+      "ts": "2024-01-10T10:05:00Z",
+      "sourcetype": "process",
+      "host": "wks-0007",
+      "user": "jdoe",
+      "src_ip": "192.0.2.10",
+      "dst_ip": "",
+      "action": "process_start",
+      "message": "tool-x.exe"
+    },
+    {
+      "event_id": "evt-0011",
+      "ts": "2024-01-10T10:06:00Z",
+      "sourcetype": "process",
+      "host": "wks-0012",
+      "user": "asmith",
+      "src_ip": "192.0.2.22",
+      "dst_ip": "",
+      "action": "process_start",
+      "message": "calc.exe"
+    },
+    {
+      "event_id": "evt-0012",
+      "ts": "2024-01-10T10:10:00Z",
+      "sourcetype": "netflow",
+      "host": "srv-0001",
+      "user": "svc-backup",
+      "src_ip": "198.51.100.23",
+      "dst_ip": "192.0.2.99",
+      "action": "connect",
+      "message": "tcp 22"
+    }
+  ]
+}

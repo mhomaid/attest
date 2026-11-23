@@ -227,8 +227,20 @@ export default function LoadPage() {
     if (!mountedRef.current) return;
     if (wsRef.current && wsRef.current.readyState < 2) return; // already open/connecting
 
+    void (async () => {
+      let url = CP_WS_URL;
+      try {
+        const issued = await fetch("/api/auth/service-token?audience=control-plane");
+        if (issued.ok) {
+          const body = (await issued.json()) as { token?: string };
+          if (body.token) url = `${CP_WS_URL}?access_token=${encodeURIComponent(body.token)}`;
+        }
+      } catch {
+        // The socket attempt below records the failure.
+      }
+      if (!mountedRef.current) return;
     try {
-      const ws = new WebSocket(CP_WS_URL);
+      const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -258,6 +270,7 @@ export default function LoadPage() {
         ws.close();
       };
     } catch {/* WebSocket unavailable during SSR — safe to ignore */}
+    })();
   }, [ingestSnapshot]);
 
   useEffect(() => {

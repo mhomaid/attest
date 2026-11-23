@@ -23,7 +23,7 @@ use crate::trace_kafka::{TraceEmit, TracePublisher};
 use anyhow::{Context, Result};
 use attest_attestation::{
     AttestationEnvelope, AttestationLog, CaseState, ClassifierEvidence, EscalationReason,
-    EvidenceBlock, ExecutionPathKind, OverrideEvidence, ShadowCheckDecision, Signer, TimingBlock,
+    EvidenceBlock, ExecutionPathKind, LocalKey, OverrideEvidence, ShadowCheckDecision, TimingBlock,
     Verdict,
 };
 use attest_feature_extractor::FeatureExtractor;
@@ -102,7 +102,7 @@ pub struct TriageEngine {
     novelty: NoveltyDetector,
     calibration: CalibrationClient,
     attestation_log: AttestationLog,
-    signer: Arc<Signer>,
+    signer: Arc<LocalKey>,
     trace_publisher: TracePublisher,
     /// Hex-encoded Ed25519 verifying key — published via `/agent` for offline verification.
     pub verifying_key: String,
@@ -135,7 +135,7 @@ impl TriageEngine {
     #[allow(clippy::too_many_arguments)]
     pub fn load(
         agent: AgentDefinition,
-        signer: Arc<Signer>,
+        signer: Arc<LocalKey>,
         system_prompt: String,
         system_prompt_hash: String,
         reviewer_prompt: String,
@@ -189,7 +189,7 @@ impl TriageEngine {
         &self.attestation_log
     }
 
-    pub fn signer(&self) -> &Signer {
+    pub fn signer(&self) -> &LocalKey {
         &self.signer
     }
 
@@ -381,11 +381,13 @@ impl TriageEngine {
             },
             prev_hash: String::new(),
             signature: String::new(),
+            alg: String::new(),
+            key_id: String::new(),
             signed_at: finished_at,
         };
         if let Err(e) = self
             .attestation_log
-            .sign_and_append(&self.signer, &mut envelope)
+            .sign_and_append(self.signer.as_ref(), &mut envelope)
             .await
         {
             tracing::error!(error = %e, "failed to write attestation log");
@@ -446,7 +448,7 @@ impl TriageEngine {
                 let mut ac_clone = ac_env.clone();
                 if let Err(e) = self
                     .attestation_log
-                    .sign_and_append(&self.signer, &mut ac_clone)
+                    .sign_and_append(self.signer.as_ref(), &mut ac_clone)
                     .await
                 {
                     tracing::error!(error = %e, "failed to write auto-close attestation log");
@@ -532,11 +534,13 @@ impl TriageEngine {
                             },
                             prev_hash: String::new(),
                             signature: String::new(),
+                            alg: String::new(),
+                            key_id: String::new(),
                             signed_at: inv_finished,
                         };
                         if let Err(e) = self
                             .attestation_log
-                            .sign_and_append(&self.signer, &mut inv_env)
+                            .sign_and_append(self.signer.as_ref(), &mut inv_env)
                             .await
                         {
                             tracing::error!(error = %e, "failed to write investigator attestation log");
@@ -755,6 +759,8 @@ impl TriageEngine {
             },
             prev_hash: String::new(),
             signature: String::new(),
+            alg: String::new(),
+            key_id: String::new(),
             signed_at: started_at,
         };
         let finished_at = Utc::now();
@@ -762,7 +768,7 @@ impl TriageEngine {
         envelope.timing.total_ms = (finished_at - started_at).num_milliseconds().max(0) as u64;
         envelope.signed_at = finished_at;
         self.attestation_log
-            .sign_and_append(&self.signer, &mut envelope)
+            .sign_and_append(self.signer.as_ref(), &mut envelope)
             .await?;
         self.trace_publisher
             .scoped(

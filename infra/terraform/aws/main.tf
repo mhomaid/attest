@@ -9,6 +9,11 @@ resource "aws_s3_bucket" "warm" {
   bucket        = local.bucket_name
   force_destroy = var.force_destroy
 
+  # Object Lock can only be enabled at creation for a new bucket (it also
+  # requires versioning, below). With warm_retention_days = 0 no default
+  # retention is applied, so nothing is locked until a writer asks for it.
+  object_lock_enabled = true
+
   tags = {
     Tier = "iceberg-warm"
   }
@@ -25,10 +30,25 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "warm" {
   bucket = aws_s3_bucket.warm.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.attest.arn
     }
     bucket_key_enabled = true
   }
+}
+
+resource "aws_s3_bucket_object_lock_configuration" "warm" {
+  count  = var.warm_retention_days > 0 ? 1 : 0
+  bucket = aws_s3_bucket.warm.id
+
+  rule {
+    default_retention {
+      mode = var.warm_retention_mode
+      days = var.warm_retention_days
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.warm]
 }
 
 resource "aws_s3_bucket_public_access_block" "warm" {
@@ -98,6 +118,13 @@ data "aws_iam_policy_document" "warm" {
     effect    = "Allow"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
     resources = ["${aws_s3_bucket.warm.arn}/*"]
+  }
+
+  statement {
+    sid       = "UseAttestKey"
+    effect    = "Allow"
+    actions   = ["kms:GenerateDataKey", "kms:Decrypt"]
+    resources = [aws_kms_key.attest.arn]
   }
 }
 

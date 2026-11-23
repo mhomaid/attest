@@ -13,6 +13,7 @@ attest-feature-extractor = { path = "../attest-feature-extractor" }
 attest-inference-router = { path = "../attest-inference-router" }
 attest-onnx-runtime = { path = "../attest-onnx-runtime" }
 attest-policy-engine = { path = "../attest-policy-engine" }
+attest-service-auth = { path = "../attest-service-auth" }
 attest-shadow-check = { path = "../attest-shadow-check" }
 attest-telemetry = { path = "../attest-telemetry" }
 axum = { workspace = true }
@@ -37,3 +38,4 @@ utoipa-scalar = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 wiremock = "0.6"
+attest-mcp-gateway = { path = "../attest-mcp-gateway" }

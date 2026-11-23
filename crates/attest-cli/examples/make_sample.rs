@@ -8,8 +8,8 @@ use std::path::Path;
 
 use anyhow::Result;
 use attest_attestation::{
-    AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, Signer, TimingBlock,
-    Verdict, GENESIS_HASH,
+    AttestationEnvelope, ClassifierEvidence, EvidenceBlock, ExecutionPathKind, LocalKey,
+    TimingBlock, Verdict, GENESIS_HASH,
 };
 use attest_feature_extractor::AlertFeatures;
 use attest_onnx_runtime::OnnxClassifier;
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     let model = Path::new("ml/triager/artifacts/model.onnx");
     let model_hash = attest_cli::file_sha256_hex(model)?;
     let classifier = OnnxClassifier::load(model, None)?;
-    let signer = Signer::from_hex_seed(DEMO_SEED)?;
+    let signer = LocalKey::from_hex_seed(DEMO_SEED)?;
 
     let alerts = [
         (0.2, 0.9, 0.1, 14.0, 0.9),
@@ -77,6 +77,8 @@ fn main() -> Result<()> {
             },
             prev_hash: prev.clone(),
             signature: String::new(),
+            alg: String::new(),
+            key_id: String::new(),
             signed_at: at,
         };
         signer.sign(&mut env);

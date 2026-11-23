@@ -55,12 +55,11 @@ async fn post_cloudtrail_login(user: &str, region: &str) -> Option<String> {
     });
 
     let client = reqwest::Client::new();
-    let resp = client
-        .post(format!("{}/ingest", collector_url()))
-        .json(&payload)
-        .send()
-        .await
-        .ok()?;
+    let resp =
+        e2e_tests::signed_ingest(client.post(format!("{}/ingest", collector_url())), &payload)
+            .send()
+            .await
+            .ok()?;
 
     let body: serde_json::Value = resp.json().await.ok()?;
     body["event_ids"]
@@ -75,7 +74,13 @@ async fn poll_event(event_id: &str, timeout: Duration) -> Option<serde_json::Val
     let url = format!("{}/v1/events/recent?id={}", control_plane_url(), event_id);
     poll_until(
         || async {
-            let resp = reqwest::get(&url).await.ok()?;
+            let resp = e2e_tests::authed(
+                reqwest::Client::new().get(&url),
+                e2e_tests::AUDIENCE_CONTROL_PLANE,
+            )
+            .send()
+            .await
+            .ok()?;
             if resp.status().is_success() {
                 resp.json().await.ok()
             } else {
@@ -92,7 +97,13 @@ async fn poll_baseline_region(user: &str, region: &str, timeout: Duration) -> bo
     let url = format!("{}/v1/baselines/user/{}", control_plane_url(), user);
     poll_until(
         || async {
-            let resp = reqwest::get(&url).await.ok()?;
+            let resp = e2e_tests::authed(
+                reqwest::Client::new().get(&url),
+                e2e_tests::AUDIENCE_CONTROL_PLANE,
+            )
+            .send()
+            .await
+            .ok()?;
             if !resp.status().is_success() {
                 return None;
             }

@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+import { passwordAuthEnabled } from "@/lib/auth-config";
 import { WaitlistForm } from "./waitlist-form";
 
 export const metadata = {
@@ -6,5 +8,6 @@ export const metadata = {
 };
 
 export default function WaitlistPage() {
+  if (!passwordAuthEnabled()) notFound();
   return <WaitlistForm />;
 }

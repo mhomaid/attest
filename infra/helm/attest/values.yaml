@@ -1,5 +1,8 @@
 # Reference values. Same container artifacts as Compose / Railway.
-# This chart does not install Redpanda, RisingWave, ClickHouse, or MinIO.
+# Production: point the chart at external Kafka, ClickHouse, Postgres and S3 (below) and
+# reference every credential from a Kubernetes Secret you create out of band.
+# `values-production.example.yaml` is a placeholder overlay to copy into your private repo.
+# Bundled dev dependencies (`devDependencies.*`) are off by default and are not for production.
 
 image:
   registry: ghcr.io/mhomaid
@@ -9,21 +12,32 @@ image:
 
 replicaCount: 1
 
+# Cloud IAM binds to the service account through annotations. Examples (placeholders):
+#   AWS EKS (IRSA / Pod Identity):  eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/attest
+#   GKE Workload Identity:          iam.gke.io/gcp-service-account: attest@example-project.iam.gserviceaccount.com
+#   AKS Workload Identity:          azure.workload.identity/client-id: 00000000-0000-0000-0000-000000000000
+# The role needs: s3 read/write on the warm bucket, kafka-cluster:Connect/ReadData/WriteData
+# (MSK IAM) when kafka.saslMechanism is AWS_MSK_IAM. Annotations carry role names, not secrets.
 serviceAccount:
   create: true
   name: ""
   annotations: {}
-  # eks.amazonaws.com/role-arn: arn:aws:iam::123:role/attest-warm-irsa
+  # Cloud IAM webhooks inject their own projected token, so the default API token is not needed.
+  automountServiceAccountToken: false
 
-# Rust images still run as root (see infra/docker). Workbench is uid 1001.
-# Set runAsNonRoot: true only after those Dockerfiles gain a USER.
+# Pods run as a fixed non-root uid with a read-only root filesystem. Writable paths are the
+# `/tmp` and `/data` emptyDir volumes. Override per service with services.<name>.podSecurityContext.
 podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop: ["ALL"]
 
@@ -35,12 +49,100 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# One PodDisruptionBudget per enabled service. With replicaCount > 1 the budget keeps
+# minAvailable pods; with a single replica it allows one unavailable so node drains are not blocked.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: 1
+
+# NetworkPolicies. A default-deny policy selects every pod of the release; explicit allows
+# open DNS, traffic between the release's own pods, ingress from the ingress controller and
+# egress to the external dependencies. Needs a CNI that enforces NetworkPolicy.
+networkPolicy:
+  enabled: true
+  dns:
+    # Namespace and pod labels of the cluster DNS.
+    namespaceSelector:
+      kubernetes.io/metadata.name: kube-system
+    podSelector:
+      k8s-app: kube-dns
+  ingress:
+    # Namespace of the ingress controller (used for workbench when ingress.enabled).
+    controllerNamespaceSelector:
+      kubernetes.io/metadata.name: ingress-nginx
+    # Extra NetworkPolicyPeer entries allowed to reach the collector (log shippers, webhooks).
+    collectorFrom: []
+  egress:
+    # NetworkPolicyPeer lists. The default allows private (RFC 1918) ranges, which covers
+    # VPC endpoints for MSK, RDS, ClickHouse. Narrow these to your subnet CIDRs.
+    kafka:
+      ports: [9092, 9094, 9096, 9098]
+      to:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+    clickhouse:
+      ports: [8123, 8443, 9000, 9440]
+      to:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+    postgres:
+      ports: [5432]
+      to:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+    # HTTPS to the object store, cloud token services (STS, metadata) and tool APIs.
+    https:
+      ports: [443]
+      to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+    # Extra egress rules appended verbatim (NetworkPolicyEgressRule).
+    extra: []
+
 ingress:
   enabled: false
   className: nginx
   host: attest.example.com
   annotations: {}
   tls: []
+
+# External Kafka. brokers is a comma-separated bootstrap list.
+# securityProtocol: PLAINTEXT | SSL | SASL_SSL. saslMechanism: AWS_MSK_IAM (uses the service
+# account's cloud role, no secret), SCRAM-SHA-512 or PLAIN (credentials from existingSecret,
+# keys: username, password). Empty brokers falls back to env.KAFKA_BROKERS (dev).
+kafka:
+  brokers: ""
+  securityProtocol: PLAINTEXT
+  saslMechanism: ""
+  awsRegion: ""
+  existingSecret: ""
+
+# External ClickHouse. existingSecret keys: user, password (both optional).
+clickhouse:
+  url: ""
+  existingSecret: ""
+
+# External Postgres. existingSecret holds a full connection URL under key `database-url`
+# (for example postgres://attest:<password>@db.example.com:5432/attest?sslmode=verify-full).
+# Never put the URL in values. When the secret is empty the pods get no DATABASE_URL.
+postgres:
+  existingSecret: ""
+
+# Bundled single-replica dependencies for a kind/minikube demo. Off by default.
+# Data lives in emptyDir, auth is disabled, nothing here is production grade.
+devDependencies:
+  postgres:
+    enabled: false
+    image: postgres:18.7-alpine
+  clickhouse:
+    enabled: false
+    image: clickhouse/clickhouse-server:26.10.3
+  redpanda:
+    enabled: false
+    image: redpandadata/redpanda:v26.3.1
 
 objectStore:
   # Empty = AWS default endpoint + IRSA. Set for Garage, another S3
@@ -56,8 +158,46 @@ objectStore:
   secretKey: ""
 
 # Hex Ed25519 seed. Empty → orchestrator mints an ephemeral key (dev only).
+# Production: set signing.existingSecret instead (key: signing-key) and leave this empty.
 signingKey: ""
+signing:
+  existingSecret: ""
 
+# Kubernetes Secret name. Keys: service-auth, ingest-hmac.
+# Empty leaves both env vars unset, so every non-health route returns 401.
+# The chart does not create this secret and does not embed a value.
+serviceAuth:
+  existingSecret: ""
+
+# Tool credentials (MCP tools such as search or enrichment APIs), resolved per tool ID by
+# the SecretSource interface (crates/attest-secrets).
+# existingSecret names a Kubernetes Secret you create out of band. It is mounted read-only
+# as files under mountPath; the key `tool-<tool_id>` holds the credential for `<tool_id>`.
+# Mounted files are re-read on every resolve, so rotating the Secret takes effect without
+# a pod restart (the kubelet refreshes the mount, typically within a minute).
+# Empty leaves the source on `env` (dev). The chart never embeds a credential value.
+toolCredentials:
+  existingSecret: ""
+  mountPath: /var/run/attest/secrets
+
+# Workbench sign-in. Nothing here is a secret; the client secret is read from an existing
+# Kubernetes Secret (key: client-secret) that the chart does not create.
+auth:
+  # "off" disables email/password sign-in and sign-up and the waitlist (SSO only).
+  # Set to "on" only for a local or demo install without an identity provider.
+  password: "off"
+  oidc:
+    # Enabled when issuer, clientId and existingSecret are all set.
+    issuer: ""            # e.g. https://idp.example.com/realms/example
+    clientId: ""          # e.g. attest-workbench
+    existingSecret: ""    # Secret with key: client-secret
+    # Claim that carries viewer | analyst | lead | auditor. Dotted paths work.
+    roleClaim: role
+    # Role for users whose claim has no recognised value.
+    defaultRole: viewer
+    label: Single sign-on
+
+# Optional per service: resources, podSecurityContext (merged over the global one).
 services:
   collector:
     enabled: true
@@ -83,10 +223,16 @@ services:
     enabled: true
     port: 3000
     healthPath: /api/healthz
+    # The workbench image is built for uid 1001.
+    podSecurityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
 
 env:
   TENANT_ID: default
   KAFKA_BROKERS: redpanda:9092
+  ATTEST_TOPIC_PREFIX: attest
   CLICKHOUSE_URL: http://clickhouse:8123
   RISINGWAVE_HOST: risingwave
   RISINGWAVE_PORT: "4566"

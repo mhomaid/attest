@@ -31,11 +31,15 @@ ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_CP_URL=http://localhost:8080
 ARG NEXT_PUBLIC_CP_WS_URL=ws://localhost:8080
 ARG NEXT_PUBLIC_WS_GATEWAY_URL=ws://localhost:4500
+# production drops marketing pages, the waitlist, and Railway config.
+# The hosted demo sets ATTEST_BUILD_PROFILE=demo (infra/railway/workbench.json).
+ARG ATTEST_BUILD_PROFILE=production
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV ATTEST_BUILD_PROFILE=$ATTEST_BUILD_PROFILE
 
-RUN bun run build
+RUN bun scripts/apply-build-profile.ts && bun run build
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3: runner — minimal image, standalone output only

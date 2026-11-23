@@ -320,6 +320,31 @@ mod tests {
     }
 
     #[test]
+    fn injection_in_args_cannot_grant_out_of_role_tool() {
+        // T-015 negative test: authorization depends only on (role, tool, ctx).
+        // Arguments are attacker-controlled when an injection flows through a log
+        // field into a tool call, so they must NEVER influence the decision.
+        // A Triager obeying an injection to call a Responder-only restricted
+        // action stays denied, regardless of what the injected context claims.
+        let mut c = ctx();
+        c.calibrated_confidence = 1.0; // max confidence must not help
+        for tool in [
+            "idp_revoke_session",
+            "edr_isolate_host",
+            "firewall_block_ioc",
+        ] {
+            assert!(
+                !authorize(&AgentRole::Triager, tool, &c).is_allowed(),
+                "Triager must never be authorised for out-of-role tool {tool}"
+            );
+            assert!(
+                !authorize(&AgentRole::Investigator, tool, &c).is_allowed(),
+                "Investigator must never be authorised for out-of-role tool {tool}"
+            );
+        }
+    }
+
+    #[test]
     fn poisoned_tool_result_denied() {
         let clean = serde_json::json!({"rows": [{"id": "e1"}], "total": 1});
         assert!(inspect_tool_result(&clean).is_allowed());
