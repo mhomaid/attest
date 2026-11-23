@@ -7,6 +7,7 @@
 mod edge;
 mod error;
 mod graylog;
+mod guardduty;
 mod http;
 mod mapping;
 mod normalizer;
@@ -112,6 +113,7 @@ async fn serve(producer: Arc<EventProducer>, tenant_id: &str, port: u16) -> anyh
         .route("/ingest/s3", post(ingest_s3))
         .route("/ingest/graylog", post(crate::http::ingest_graylog))
         .route("/ingest/edge", post(crate::http::ingest_edge))
+        .route("/ingest/guardduty", post(crate::http::ingest_guardduty))
         .with_state(state);
 
     let secret = std::env::var(attest_service_auth::INGEST_HMAC_ENV).unwrap_or_default();

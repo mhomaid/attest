@@ -1,6 +1,7 @@
 pub mod edge;
 pub mod error;
 pub mod graylog;
+pub mod guardduty;
 pub mod http;
 pub mod mapping;
 pub mod normalizer;

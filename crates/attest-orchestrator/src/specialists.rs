@@ -359,6 +359,11 @@ pub async fn run_respond(
         }
     }
 
+    let would_have = executed;
+    if crate::shadow_check::mode_is_shadow(std::env::var("ATTEST_MODE").ok().as_deref()) {
+        executed = false;
+    }
+
     let latency_ms = t0.elapsed().as_millis() as u64;
     let finished_at = Utc::now();
     let evidence = LlmEvidence {
@@ -378,8 +383,8 @@ pub async fn run_respond(
         intermediate_beliefs: vec![IntermediateBelief {
             iteration: 0,
             content_summary: format!(
-                "{} {} on {} — shadow allowed={} executed={}",
-                req.action, req.target, tenant_id, shadow_check.allowed, executed
+                "{} {} on {} — shadow allowed={} executed={} would_have={}",
+                req.action, req.target, tenant_id, shadow_check.allowed, executed, would_have
             ),
             self_reported_confidence: Some(req.calibrated_confidence),
             timestamp: Utc::now(),

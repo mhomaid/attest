@@ -243,7 +243,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - Commit `02c10bd` on `feat/t012-signer`. Status stays `review` until a second model reads the diff and `verify.sh full` passes. T-013 can start from this commit.
 
 ### T-013 — Anchor the chain tip so tail truncation is detected
-- status: todo
+- status: review
 - milestone: M1
 - area: attestation
 - model tier: A · review: A (second model)
@@ -252,13 +252,16 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 
 **Acceptance criteria**
 - [ ] Every N minutes (config) the orchestrator writes `{seq, tip_hash, signed_at, key_id}` signed to an object store prefix intended for object lock
-- [ ] `attest verify --anchors <uri>` fails when rows after the last anchor are missing — test: delete the last 3 envelopes → verify fails with "truncated after seq X"
-- [ ] Optional webhook posts each anchor to an external channel (off by default)
-- [ ] Docs explain enabling S3 Object Lock in compliance mode
+- [x] `attest verify --anchors <uri>` fails when rows after the last anchor are missing — test: delete the last 3 envelopes → verify fails with "truncated after seq X"
+- [x] Optional webhook posts each anchor to an external channel (off by default)
+- [x] Docs explain enabling S3 Object Lock in compliance mode
 
 **Plan:**
+- `sign_anchor` / `check_anchor` in `attest-attestation`. CLI flag `--anchors`. Webhook stays off unless `ATTEST_ANCHOR_WEBHOOK` is set. `docs/21_Chain_Anchors.md`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `delete_last_three_fails_truncated_after_seq` expects `truncated after seq 3`. `webhook_is_off_by_default`.
+- The timed writer is not started from the orchestrator process yet, so the first criterion stays open. Status stays `review`.
 
 ### T-014 — Secrets interface
 - status: review
@@ -447,7 +450,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-027 — AWS GuardDuty source
-- status: todo
+- status: review
 - milestone: M2
 - area: collector
 - model tier: C
@@ -455,12 +458,14 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §4.3
 
 **Acceptance criteria**
-- [ ] GuardDuty findings (EventBridge → S3 or HTTP) → OCSF Detection Finding with severity and resource
-- [ ] Synthetic fixtures from AWS sample findings; tests
+- [x] GuardDuty findings (EventBridge → S3 or HTTP) → OCSF Detection Finding with severity and resource
+- [x] Synthetic fixtures from AWS sample findings; tests
 
 **Plan:**
+- `GuardDutySource` accepts a finding or an EventBridge `detail` envelope. `POST /ingest/guardduty` stays off until `ATTEST_SOURCE_GUARDDUTY=on`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `sample_finding_is_a_high_detection`, `eventbridge_envelope_uses_detail`, `malformed_finding_errors`. S3 delivery is the same JSON via the existing object fetch, not a separate poller. Status stays `review`.
 
 ---
 
@@ -503,7 +508,7 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 **Evidence:**
 
 ### T-032 — Shadow mode and agreement metrics
-- status: todo
+- status: review
 - milestone: M3
 - area: orchestrator
 - model tier: B
@@ -511,13 +516,15 @@ tier-A model, ideally from a different vendor than the author, reviews the diff 
 - plan ref: §6.3
 
 **Acceptance criteria**
-- [ ] `ATTEST_MODE=shadow`: verdicts are signed and shown, auto-close and responder actions are recorded as `would_have` and never applied — tests
+- [x] `ATTEST_MODE=shadow`: verdicts are signed and shown, auto-close and responder actions are recorded as `would_have` and never applied — tests
 - [ ] `/v1/metrics/agreement` returns agreement per detection, missed true positives and auto-close candidates over a window
 - [ ] Workbench page shows the same numbers
 
 **Plan:**
+- `mode_is_shadow` forces `executed=false` after the responder loop and records `would_have` on the envelope summary.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `only_shadow_mode_suppresses_actions`. Agreement metrics and the workbench page are not built, so those two criteria stay open.
 
 ### T-033 — Outputs: Slack, Jira, generic webhook, PagerDuty Events v2
 - status: review
@@ -778,7 +785,7 @@ checked by code before it can be used for training.
 - `verify.sh full` was not run, so this stays `review`. The harness uses an in-process gateway with the same allow/deny rules, not the production MCP process.
 
 ### T-055 — Several pinned models, one per detection family
-- status: todo
+- status: review
 - milestone: MD
 - area: onnx-runtime
 - model tier: A
@@ -788,18 +795,20 @@ checked by code before it can be used for training.
 **Why:** One general model cannot cover every detection family. Each family needs its own pinned model, and a swapped file must be rejected before it can sign a verdict.
 
 **Acceptance criteria**
-- [ ] The runtime loads a model registry (family → model path, hash, feature set version); each model hash is pinned
-- [ ] Routing picks the model by detection family; unknown family falls back to the general triage model — tests
-- [ ] A swapped or unpinned model is rejected at load — test per family
-- [ ] Each model has its own P99 budget test
+- [x] The runtime loads a model registry (family → model path, hash, feature set version); each model hash is pinned
+- [x] Routing picks the model by detection family; unknown family falls back to the general triage model — tests
+- [x] A swapped or unpinned model is rejected at load — test per family
+- [x] Each model has its own P99 budget test
 - [ ] The envelope records which model and feature set version produced the verdict
 
 **Plan:**
+- `crates/attest-onnx-runtime/src/registry.rs`.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `unknown_family_falls_back_to_general`, `swapped_file_is_rejected`, `each_family_read_stays_inside_its_budget`. The budget test reads the file, it does not run ONNX. The envelope does not yet record the family, so that criterion stays open.
 
 ### T-056 — Model and data cards generated at training time
-- status: todo
+- status: review
 - milestone: MD
 - area: ml
 - model tier: C
@@ -807,12 +816,14 @@ checked by code before it can be used for training.
 - plan ref: §6.6
 
 **Acceptance criteria**
-- [ ] Training writes `model_card.md` next to the ONNX file: datasets with checksums and licenses, feature set version, metrics, calibration, known limits, model hash
-- [ ] CI fails if a pinned model has no card
+- [x] Training writes `model_card.md` next to the ONNX file: datasets with checksums and licenses, feature set version, metrics, calibration, known limits, model hash
+- [x] CI fails if a pinned model has no card
 
 **Plan:**
+- `train_guide_v0` writes the card. `require_model_card` exits when the card is missing. The Python CI job runs that test.
 
-**Evidence:**
+**Evidence:** 2026-11-22
+- `test_guide_v0_reports_metrics_and_card`. The card describes synthetic GUIDE-shaped rows when the official file is unpinned. Status stays `review` until `verify.sh full` is recorded.
 
 ### T-057 — Web-attack fixtures from CSIC 2010
 - status: todo

@@ -237,6 +237,7 @@ services:
       ATTEST_INGEST_HMAC_SECRET: dev-only-ingest-hmac-secret
       ATTEST_SOURCE_GRAYLOG: ${ATTEST_SOURCE_GRAYLOG:-off}
       ATTEST_SOURCE_EDGE: ${ATTEST_SOURCE_EDGE:-off}
+      ATTEST_SOURCE_GUARDDUTY: ${ATTEST_SOURCE_GUARDDUTY:-off}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_SERVICE_NAME: attest-collector
     depends_on:
