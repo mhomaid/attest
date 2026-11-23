@@ -71,8 +71,9 @@ What the envelope commits to:
 - Classifier path: features, model hash, `raw_prediction` — `attest replay` re-runs ONNX
 - LLM path: `system_prompt_hash` and tool-call order — integrity only, not regenerated output
 
-Limits we do not hide: the chain does not yet prove tail truncation, and a holder of
-`ATTEST_SIGNING_KEY` can re-sign a new chain. External tip anchoring is [on the roadmap](#roadmap).
+Limits we do not hide: a holder of the signing key can still re-sign a chain. Tail
+truncation is detectable only when you pass an anchor to `attest verify --anchors`. The
+local default does not publish one. See [docs/21_Chain_Anchors.md](docs/21_Chain_Anchors.md).
 
 ## Architecture
 
@@ -104,7 +105,7 @@ flowchart TB
     RW[RisingWave]
   end
   subgraph Control["06 Control — identity and Git"]
-    Auth[Better Auth + Postgres]
+    Auth[Better Auth, OIDC, Postgres]
     IaC[Compose · Helm · Terraform]
   end
 
@@ -143,6 +144,8 @@ flowchart LR
 
 Calls between the control plane, orchestrator, MCP gateway, and websocket gateway carry a two-minute service token. The workbench server attaches that token. The browser receives only a short-lived token after sign-in, and `/healthz` stays open. Collector ingest is the exception: it uses an HMAC over the body and a timestamp, and rejects anything older than five minutes. See [docs/19_Service_Auth.md](docs/19_Service_Auth.md).
 
+Workbench sign-in is generic OIDC. The roles are `viewer`, `analyst`, `lead`, and `auditor`. `ATTEST_AUTH_PASSWORD=off` disables email sign-in and the waitlist, and that is the Helm default.
+
 Object storage is **S3-compatible**. Local Compose uses Garage; a hosted
 deployment should point at S3 or R2. The application talks the S3 API, not a vendor SDK.
 Garage's local signing region is `custom`, because RisingWave's path-style S3
@@ -160,7 +163,7 @@ path. No JVM in the data plane. Open table formats so you can leave with the dat
 
 | Layer | Choice | Why |
 |---|---|---|
-| Collect | Rust · axum · OCSF 1.3 | One binary; CloudTrail JSON in, common schema out |
+| Collect | Rust · axum · OCSF 1.3 | `Source` trait. CloudTrail is the first source |
 | Bus | Redpanda (Kafka API) | Single binary, no ZooKeeper |
 | Hot stream | RisingWave | Streaming SQL, Postgres protocol, materialized baselines |
 | CEP / ETL | Arroyo | Multi-step sequences without Flink |
@@ -170,8 +173,8 @@ path. No JVM in the data plane. Open table formats so you can leave with the dat
 | Triage | XGBoost → ONNX via `tract-onnx` | P99 &lt; 5 ms in CI; no Python on the hot path |
 | Calibrate | Python · uv sidecar | Isotonic calibration and novelty; training only |
 | Agents | Rust orchestrator · MCP gateway | Policy, budgets, signed envelopes |
-| Sign / verify | Ed25519 · SHA-256 · `attest` CLI | Offline check; classifier replay |
-| UI | Next.js 16 · Bun · Zustand · Better Auth | Marketing site + SOC workbench |
+| Sign / verify | Ed25519 · SHA-256 · `attest` CLI | Local key by default. Optional AWS KMS feature. Keyring verify |
+| UI | Next.js 16 · Bun · Zustand · Better Auth | OIDC roles. Production image omits the hosted demo |
 | Local | Docker Compose (`attest`) | `make dev-up-all` |
 | Ship | GitHub Actions · Helm · Terraform (AWS / GCP / Azure) | Store modules + chart. Does not create the cluster. |
 
@@ -185,7 +188,7 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 
 | Component | Status | Notes |
 |---|---|---|
-| CloudTrail → OCSF collector + Redpanda | Working | `POST /ingest` requires an HMAC (`X-Attest-Timestamp`, `X-Attest-Signature`) and rejects replays older than 5 minutes. Tenant from `X-Tenant-Id`, else `TENANT_ID`. `POST /ingest/s3` fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. |
+| CloudTrail → OCSF collector + Redpanda | Working | CloudTrail implements `Source`. Normalized events go to `attest.raw.cloudtrail` and, unless `ATTEST_MIRROR_LEGACY_CLOUDTRAIL=off`, also to the historical `cloudtrail` topic. `POST /ingest` requires an HMAC (`X-Attest-Timestamp`, `X-Attest-Signature`) and rejects replays older than 5 minutes. Tenant from `X-Tenant-Id`, else `TENANT_ID`. `POST /ingest/s3` fetches a gzipped CloudTrail file; buckets must be listed in `COLLECTOR_S3_ALLOWED_BUCKETS`. |
 | RisingWave hot tier + control-plane | Working | `recent_events`, `entity_baselines`; E2E Phase 1. Control-plane, orchestrator, MCP gateway, and ws-gateway require a short-lived service token on every route except `/healthz`. |
 | Warm storage | Working | Iceberg table `attest.cloudtrail`: Parquet under `s3://attest-warm/attest/cloudtrail/data/` on Garage. Snapshot commits via iceberg-rust. Phase 2 seeds 10k events and reads them back through ClickHouse `s3()`. |
 | Warm query (`POST /v1/warm/query`) | Working | Tokenized SQL guard + ClickHouse `readonly=2`, 30 s / 10k-row limits. `s3()` pinned to the warm bucket. |
@@ -195,14 +198,14 @@ Working = code + test. Partial = real code, incomplete vs the design docs. Plann
 | LLM escalation + investigator | Working | Needs a configured LLM; live suites gated on `ATTEST_PHASE7_LIVE` |
 | Shadow check + auto-close | Working | Real logic in `attest-shadow-check` (orchestrator re-exports it) |
 | MCP gateway + tool policy | Working | Per-role authorize; warm-query exfil cap; poisoned tool results denied |
-| Signed attestation envelopes | Working | Ed25519 over SHA-256 of sorted-key canonical JSON |
-| `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. |
-| Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3 first, and a fresh disk rebuilds from it. Orchestrator serves `GET /v1/attestations`, `/export`, `/verify`, `/{id}`. No external anchoring of the chain tip yet. |
-| Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, Playwright across 3 browsers. PostHog and Sentry stay off unless `ATTEST_TELEMETRY=on` and that vendor's key is set. The production image (`apps/workbench/Dockerfile`) defaults to `ATTEST_BUILD_PROFILE=production` and does not include hosted-demo routes. |
+| Signed attestation envelopes | Working | Ed25519 over SHA-256 of sorted-key canonical JSON. Each envelope records `alg` and `key_id`. The default signer is a local key. AWS KMS is a Cargo feature and is not called in CI. |
+| `attest verify` / `attest replay` | Working | Classifier path is deterministic; LLM path is integrity-only. Verify walks the hash chain and rejects duplicate `agent_action_id`. `--keyring` accepts several public keys. `--anchors` rejects a log shorter than a signed tip. |
+| Attestation log durability | Partial | Hash-chained NDJSON. With `ATTEST_LOG_S3_BUCKET` set, every envelope is also written to S3 first, and a fresh disk rebuilds from it. A signed tip can be written on a schedule (`ATTEST_ANCHOR_EVERY_SECS`, default 300) and checked with `attest verify --anchors`. The webhook is off unless `ATTEST_ANCHOR_WEBHOOK` is set. A local run does not upload that object to an Object Lock bucket. |
+| Workbench (queue, case, hunt, simulate, load) | Working | Next.js 16, Better Auth, generic OIDC, roles `viewer`, `analyst`, `lead`, `auditor`. `ATTEST_AUTH_PASSWORD=off` disables email sign-in and the waitlist; that is the Helm default. Playwright across 3 browsers. PostHog and Sentry stay off unless `ATTEST_TELEMETRY=on` and that vendor's key is set. The production image (`apps/workbench/Dockerfile`) defaults to `ATTEST_BUILD_PROFILE=production` and does not include hosted-demo routes. |
 | Hosted demo (marketing, waitlist, Railway) | Working | Opt-in build profile `ATTEST_BUILD_PROFILE=demo` (`infra/railway/workbench.json`). Marketing pages, the waitlist, and Railway config stay out of the production image. |
 | Hunter / responder / coordinator agents | Partial | Coordinator is deterministic routing (`POST /v1/coordinate`), not an LLM planner. Hunter (`POST /v1/hunt`) and Responder (`POST /v1/respond`) are LLM paths with a signed-envelope fallback when no model is configured; not yet exercised against a live model in CI. Responder actions are shadow-checked and only *recorded as planned*: nothing is executed against a real IdP/EDR. |
-| AADF / SIDM / eval harness | Planned | Design docs in `docs/` |
-| Helm / Terraform | Working | Reference chart in `infra/helm/attest`. AWS BYOC module in `infra/terraform/aws` (warm S3 bucket + optional Helm release onto an existing EKS cluster). |
+| Eval harness | Partial | A scripted, BOTS-shaped investigator eval runs in CI (`eval/bots_eval`) and uploads a score. The answer key is not placed in the model prompt. A live model run is `make eval-investigator` and stays off unless `ATTEST_EVAL_LIVE=1`. AADF / SIDM remain design only. |
+| Helm / Terraform | Working | The chart defaults to non-root, a read-only root filesystem, resource limits, a PodDisruptionBudget per Deployment, and a default-deny NetworkPolicy. External Kafka, ClickHouse, Postgres, and S3 are referenced by existing Secrets. The AWS module adds a KMS key, a warm bucket, an anchor bucket with Object Lock, and IAM roles. Nothing here creates the cluster. |
 
 ## Quick start
 
@@ -336,6 +339,9 @@ the present tense — the [status table](#status) is the source of truth for tod
 | [15 Streaming ADR](docs/15_Streaming_Engine_Decision.md) | Arroyo vs Flink vs RisingWave |
 | [18 Object store](docs/18_Object_Store.md) | Garage locally, the cloud's object store in production |
 | [19 Service auth](docs/19_Service_Auth.md) | HS256 service tokens and the ingest HMAC |
+| [20 Signer](docs/20_Signer_KMS.md) | Local key, optional AWS KMS, keyring verify |
+| [21 Chain anchors](docs/21_Chain_Anchors.md) | Signed tip and truncation check |
+| [22 Collector sources](docs/22_Collector_Sources.md) | `Source` trait and topic names |
 | [phases.md](docs/phases.md) | What actually shipped, phase by phase |
 | [attest CLI](crates/attest-cli/README.md) | `verify` / `replay` flags and exit codes |
 
@@ -362,8 +368,8 @@ Close the integrity gaps a skeptical reviewer will find first.
 
 | Item | Outcome | Today |
 |---|---|---|
-| External tip anchor | Publish the chain tip to a transparency log or object-lock bucket so dropping the last *n* rows is detectable | Hash chain only; tail truncation is still valid |
-| Stable signing key as default for any durable deploy | Envelopes still verify after a restart | Unset `ATTEST_SIGNING_KEY` → ephemeral key |
+| External tip anchor | Publish the chain tip to a transparency log or object-lock bucket so dropping the last *n* rows is detectable | `attest verify --anchors` rejects a short log. The AWS module can create an Object Lock bucket. A local run does not publish the anchor there. |
+| Stable signing key as default for any durable deploy | Envelopes still verify after a restart | Unset `ATTEST_SIGNING_KEY` still mints an ephemeral key. A keyring file verifies several keys. AWS KMS is a feature, not the default, and CI does not call AWS. |
 | Content-addressed tool I/O | Replay investigator steps from recorded args/results, not from a live model | LLM path is integrity-only |
 | Honest attribution | TreeSHAP, or rename the current 8-run perturbation everywhere we say SHAP | SHAP-style, not TreeSHAP |
 
@@ -377,7 +383,7 @@ Make a clone something you would leave running, not just demo.
 | Iceberg REST catalog | Restart-safe catalog that is not `MemoryCatalog` + `version-hint.text` | Snapshot reload works; catalog is local |
 | Pinned service images | Compose / Helm tags that do not float | Compose infra images are pinned. App images are still built from source. |
 | S3-native object store path | Garage locally, S3 or R2 when hosted | Local default is Garage. See `docs/18_Object_Store.md`. |
-| Helm + Terraform beyond the reference | Same chart onto an existing EKS cluster with fewer manual steps | Store modules for AWS, GCP, and Azure. Helm is `k8s-release` / `eks-release`. None of them create the cluster. |
+| Helm + Terraform beyond the reference | Same chart onto an existing EKS cluster with fewer manual steps | The chart is hardened and can point at external Kafka, ClickHouse, Postgres, and S3. The AWS module covers KMS, the warm bucket, and an Object Lock anchor bucket. None of them create the cluster. |
 
 ### 3 — Broader SOC surface
 
@@ -388,7 +394,7 @@ Only after the log and the self-host path are something we can defend.
 | More sources | Okta, Entra, EDR on the same OCSF collector | CloudTrail is the first `Source`. Other vendors are not wired. |
 | Live Hunter / Responder | Hunt and planned-containment exercised against a real model in CI | Endpoints exist; fallback is a signed envelope without an LLM |
 | Responder connectors | Recorded actions can be executed against a real IdP / EDR, still shadow-checked | Planned only; nothing is sent to a vendor API |
-| Eval harness (`eval/`) | Golden cases gate classifier + investigator quality in CI | Directory exists; harness is not built |
+| Eval harness (`eval/`) | Golden cases gate classifier + investigator quality in CI | Scripted investigator scoring runs in CI. It does not yet fail the build when the shipped classifier misses a labeled case. |
 | AADF / SIDM | Agent-aware detections and self-improving rules, as designed in `docs/` | Design only |
 
 ### Explicitly not on this roadmap

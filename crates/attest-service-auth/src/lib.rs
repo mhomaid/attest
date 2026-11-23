@@ -367,12 +367,27 @@ mod tests {
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
-    // The tracing default subscriber is thread-local. A multi-thread runtime can
-    // emit the rejection on a worker that does not see this subscriber, so the
-    // captured log is empty and the assertion fails at random.
+    // Other tests reject a token before this one installs a subscriber. The
+    // callsite then caches "never", and a later subscriber records nothing.
+    // Rebuild interest after installing the subscriber, on this thread.
     #[tokio::test(flavor = "current_thread")]
     async fn rejection_log_does_not_contain_the_secret_or_token() {
         let secret = "s3cr3t-do-not-log";
+        let app = protect(
+            Router::new().route("/v1/ok", get(|| async { "ok" })),
+            secret,
+            AUDIENCE_ORCHESTRATOR,
+        );
+        // Prime the callsite the way the rest of the suite does.
+        let _ = status_of(
+            app.clone(),
+            axum::http::Request::builder()
+                .uri("/v1/ok")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
         let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
         let capture = buf.clone();
         let subscriber = tracing_subscriber::fmt()
@@ -380,13 +395,9 @@ mod tests {
             .with_ansi(false)
             .with_writer(move || Shared(capture.clone()))
             .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
+        let guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
 
-        let app = protect(
-            Router::new().route("/v1/ok", get(|| async { "ok" })),
-            secret,
-            AUDIENCE_ORCHESTRATOR,
-        );
         let status = status_of(
             app,
             axum::http::Request::builder()
@@ -397,10 +408,17 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+        drop(guard);
 
         let logged = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
-        assert!(logged.contains("service auth rejected"), "{logged}");
-        assert!(!logged.contains(secret), "{logged}");
+        assert!(
+            logged.contains("service auth rejected"),
+            "rejection was not logged: {logged:?}"
+        );
+        assert!(
+            !logged.contains(secret),
+            "rejection log contains the secret: {logged:?}"
+        );
     }
 
     fn ingest_app(secret: &str) -> Router {
