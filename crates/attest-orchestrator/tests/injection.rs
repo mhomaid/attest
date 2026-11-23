@@ -18,7 +18,7 @@
 use async_trait::async_trait;
 use attest_attestation::{
     AttestationEnvelope, ClassifierEvidence, EscalationReason, EvidenceBlock, ExecutionPathKind,
-    HybridEvidence, Signer, TimingBlock, Verdict, GENESIS_HASH,
+    HybridEvidence, LocalKey, TimingBlock, Verdict, GENESIS_HASH,
 };
 use attest_inference_router::{
     ChatClient, ChatRequest, ChatResponse, FinishReason, ToolCall, Usage,
@@ -207,8 +207,10 @@ fn seal_envelope(evidence: HybridEvidence, verdict: Verdict) -> (AttestationEnve
         prev_hash: GENESIS_HASH.into(),
         signature: String::new(),
         signed_at: now,
+        alg: String::new(),
+        key_id: String::new(),
     };
-    let signer = Signer::generate();
+    let signer = LocalKey::generate();
     signer.sign(&mut env);
     (env, signer.verifying_key_hex())
 }
@@ -283,7 +285,7 @@ async fn obeyed_injection_is_denied_and_recorded_in_envelope() {
         // still verifies. This is what `attest verify` sees offline.
         let (env, vk) = seal_envelope(result.evidence, result.verdict);
         assert!(
-            Signer::verify(&env, &vk).expect("verify"),
+            LocalKey::verify(&env, &vk).expect("verify"),
             "fixture {i}: sealed envelope must verify"
         );
         let serialized = serde_json::to_string(&env).expect("serialize envelope");
