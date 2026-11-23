@@ -96,7 +96,8 @@ export function TryDemoSection() {
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
             Runs the hosted demo tenant: ingest a geo-anomaly ConsoleLogin, triage it, then walk the
             hash chain with the same verifier the CLI uses. If the collector or orchestrator is
-            down, this page says so instead of faking a pass.
+            down, this page says so instead of faking a pass. Graylog and edge ingest stay off
+            until `make dev-up-live`. This button still sends CloudTrail.
           </p>
 
           {live === false ? (
